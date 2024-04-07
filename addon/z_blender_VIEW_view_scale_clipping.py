@@ -34,7 +34,7 @@ class ZENV_OT_SetViewportClippingAndView(bpy.types.Operator):
             if area.type == 'VIEW_3D':
                 for space in area.spaces:
                     if space.type == 'VIEW_3D':
-                        space.clip_end = largest_size * 1.5  # Adjust multiplier as needed
+                        space.clip_end = largest_size * 10.5  # Adjust multiplier as needed
 
         # Center view on the largest object if it exists
         if largest_object:

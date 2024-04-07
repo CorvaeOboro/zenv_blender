@@ -34,6 +34,7 @@ class ZENV_PT_CamProjPanel(bpy.types.Panel):
         layout.operator("zenv.create_camera_proj")
         layout.operator("zenv.bake_cam_proj_texture")
         layout.prop(context.scene, "zenv_texture_path")
+        layout.prop(context.scene, "zenv_ortho_scale")
 
 #//==================================================================================================
 
@@ -72,7 +73,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
     def set_orthographic_camera_properties(self, camera_object):
         # Set camera to orthographic and adjust orthographic scale
         camera_object.data.type = 'ORTHO'
-        camera_object.data.ortho_scale = 2.0
+        camera_object.data.ortho_scale = bpy.context.scene.zenv_ortho_scale
 
         # Adjust camera clip start and end based on the current view settings
         camera_object.data.clip_start = bpy.context.space_data.clip_start
@@ -180,10 +181,16 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         tex_coord = nodes.new('ShaderNodeTexCoord')
         tex_coord.object = context.scene.camera
         mapping = nodes.new('ShaderNodeMapping')
-        mapping.inputs['Scale'].default_value = (0.5, 0.5, 0.5)  # Set scale to 0.5
+
+        # Adjust scale and offset based on orthographic scale
+        ortho_scale = context.scene.zenv_ortho_scale
+        scale_offset = 1.0 / ortho_scale
+        scale_offset_inverse = 1.0-scale_offset
+        mapping.inputs['Scale'].default_value = (scale_offset, scale_offset, scale_offset)
         add_vector = nodes.new('ShaderNodeVectorMath')
         add_vector.operation = 'ADD'
-        add_vector.inputs[1].default_value = (0.5, 0.5, 0.5)  # Add (0.5, 0.5, 0.5)
+        add_vector.inputs[1].default_value = (scale_offset_inverse, scale_offset_inverse, scale_offset_inverse)
+
         emission = nodes.new('ShaderNodeEmission')
         output = nodes.new('ShaderNodeOutputMaterial')
 
@@ -270,12 +277,19 @@ def register():
         name="Texture File Path",
         subtype='FILE_PATH'
     )
+    bpy.types.Scene.zenv_ortho_scale = bpy.props.FloatProperty(
+        name="Orthographic Scale",
+        default=2.0,
+        min=0.01,
+        max=100.0
+    )
 
 def unregister():
     bpy.utils.unregister_class(ZENV_PT_CamProjPanel)
     bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.unregister_class(ZENV_OT_BakeTexture)
     del bpy.types.Scene.zenv_texture_path
+    del bpy.types.Scene.zenv_ortho_scale
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
