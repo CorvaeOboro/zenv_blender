@@ -76,19 +76,20 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
         camera_object.data.ortho_scale = bpy.context.scene.zenv_ortho_scale
 
         # Adjust camera clip start and end based on the current view settings
-        camera_object.data.clip_start = bpy.context.space_data.clip_start
-        camera_object.data.clip_end = bpy.context.space_data.clip_end
+        for area in bpy.context.screen.areas:
+            if area.type == 'VIEW_3D':
+                space_data = area.spaces.active
+                camera_object.data.clip_start = space_data.clip_start
+                camera_object.data.clip_end = space_data.clip_end
+                break
 
     def generate_unique_camera_name(self, base_name):
         # Generate a unique camera name
-        cameras = [cam.name for cam in bpy.data.objects if cam.type == 'CAMERA']
-        if base_name not in cameras:
-            return base_name
-
+        cameras = {cam.name for cam in bpy.data.objects if cam.type == 'CAMERA'}
         i = 1
-        while f"{base_name}_{i}" in cameras:
+        while f"{base_name}{i}" in cameras:
             i += 1
-        return f"{base_name}_{i}"
+        return f"{base_name}{i}"
 
 class ZENV_OT_BakeTexture(bpy.types.Operator):
     bl_idname = "zenv.bake_cam_proj_texture"
@@ -162,7 +163,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         return bake_setup_mesh
     
     def setup_projection_material(self, context, obj):
-        """Setup material for camera projection."""
+        """Setup material for camera projection with correct scale and offset adjustments."""
         image_path = bpy.path.abspath(context.scene.zenv_texture_path)
         if not os.path.isfile(image_path):
             self.report({'ERROR'}, "Image file not found at: " + image_path)
@@ -184,20 +185,22 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
 
         # Adjust scale and offset based on orthographic scale
         ortho_scale = context.scene.zenv_ortho_scale
-        scale_offset = 1.0 / ortho_scale
-        scale_offset_inverse = 1.0-scale_offset
-        mapping.inputs['Scale'].default_value = (scale_offset, scale_offset, scale_offset)
-        add_vector = nodes.new('ShaderNodeVectorMath')
-        add_vector.operation = 'ADD'
-        add_vector.inputs[1].default_value = (scale_offset_inverse, scale_offset_inverse, scale_offset_inverse)
+        # Scale should adjust inversely with the orthographic scale to maintain texture size
+        scale_value = 1.0 / ortho_scale
+        mapping.inputs['Scale'].default_value = (scale_value, scale_value, scale_value)
+        
+        # Offset to center the projection
+        # An offset of half the inverse scale centers the scaled texture
+        #offset_value = 0.5 * scale_value
+        offset_value = 0.5
+        mapping.inputs['Location'].default_value = (offset_value, offset_value, 0)
 
         emission = nodes.new('ShaderNodeEmission')
         output = nodes.new('ShaderNodeOutputMaterial')
 
         # Connect nodes
         bake_mat.node_tree.links.new(mapping.inputs['Vector'], tex_coord.outputs['Object'])
-        bake_mat.node_tree.links.new(add_vector.inputs[0], mapping.outputs['Vector'])
-        bake_mat.node_tree.links.new(tex_image.inputs['Vector'], add_vector.outputs['Vector'])
+        bake_mat.node_tree.links.new(tex_image.inputs['Vector'], mapping.outputs['Vector'])
         bake_mat.node_tree.links.new(emission.inputs['Color'], tex_image.outputs['Color'])
         bake_mat.node_tree.links.new(output.inputs['Surface'], emission.outputs['Emission'])
 
