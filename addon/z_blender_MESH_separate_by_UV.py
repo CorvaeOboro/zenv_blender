@@ -110,12 +110,8 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         bm = bmesh.from_edit_mesh(obj.data)
         uv_layer = bm.loops.layers.uv.verify()
-        
-
+    
         quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
-
-        quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
-        
 
         # Apply UV offset to ensure UVs are within 0-1 UV space
         for quadrant, faces in quadrant_faces.items():
@@ -153,7 +149,6 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
 
         return {'FINISHED'}
 
-    
 #=============================================================================
 # UI SIDE PANEL
 class MESH_PT_separate_by_uv_combined(bpy.types.Panel):
