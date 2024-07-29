@@ -96,8 +96,10 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
             i += 1
         return f"{base_name}{i}"
 
+#==========================================================================================================
+#  BAKE TEXTURE FROM CAMERA PROJECTED UV
 class ZENV_OT_BakeTexture(bpy.types.Operator):
-    """Bake textures of selected object from a dyplicate with camera projected UVs."""
+    """Bake textures of selected object from a duplicate with camera projected UVs."""
     bl_idname = "zenv.bake_cam_proj_texture"
     bl_label = "Bake Texture"
     bl_description = "Bakes the texture of the selected object using a camera projection"
@@ -163,6 +165,8 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         bake_setup_mesh = self.create_bake_setup_mesh(context, original_obj)
         return camera_proj_mesh, bake_setup_mesh
 
+    #==========================================================================================================
+    # CAMERA PROJECTION UV MESH DUPLICATE
     def create_camera_projection_mesh(self, context, original_obj):
         # Duplicate the original object and prepare it for camera projection
         """Create a temporary mesh for camera projection."""
@@ -174,18 +178,6 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         camera_proj_mesh.name = "temp_camera_proj_mesh"
         self.subdivide_mesh(camera_proj_mesh)
         return camera_proj_mesh
-    
-    def create_bake_setup_mesh(self, context, original_obj):
-        # Duplicate the original object and prepare it for baking
-        """Create a temporary mesh for bake setup."""
-        bpy.ops.object.select_all(action='DESELECT')
-        original_obj.select_set(True)
-        context.view_layer.objects.active = original_obj
-        bpy.ops.object.duplicate(linked=False, mode='TRANSLATION')
-        bake_setup_mesh = context.active_object
-        bake_setup_mesh.name = "temp_bake_setup_mesh"
-        self.subdivide_mesh(bake_setup_mesh)
-        return bake_setup_mesh
     
     def setup_projection_material(self, context, obj):
         # Set up a material with the provided image texture for camera projection
@@ -219,6 +211,37 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         obj.data.materials.append(mat)
         logger.info("Projection material setup completed.")
         return True
+
+    #==========================================================================================================
+    # BAKE MESH DUPLICATE
+    def create_bake_setup_mesh(self, context, original_obj):
+        # Duplicate the original object and prepare it for baking
+        """Create a temporary mesh for bake setup."""
+        bpy.ops.object.select_all(action='DESELECT')
+        original_obj.select_set(True)
+        context.view_layer.objects.active = original_obj
+        bpy.ops.object.duplicate(linked=False, mode='TRANSLATION')
+        bake_setup_mesh = context.active_object
+        bake_setup_mesh.name = "temp_bake_setup_mesh"
+        self.subdivide_mesh(bake_setup_mesh)
+        return bake_setup_mesh
+
+    def setup_baking_material(self, mesh, image):
+        """Set up a material for the mesh with the specified image for baking."""
+        mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        tex_image = nodes.new('ShaderNodeTexImage')
+        tex_image.image = image
+        output = nodes.new('ShaderNodeOutputMaterial')
+        links = mat.node_tree.links
+        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        mesh.data.materials.clear()
+        mesh.data.materials.append(mat)
+        logger.info("Baking material setup completed.")
 
     def perform_baking(self, context, source_mesh, target_mesh, original_obj):
         # Perform the baking process using Cycles render engine
