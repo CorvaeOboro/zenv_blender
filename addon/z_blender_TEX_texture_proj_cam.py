@@ -142,7 +142,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
             self.restore_state(context, state)
             return {'CANCELLED'}
 
-        baked_texture_path = self.perform_baking(context, camera_proj_mesh, bake_setup_mesh)
+        baked_texture_path = self.perform_baking(context, camera_proj_mesh, bake_setup_mesh, state['original_obj'])
         if not baked_texture_path:
             self.restore_state(context, state)
             return {'CANCELLED'}
