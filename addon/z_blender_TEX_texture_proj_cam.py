@@ -194,8 +194,16 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         bpy.ops.object.duplicate(linked=False, mode='TRANSLATION')
         camera_proj_mesh = context.active_object
         camera_proj_mesh.name = "temp_camera_proj_mesh"
-        self.subdivide_mesh(camera_proj_mesh)
+        self.add_uv_project_modifier(camera_proj_mesh, context.scene.camera)
         return camera_proj_mesh
+
+    def add_uv_project_modifier(self, mesh, camera):
+        """Add a UV Project modifier to the mesh pointing to the given camera."""
+        uv_project_modifier = mesh.modifiers.new(name="UVProject", type='UV_PROJECT')
+        uv_project_modifier.projector_count = 1
+        uv_project_modifier.projectors[0].object = camera
+        mesh.data.uv_layers.active.name = "UVProject"
+        logger.info("UV Project modifier added to mesh.")
     
     def setup_projection_material(self, context, obj):
         # Set up a material with the provided image texture for camera projection
@@ -257,13 +265,13 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         logger.info("Performing texture baking.")
         bake_image = self.create_bake_image()
         self.setup_baking_material(target_mesh, bake_image)
-        context.scene.render.engine = 'CYCLES'
+        self.set_render_settings_for_baking(context)
         # Ensure the source and target meshes are selected and the target is active
         bpy.ops.object.select_all(action='DESELECT')
         source_mesh.select_set(True)
         target_mesh.select_set(True)
         context.view_layer.objects.active = target_mesh
-        bpy.ops.object.bake(type='DIFFUSE', save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True)
+        bpy.ops.object.bake(type='DIFFUSE', pass_filter={'COLOR'}, save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True)
         if bake_image.has_data:
             bake_image.save_render(bake_image.filepath)
             logger.info("Baking completed successfully.")
@@ -272,6 +280,14 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
             logger.error("Failed to bake image data.")
             return None
 
+    def set_render_settings_for_baking(self, context):
+        """Set render settings to bake only the Diffuse color."""
+        context.scene.render.engine = 'CYCLES'
+        context.scene.cycles.bake_type = 'DIFFUSE'
+        context.scene.render.bake.use_pass_direct = False
+        context.scene.render.bake.use_pass_indirect = False
+        context.scene.render.bake.use_pass_color = True
+        logger.info("Render settings configured for baking Diffuse color only.")
     def create_bake_image(self):
         """Create a new image for baking."""
         image_name = "BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S")
