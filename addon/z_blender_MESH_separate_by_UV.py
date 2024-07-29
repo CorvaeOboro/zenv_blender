@@ -165,7 +165,7 @@ class MESH_PT_separate_by_uv_combined(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
-    bl_context = "objectmode"
+    bl_context = "objectmode"  # This should be set to a valid context where the panel should appear
 
     def draw(self, context):
         layout = self.layout
