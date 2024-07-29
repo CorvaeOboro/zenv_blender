@@ -15,21 +15,33 @@ from mathutils import Vector
 from bpy.props import FloatProperty, IntProperty, PointerProperty
 
 def create_curve_data(length, angle, curve_resolution):
-    # Create a new curve object
-    curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
-    curve_data.dimensions = '3D'
-    spline.bezier_points.add(curve_resolution - 1)
+    # Ensure curve resolution is at least 2 to create a valid curve
+    if curve_resolution < 2:
+        raise ValueError("Curve resolution must be 2 or greater.")
 
     
-    # Define parabola control points
-    start_point = Vector((0, 0, 0))
-    control_point = Vector((length / 2, length * angle, 0))
-    end_point = Vector((length, 0, 0))
+    try:
+        # Create a new curve object
+        curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
+        curve_data.dimensions = '3D'
 
     
-    # Set points of the Bézier curve with handles
-    set_bezier_points_with_handles(spline, start_point, control_point, end_point)
-    return curve_data
+        # Add a new spline to the curve
+        spline = curve_data.splines.new('BEZIER')
+        spline.bezier_points.add(curve_resolution - 1)
+
+        # Define parabola control points
+        start_point = Vector((0, 0, 0))
+        control_point = Vector((length / 2, length * angle, 0))
+        end_point = Vector((length, 0, 0))
+
+        # Set points of the Bézier curve with handles
+        set_bezier_points_with_handles(spline, start_point, control_point, end_point)
+
+        return curve_data
+    except Exception as e:
+        # Handle unexpected errors during curve creation
+        raise RuntimeError("Failed to create curve data: {}".format(str(e)))
 
 def create_parabola_object(context, curve_data, rotation):
     # Create an object with the curve data
