@@ -18,7 +18,7 @@ def create_curve_data(length, angle, curve_resolution):
     curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
     curve_data.dimensions = '3D'
     spline = curve_data.splines.new('BEZIER')
-    spline.bezier_points.add(curve_resolution - 1)  # Fixed to use curve_resolution
+    spline.bezier_points.add(curve_resolution - 1)
 
     spline.bezier_points.add(curve_resolution - 1)
 
@@ -39,27 +39,25 @@ def create_parabola_object(context, curve_data, rotation):
    bpy.context.collection.objects.link(curve_object)
 
 def create_parabola_object(context, curve_data, rotation):
-   # Create an object with the curve data
+    # Create an object with the curve data
     curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
     bpy.context.collection.objects.link(curve_object)
     
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = curve_object
-    bpy.ops.object.convert(target='MESH')
 
     # Apply rotation
     curve_object.rotation_euler = (0, 0, rotation)
 
-    # Add UV mapping
-    add_uv_mapping(curve_object)
+    return curve_object
 
 def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
     curve_data = create_curve_data(length, angle, curve_resolution)
-    parabola_object = create_parabola_object(context, curve_data)
-    parabola_object.rotation_euler = (0, 0, rotation)
-    mesh_object = convert_curve_to_mesh(parabola_object)
-    add_uv_mapping(mesh_object)
-    return mesh_object
+    parabola_object = create_parabola_object(context, curve_data, rotation)
+    # Convert curve to mesh
+    bpy.context.view_layer.objects.active = parabola_object
+    bpy.ops.object.convert(target='MESH')
+    # Add UV mapping
+    add_uv_mapping(parabola_object)
+    return parabola_object
 
 def set_bezier_points_with_handles(spline, start, control, end):
     spline.bezier_points[0].co = start
@@ -69,10 +67,11 @@ def set_bezier_points_with_handles(spline, start, control, end):
         point.handle_right_type = 'AUTO'
         point.handle_left_type = 'AUTO'
 
-def add_uv_mapping(mesh_object):
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.uv.unwrap()
-    bpy.ops.object.mode_set(mode='OBJECT')
+def add_uv_mapping(curve_object):
+    if curve_object.type == 'MESH':
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.uv.unwrap()
+        bpy.ops.object.mode_set(mode='OBJECT')
     return mesh_object
 
 class ZENVProperties(PropertyGroup):
@@ -113,8 +112,8 @@ class OBJECT_OT_add_parabola_mesh(Operator):
     
     def execute(self, context):
         props = get_zenv_properties(context)
-        mesh_object = create_parabola_mesh(context, props.angle, props.rotation, props.length, props.curve_resolution)
-        if mesh_object:
+        parabola_object = create_parabola_mesh(context, props.angle, props.rotation, props.length, props.curve_resolution)
+        if parabola_object:
         if mesh_object:
         if curve_object:
             self.report({'INFO'}, "Parabola mesh created successfully.")
@@ -189,4 +188,3 @@ def convert_curve_to_mesh(curve_object):
     bpy.context.view_layer.objects.active = curve_object
     bpy.ops.object.convert(target='MESH')
     return curve_object
-
