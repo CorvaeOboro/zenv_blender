@@ -97,9 +97,19 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
         return {'FINISHED'}
 
     def get_uv_quadrant(self, face, uv_layer):
-        """Calculate the UV quadrant for a given face based on its first vertex."""
-        first_loop_uv = face.loops[0][uv_layer].uv
-        return math.floor(first_loop_uv.x), math.floor(first_loop_uv.y)
+        """Calculate the UV quadrant for a given face based on the majority of its area."""
+        u_sum = 0
+        v_sum = 0
+        area_sum = 0
+        for loop in face.loops:
+            uv = loop[uv_layer].uv
+            area = loop.calc_area()
+            u_sum += uv.x * area
+            v_sum += uv.y * area
+            area_sum += area
+        u_avg = u_sum / area_sum
+        v_avg = v_sum / area_sum
+        return math.floor(u_avg), math.floor(v_avg)
 
     def separate_faces_by_quadrant(self, bm, uv_layer):
         from collections import defaultdict
