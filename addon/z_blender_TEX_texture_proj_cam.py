@@ -19,10 +19,11 @@ from mathutils import Vector
 import math
 import logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels of log messages
 
 # UI
 class ZENV_PT_CamProjPanel(bpy.types.Panel):
-    """Creates a Panel in the Object properties window"""
+    """Creates Panel in the VIEW_3D SidePanel  window"""
     bl_label = "Cam Proj"
     bl_idname = "ZENV_PT_CamProj"
     bl_space_type = 'VIEW_3D'
@@ -33,8 +34,10 @@ class ZENV_PT_CamProjPanel(bpy.types.Panel):
         layout = self.layout
         layout.operator("zenv.create_camera_proj")
         layout.operator("zenv.bake_cam_proj_texture")
+        layout.operator("zenv.create_debug_plane")
         layout.prop(context.scene, "zenv_texture_path")
         layout.prop(context.scene, "zenv_ortho_scale")
+
 
 #//==================================================================================================
 
@@ -92,190 +95,258 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
         return f"{base_name}{i}"
 
 class ZENV_OT_BakeTexture(bpy.types.Operator):
+    """Bake textures of selected object from a dyplicate with camera projected UVs."""
     bl_idname = "zenv.bake_cam_proj_texture"
     bl_label = "Bake Texture"
 
     def execute(self, context):
-        # Initial checks
-        if not context.selected_objects:
-            self.report({'ERROR'}, "No object selected.")
-            return {'CANCELLED'}
-        if not context.scene.camera:
-            self.report({'ERROR'}, "No active camera found.")
-            return {'CANCELLED'}
-        if context.active_object.type != 'MESH':
-            self.report({'ERROR'}, "The active object must be a mesh.")
+        if not self.initial_checks(context):
             return {'CANCELLED'}
 
-        # Save original settings
         original_obj = context.active_object
         original_engine = context.scene.render.engine
         original_materials = {obj: obj.data.materials[:] for obj in context.selected_objects}
 
-        # Create texture folder
-        blend_file_path = bpy.data.filepath
-        texture_folder = os.path.join(os.path.dirname(blend_file_path), "textures")
-        os.makedirs(texture_folder, exist_ok=True)
+        camera_proj_mesh, bake_setup_mesh = self.prepare_meshes(context, original_obj)
+        if not camera_proj_mesh or not bake_setup_mesh:
+            return {'CANCELLED'}
 
-        # Create temporary meshes and perform baking
+        if not self.setup_projection_material(context, camera_proj_mesh):
+            return {'CANCELLED'}
+
+        baked_texture_path = self.perform_baking(context, camera_proj_mesh, bake_setup_mesh, original_obj)
+        if not baked_texture_path:
+            self.cleanup(context, [camera_proj_mesh, bake_setup_mesh], original_engine, original_materials)
+            return {'CANCELLED'}
+
+        self.apply_baked_texture(context, bake_setup_mesh, baked_texture_path)
+        self.cleanup(context, [camera_proj_mesh, bake_setup_mesh], original_engine, original_materials)
+        return {'FINISHED'}
+
+    def initial_checks(self, context):
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No object selected.")
+            return False
+        if not context.scene.camera:
+            self.report({'ERROR'}, "No active camera found.")
+            return False
+        if context.active_object.type != 'MESH':
+            self.report({'ERROR'}, "The active object must be a mesh.")
+            return False
+        return True
+
+    def prepare_meshes(self, context, original_obj):
+        # Prepares the meshes required for the baking process
         camera_proj_mesh = self.create_camera_projection_mesh(context, original_obj)
         bake_setup_mesh = self.create_bake_setup_mesh(context, original_obj)
-
-        try:
-            # Setup baking material on camera projection mesh
-            self.setup_projection_material(context, camera_proj_mesh)
-
-            # Perform baking
-            baked_texture_name = self.get_baked_texture_name(original_obj)
-            filepath = os.path.join(texture_folder, baked_texture_name + ".png")
-            self.bake_texture(context, camera_proj_mesh, bake_setup_mesh, original_obj, filepath)
-        finally:
-            # Cleanup
-            self.cleanup(context, [camera_proj_mesh, bake_setup_mesh], original_engine, original_materials)
-            self.report({'INFO'}, "cleanup.")
-
-        return {'FINISHED'}
+        return camera_proj_mesh, bake_setup_mesh
 
     def create_camera_projection_mesh(self, context, original_obj):
         """Create a temporary mesh for camera projection."""
-        # Duplicate the original object
         bpy.ops.object.select_all(action='DESELECT')
         original_obj.select_set(True)
         context.view_layer.objects.active = original_obj
         bpy.ops.object.duplicate(linked=False, mode='TRANSLATION')
         camera_proj_mesh = context.active_object
         camera_proj_mesh.name = "temp_camera_proj_mesh"
-        camera_proj_mesh.select_set(False)
-        self.subdivide_mesh(camera_proj_mesh)  # Subdivide the mesh
+        self.subdivide_mesh(camera_proj_mesh)
         return camera_proj_mesh
-
+    
     def create_bake_setup_mesh(self, context, original_obj):
         """Create a temporary mesh for bake setup."""
-        # Duplicate the original object
         bpy.ops.object.select_all(action='DESELECT')
         original_obj.select_set(True)
         context.view_layer.objects.active = original_obj
         bpy.ops.object.duplicate(linked=False, mode='TRANSLATION')
         bake_setup_mesh = context.active_object
         bake_setup_mesh.name = "temp_bake_setup_mesh"
-        bake_setup_mesh.select_set(False)
-        self.subdivide_mesh(bake_setup_mesh)  # Subdivide the mesh
+        self.subdivide_mesh(bake_setup_mesh)
         return bake_setup_mesh
     
     def setup_projection_material(self, context, obj):
-        """Setup material for camera projection with correct scale and offset adjustments."""
+        logger.info("Setting up projection material.")
         image_path = bpy.path.abspath(context.scene.zenv_texture_path)
         if not os.path.isfile(image_path):
             self.report({'ERROR'}, "Image file not found at: " + image_path)
-            return
+            logger.error("Image file not found at: %s", image_path)
+            return False
 
-        # Load and assign image to material
         image = bpy.data.images.load(image_path, check_existing=True)
-        bake_mat = bpy.data.materials.new(name="CameraProjMaterial")
-        bake_mat.use_nodes = True
-        nodes = bake_mat.node_tree.nodes
-        nodes.clear()
+        if not image:
+            logger.error("Failed to load image at: %s", image_path)
+            return False
 
-        # Set up nodes for camera projection
+        mat = bpy.data.materials.get("CameraProjMaterial") or bpy.data.materials.new(name="CameraProjMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
         tex_image = nodes.new('ShaderNodeTexImage')
         tex_image.image = image
-        tex_coord = nodes.new('ShaderNodeTexCoord')
-        tex_coord.object = context.scene.camera
-        mapping = nodes.new('ShaderNodeMapping')
-
-        # Adjust scale and offset based on orthographic scale
-        ortho_scale = context.scene.zenv_ortho_scale
-        # Scale should adjust inversely with the orthographic scale to maintain texture size
-        scale_value = 1.0 / ortho_scale
-        mapping.inputs['Scale'].default_value = (scale_value, scale_value, scale_value)
-        
-        # Offset to center the projection
-        # An offset of half the inverse scale centers the scaled texture
-        #offset_value = 0.5 * scale_value
-        offset_value = 0.5
-        mapping.inputs['Location'].default_value = (offset_value, offset_value, 0)
-
-        emission = nodes.new('ShaderNodeEmission')
         output = nodes.new('ShaderNodeOutputMaterial')
-
-        # Connect nodes
-        bake_mat.node_tree.links.new(mapping.inputs['Vector'], tex_coord.outputs['Object'])
-        bake_mat.node_tree.links.new(tex_image.inputs['Vector'], mapping.outputs['Vector'])
-        bake_mat.node_tree.links.new(emission.inputs['Color'], tex_image.outputs['Color'])
-        bake_mat.node_tree.links.new(output.inputs['Surface'], emission.outputs['Emission'])
-
+        nodes.new('ShaderNodeTexCoord')
+        nodes.new('ShaderNodeMapping')
+        nodes.new('ShaderNodeMixRGB')
+        links = mat.node_tree.links
+        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
         obj.data.materials.clear()
-        obj.data.materials.append(bake_mat)
+        obj.data.materials.append(mat)
+        logger.info("Projection material setup completed.")
+        return True
 
-    def bake_texture(self, context, camera_proj_mesh, bake_setup_mesh, original_obj, filepath):
-        # Switch to Cycles render engine
+    def perform_baking(self, context, source_mesh, target_mesh, original_obj):
+        logger.info("Performing texture baking.")
+        bake_image = bpy.data.images.new(name="BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S"), width=1024, height=1024)
+        self.setup_baking_material(target_mesh, bake_image)
         context.scene.render.engine = 'CYCLES'
-
-        bake_image = bpy.data.images.new(name="BakeImage", width=1024, height=1024, alpha=False)
-        bake_image.file_format = 'JPEG'
-
-        # Assign bake image to bake setup mesh
-        bake_mat = bpy.data.materials.new(name="BakeSetupMaterial")
-        bake_mat.use_nodes = True
-        nodes = bake_mat.node_tree.nodes
-        tex_image = nodes.new('ShaderNodeTexImage')
-        tex_image.image = bake_image
-        nodes.new('ShaderNodeOutputMaterial')
-        bake_setup_mesh.data.materials.clear()
-        bake_setup_mesh.data.materials.append(bake_mat)
-
-        # Select the necessary objects for baking
-        bpy.ops.object.select_all(action='DESELECT')
-        bake_setup_mesh.select_set(True)
-        camera_proj_mesh.select_set(True)
-        context.view_layer.objects.active = bake_setup_mesh
-
-        context.scene.cycles.bake_margin = 4  # Increase margin to avoid artifacts
-        context.scene.cycles.samples = 512  # Increase samples for better quality
-        # Perform baking with the use of a cage
-        context.scene.render.bake.use_cage = True
-        context.scene.render.bake.cage_extrusion = 0.001
-
-        # Perform baking
-        bpy.ops.object.bake(type='EMIT', save_mode='EXTERNAL', filepath=filepath, use_selected_to_active=True, cage_extrusion=0.001)
-
-        # Save the image if it has data
+        bpy.ops.object.bake(type='DIFFUSE', save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True)
         if bake_image.has_data:
-            bake_image.filepath_raw = filepath
-            bake_image.save()
+            bake_image.save_render(bake_image.filepath)
+            logger.info("Baking completed successfully.")
+            return bake_image.filepath
         else:
-            self.report({'ERROR'}, "Failed to bake image data.")
+            logger.error("Failed to bake image data.")
+            return None
 
-        # Cleanup
-        bake_mat.node_tree.nodes.remove(tex_image)
-
-    def get_baked_texture_name(self, obj):
-        """Generate a unique name for the baked texture."""
-        datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
-        return f"{obj.name}_baked_{datetime_str}.png"
-
-    def cleanup(self, context, temp_meshes, original_engine, original_materials):
-        """Cleanup function to remove temporary objects and restore original settings."""
-        for temp_mesh in temp_meshes:
-            if temp_mesh:
-                bpy.data.objects.remove(temp_mesh, do_unlink=True)
-        context.scene.render.engine = original_engine
-        for obj, mats in original_materials.items():
-            obj.data.materials.clear()
-            for mat in mats:
-                obj.data.materials.append(mat)
+    def apply_baked_texture(self, context, mesh, texture_path):
+        logger.info("Applying baked texture to mesh.")
+        mat = bpy.data.materials.get("FinalMaterial") or bpy.data.materials.new(name="FinalMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        tex_image = nodes.new('ShaderNodeTexImage')
+        tex_image.image = bpy.data.images.load(texture_path, check_existing=True)
+        output = nodes.new('ShaderNodeOutputMaterial')
+        links = mat.node_tree.links
+        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        mesh.data.materials.clear()
+        mesh.data.materials.append(mat)
+        logger.info("Texture applied successfully.")
 
     def subdivide_mesh(self, mesh):
         """Subdivide the mesh without smoothing."""
         subdiv_modifier = mesh.modifiers.new(name="Subdiv", type='SUBSURF')
         subdiv_modifier.levels = 2  # Set subdivision level, adjust as needed
         subdiv_modifier.subdivision_type = 'SIMPLE'
+        
+    def cleanup(self, context, meshes, original_engine, original_materials):
+        logger.info("Cleaning up temporary changes.")
+        for mesh in meshes:
+            bpy.data.meshes.remove(mesh.data, do_unlink=True)
+        context.scene.render.engine = original_engine
+        for obj, mats in original_materials.items():
+            obj.data.materials.clear()
+            for mat in mats:
+                obj.data.materials.append(mat)
+        logger.info("Cleanup completed.")
 
+class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
+    """Operator to create and bake a debug plane for texture projection visualization."""
+    bl_idname = "zenv.create_debug_plane"
+    bl_label = "Create Debug Plane"
+
+    def execute(self, context):
+        camera = context.scene.camera
+        if not camera:
+            logger.error("No active camera found.")
+            self.report({'ERROR'}, "No active camera found.")
+            return {'CANCELLED'}
+
+        intermediate_plane = self.create_plane("IntermediateDebugPlane", camera, -2)
+        self.setup_baking_material(intermediate_plane, context.scene.zenv_texture_path)
+
+        receiver_plane = self.create_plane("ReceiverPlane", camera, -2.1)
+        self.setup_receiver_material(receiver_plane)
+
+        if not self.bake_texture(intermediate_plane, receiver_plane):
+            logger.error("Failed to bake texture.")
+            self.report({'ERROR'}, "Failed to bake texture.")
+            return {'CANCELLED'}
+
+        result_plane = self.create_plane("ResultDebugPlane", camera, -3)
+        self.setup_result_material(result_plane, receiver_plane)
+
+        logger.info("Debug projection plane created and texture baked successfully.")
+        self.report({'INFO'}, "Debug projection plane created and texture baked successfully.")
+        return {'FINISHED'}
+
+    def create_plane(self, name, camera, offset):
+        bpy.ops.mesh.primitive_plane_add(size=1, enter_editmode=False, location=camera.location + camera.matrix_world.normalized().to_quaternion() @ Vector((0, 0, offset)))
+        plane = bpy.context.active_object
+        plane.name = name
+        plane.rotation_euler = camera.rotation_euler
+        plane.rotation_euler.x += math.pi
+        return plane
+
+    def setup_baking_material(self, plane, texture_path):
+        mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+        tex_image = nodes.new(type='ShaderNodeTexImage')
+        tex_image.name = "BakingTextureNode"  # Correct naming
+        output = nodes.new(type='ShaderNodeOutputMaterial')
+        tex_image.image = bpy.data.images.load(texture_path, check_existing=True)
+        links = mat.node_tree.links
+        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        plane.data.materials.append(mat)
+
+    def setup_receiver_material(self, plane):
+        mat = bpy.data.materials.new(name="ReceiverMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        tex_image = nodes.new('ShaderNodeTexImage')
+        tex_image.name = "ReceiverTextureNode"  # Ensure consistent naming
+        output = nodes.new('ShaderNodeOutputMaterial')
+        tex_image.image = bpy.data.images.new(name="ReceiverTexture", width=1024, height=1024, alpha=False)
+        links = mat.node_tree.links
+        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        plane.data.materials.append(mat)
+
+    def setup_result_material(self, plane, source_plane):
+        mat = bpy.data.materials.new(name="ResultMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        output = nodes.new('ShaderNodeOutputMaterial')
+        # Retrieve the texture node using the correct name
+        tex_node = source_plane.data.materials[0].node_tree.nodes.get("ReceiverTextureNode")
+        if tex_node and tex_node.image:
+            tex_image = nodes.new('ShaderNodeTexImage')
+            tex_image.image = tex_node.image
+            links = mat.node_tree.links
+            links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+            links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+            plane.data.materials.append(mat)
+        else:
+            logger.error("Failed to find the texture image on the source plane.")
+
+    def bake_texture(self, source_plane, target_plane):
+        bpy.context.scene.render.engine = 'CYCLES'
+        bpy.context.scene.cycles.bake_type = 'DIFFUSE'
+        bpy.context.scene.render.bake.use_pass_direct = False
+        bpy.context.scene.render.bake.use_pass_indirect = False
+        source_plane.select_set(True)
+        target_plane.select_set(True)
+        bpy.context.view_layer.objects.active = target_plane
+        bpy.ops.object.bake(type='DIFFUSE', save_mode='EXTERNAL', use_selected_to_active=True)
+        return True
+    
 #//======================================================================================================
 def register():
     bpy.utils.register_class(ZENV_PT_CamProjPanel)
     bpy.utils.register_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.register_class(ZENV_OT_BakeTexture)
+    bpy.utils.register_class(ZENV_OT_CreateDebugPlane)  # Register the new operator
     bpy.types.Scene.zenv_texture_path = bpy.props.StringProperty(
         name="Texture File Path",
         subtype='FILE_PATH'
@@ -291,8 +362,10 @@ def unregister():
     bpy.utils.unregister_class(ZENV_PT_CamProjPanel)
     bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.unregister_class(ZENV_OT_BakeTexture)
+    bpy.utils.unregister_class(ZENV_OT_CreateDebugPlane)  # Unregister the new operator
     del bpy.types.Scene.zenv_texture_path
     del bpy.types.Scene.zenv_ortho_scale
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
