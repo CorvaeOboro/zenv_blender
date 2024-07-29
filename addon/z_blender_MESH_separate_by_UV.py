@@ -129,6 +129,27 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
             # Ensure each iteration starts with a fresh selection
             bm.faces.ensure_lookup_table()
 
+            # Calculate the offset for the quadrant
+            offset_x = -1 if quadrant[0] == 0 else 1
+            offset_y = -1 if quadrant[1] == 0 else 1
+
+            # Get the newly created object
+            new_obj = context.selected_objects[0]
+            new_bm = bmesh.new()
+            new_bm.from_mesh(new_obj.data)
+            new_uv_layer = new_bm.loops.layers.uv.verify()
+
+            # Apply the offset to the UV coordinates
+            for face in new_bm.faces:
+                for loop in face.loops:
+                    loop_uv = loop[new_uv_layer].uv
+                    loop_uv.x += offset_x
+                    loop_uv.y += offset_y
+
+            # Update the mesh with the new UVs
+            new_bm.to_mesh(new_obj.data)
+            new_bm.free()
+
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
     
