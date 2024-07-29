@@ -35,9 +35,8 @@ def create_parabola_object(context, curve_data, rotation):
    # Create an object with the curve data
    curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
    bpy.context.collection.objects.link(curve_object)
-   ...
-    
- def create_parabola_object(context, curve_data, rotation):
+
+def create_parabola_object(context, curve_data, rotation):
    # Create an object with the curve data
     curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
     bpy.context.collection.objects.link(curve_object)
@@ -55,6 +54,7 @@ def create_parabola_object(context, curve_data, rotation):
 def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
     curve_data = create_curve_data(length, angle, curve_resolution)
     curve_object = create_parabola_object(context, curve_data, rotation)
+
 def set_bezier_points_with_handles(spline, start, control, end):
     spline.bezier_points[0].co = start
     spline.bezier_points[1].co = control
@@ -67,12 +67,8 @@ def add_uv_mapping(mesh_object):
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.uv.unwrap()
     bpy.ops.object.mode_set(mode='OBJECT')
-
     return mesh_object
 
-def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
-    curve_data = create_curve_data(length, angle, curve_resolution)
-    curve_object = create_parabola_object(context, curve_data, rotation)
 class ZENVProperties(PropertyGroup):
     angle: FloatProperty(
         name="Angle",
