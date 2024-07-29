@@ -87,9 +87,14 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
 
     def execute(self, context):
         obj = context.active_object
-        if not obj or obj.type != 'MESH':
-            self.report({'ERROR'}, "Active object is not a mesh")
-            return {'CANCELLED'}
+        bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(obj.data)
+        uv_layer = bm.loops.layers.uv.verify()
+    
+        quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
+        self.separate_and_offset_uv(context, obj, quadrant_faces)
+        self.finish_up(context, obj)
+        return {'FINISHED'}
 
     def get_uv_quadrant(self, face, uv_layer):
         """Calculate the UV quadrant for a given face based on its first vertex."""
@@ -151,16 +156,6 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
         obj.select_set(True)
         context.view_layer.objects.active = obj
 
-    def execute(self, context):
-        obj = context.active_object
-        bpy.ops.object.mode_set(mode='EDIT')
-        bm = bmesh.from_edit_mesh(obj.data)
-        uv_layer = bm.loops.layers.uv.verify()
-    
-        quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
-        self.separate_and_offset_uv(context, obj, quadrant_faces)
-        self.finish_up(context, obj)
-        return {'FINISHED'}
 
 #=============================================================================
 # UI SIDE PANEL
