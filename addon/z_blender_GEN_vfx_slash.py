@@ -19,15 +19,11 @@ def create_curve_data(length, angle, curve_resolution):
     if curve_resolution < 2:
         raise ValueError("Curve resolution must be 2 or greater.")
 
-    
-
     try:
         # Create a new curve object
         curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
         curve_data.dimensions = '3D'
 
-
-    
         # Add a new spline to the curve
         spline = curve_data.splines.new('BEZIER')
 
@@ -48,7 +44,6 @@ def create_parabola_object(context, curve_data, rotation):
     if not curve_data:
         raise ValueError("Curve data must not be None")
     
-
     try:
         # Create an object with the curve data
         curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
@@ -101,12 +96,6 @@ def set_bezier_points_with_handles(spline, points):
         spline.bezier_points[i].handle_right_type = 'AUTO'
         spline.bezier_points[i].handle_left_type = 'AUTO'
 
-def add_uv_mapping(curve_object):
-    if curve_object.type == 'MESH':
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.uv.unwrap()
-        bpy.ops.object.mode_set(mode='OBJECT')
-
 def convert_curve_to_mesh(curve_object):
     """
     Convert a curve object to a mesh object.
@@ -127,6 +116,11 @@ def convert_curve_to_mesh(curve_object):
         # Handle unexpected errors during conversion
         raise RuntimeError("Failed to convert curve to mesh: {}".format(str(e)))
 
+def add_uv_mapping(curve_object):
+    if curve_object.type == 'MESH':
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.uv.unwrap()
+        bpy.ops.object.mode_set(mode='OBJECT')
 
 #===================================================================
 # PROPERTIES
