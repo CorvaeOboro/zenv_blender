@@ -126,10 +126,10 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
     
-class MESH_PT_separate_by_uv(bpy.types.Panel):
-    """Creates a Panel in the Object properties window"""
+class MESH_PT_separate_by_uv_combined(bpy.types.Panel):
+    """Creates a Panel in the Object properties window for separating by UV"""
     bl_label = "Separate Mesh by UV"
-    bl_idname = "MESH_PT_separate_by_uv"
+    bl_idname = "MESH_PT_separate_by_uv_combined"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -138,17 +138,8 @@ class MESH_PT_separate_by_uv(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator("mesh.separate_by_uv_islands")
-
-class MESH_PT_separate_by_uv_quadrant(bpy.types.Panel):
-    """Creates a Panel in the Object properties window for separating by UV quadrant"""
-    bl_label = "Separate Mesh by UV Quadrant"
-    bl_idname = "MESH_PT_separate_by_uv_quadrant"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'ZENV'
-    bl_context = "objectmode"
-
-    def draw(self, context):
+        layout.separator()
+        layout.operator("mesh.separate_by_uv_quadrant")
         layout = self.layout
         layout.operator("mesh.separate_by_uv_quadrant")
 
