@@ -161,7 +161,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
 
     def restore_state(self, context, state):
         """Restore the original render engine and materials of selected objects."""
-        self.cleanup(context, state['original_engine'], state['original_materials'])
+        self.cleanup(context, state['original_obj'], state['original_engine'], state['original_materials'])
 
     def initial_checks(self, context):
         # Check for the presence of a selected object, an active camera, and that the object is a mesh
