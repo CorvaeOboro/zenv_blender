@@ -20,15 +20,16 @@ def create_curve_data(length, angle, curve_resolution):
         raise ValueError("Curve resolution must be 2 or greater.")
 
     
+
     try:
         # Create a new curve object
         curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
         curve_data.dimensions = '3D'
 
+
     
         # Add a new spline to the curve
         spline = curve_data.splines.new('BEZIER')
-        spline.bezier_points.add(curve_resolution - 1)
 
         # Define parabola control points
         start_point = Vector((0, 0, 0))
