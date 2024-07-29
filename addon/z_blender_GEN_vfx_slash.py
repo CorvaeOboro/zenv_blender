@@ -106,16 +106,6 @@ def add_uv_mapping(curve_object):
         bpy.ops.uv.unwrap()
         bpy.ops.object.mode_set(mode='OBJECT')
 
-def get_zenv_properties(context):
-    return context.scene.zenv_properties
-
-def draw_properties(layout, props):
-    layout.prop(props, "angle")
-    layout.prop(props, "rotation")
-    layout.prop(props, "length")
-    layout.prop(props, "curve_resolution")
-
-
 def convert_curve_to_mesh(curve_object):
     """
     Convert a curve object to a mesh object.
@@ -137,6 +127,8 @@ def convert_curve_to_mesh(curve_object):
         raise RuntimeError("Failed to convert curve to mesh: {}".format(str(e)))
 
 
+#===================================================================
+# PROPERTIES
 class ZENVProperties(PropertyGroup):
     angle: FloatProperty(
         name="Angle",
@@ -181,6 +173,16 @@ class OBJECT_OT_add_parabola_mesh(Operator):
         else:
             self.report({'ERROR'}, "Failed to create parabola mesh.")
         return {'FINISHED'}
+
+def get_zenv_properties(context):
+    return context.scene.zenv_properties
+
+def draw_properties(layout, props):
+    layout.prop(props, "angle")
+    layout.prop(props, "rotation")
+    layout.prop(props, "length")
+    layout.prop(props, "curve_resolution")
+
 
 #===================================================================
 # UI PANEL
