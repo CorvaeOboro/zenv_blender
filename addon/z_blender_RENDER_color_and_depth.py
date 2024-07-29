@@ -31,17 +31,18 @@ class ZENV_PT_RenderQuick(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.operator("zenv.render_complete_datetime")
         layout.operator("zenv.render_color_datetime")
         layout.operator("zenv.render_depth_datetime")
 
 #//==================================================================================================
 
-class ZENV_OT_RenderColor(bpy.types.Operator):
-    bl_idname = "zenv.render_color_datetime"
-    bl_label = "Render Flat Color"
+class ZENV_OT_RenderComplete(bpy.types.Operator):
+    bl_idname = "zenv.render_complete_datetime"
+    bl_label = "Render Complete Shading Lighting"
 
     def execute(self, context):
-        logging.info("Starting flat color rendering...")
+        logging.info("Starting complete shading lighting rendering...")
         selected_objects = context.selected_objects
 
         if not context.scene.camera or not selected_objects:
@@ -160,6 +161,125 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
                 self.report({'ERROR'}, f"Failed to render image for {obj.name}.")
                 logging.error("Rendered image file not found for " + obj.name)
 
+class ZENV_OT_RenderColor(bpy.types.Operator):
+    bl_idname = "zenv.render_color_datetime"
+    bl_label = "Render Flat Color"
+
+    def execute(self, context):
+        logging.info("Starting flat color rendering...")
+        
+        if not context.scene.camera:
+            self.report({'ERROR'}, "No active camera found.")
+            return {'CANCELLED'}
+
+        # Store original state
+        original_engine = context.scene.render.engine
+        original_materials = {obj: obj.active_material for obj in bpy.data.objects if obj.type == 'MESH'}
+        # Store original settings
+        original_settings = {
+            'engine': context.scene.render.engine,
+            'display_device': context.scene.display_settings.display_device,
+            'view_transform': context.scene.view_settings.view_transform,
+            'color_space': context.scene.sequencer_colorspace_settings.name
+        }
+
+        # Set up for accurate color rendering
+        self.setup_render_settings(context) # Standard , not AgX 
+
+        # Setup for flat color rendering using temporary emission materials
+        self.setup_flat_color_rendering(context)
+
+        # Render and save image
+        self.render_and_save_image(context)
+
+        # Restore original state
+        self.restore_scene(context, original_engine, original_materials)
+        # Restore original settings
+        self.restore_original_settings(context, original_settings)
+
+        return {'FINISHED'}
+        
+    def setup_flat_color_rendering(self, context):
+        logging.info("Configuring materials for flat color rendering...")
+        for obj in bpy.data.objects:
+            if obj.type == 'MESH' and obj.data.materials:
+                for slot in obj.material_slots:
+                    original_mat = slot.material
+                    if original_mat and original_mat.use_nodes:
+                        # Create a temporary emission material
+                        temp_mat = bpy.data.materials.new(name="TempEmissionMaterial")
+                        temp_mat.use_nodes = True
+                        node_tree = temp_mat.node_tree
+                        nodes = node_tree.nodes
+                        nodes.clear()  # Clear default nodes
+
+                        emission_node = nodes.new(type='ShaderNodeEmission')
+                        output_node = nodes.new(type='ShaderNodeOutputMaterial')
+                        node_tree.links.new(emission_node.outputs['Emission'], output_node.inputs['Surface'])
+
+                        # Find the Principled BSDF and its connected texture node
+                        principled_node = next((node for node in original_mat.node_tree.nodes if node.type == 'BSDF_PRINCIPLED'), None)
+                        if principled_node:
+                            base_color_input = principled_node.inputs['Base Color']
+                            for link in base_color_input.links:
+                                if link.from_node.type == 'TEX_IMAGE':
+                                    # Copy the texture node to the new material
+                                    texture_node = nodes.new(type='ShaderNodeTexImage')
+                                    texture_node.image = link.from_node.image
+                                    node_tree.links.new(texture_node.outputs['Color'], emission_node.inputs['Color'])
+                                    break
+                        else:
+                            # If no Principled BSDF is found or no texture is connected, use a default color
+                            emission_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)  # White color
+
+                        slot.material = temp_mat
+
+        return True
+
+    def setup_render_settings(self, context):
+        logging.info("Configuring render settings for accurate color rendering...")
+        scene = context.scene
+
+        # Set color management to standard sRGB for consistency
+        scene.display_settings.display_device = 'sRGB'
+        scene.view_settings.view_transform = 'Standard'
+        scene.sequencer_colorspace_settings.name = 'sRGB'
+
+        # Ensure the render engine is set up without post-processing effects
+        scene.render.engine = 'BLENDER_EEVEE'
+        scene.eevee.use_gtao = False  # Global illumination off
+        scene.eevee.use_bloom = False  # Bloom effect off
+        scene.eevee.use_ssr = False  # Screen space reflections off
+        scene.render.image_settings.file_format = 'PNG'  # Output as PNG
+
+        # Adjust additional settings to ensure flat color rendering with no shading effects
+        scene.world.color = (1, 1, 1)  # World background color to white
+
+    def restore_original_settings(self, context, original_settings):
+        logging.info("Restoring original render settings...")
+        scene = context.scene
+        scene.display_settings.display_device = original_settings['display_device']
+        scene.view_settings.view_transform = original_settings['view_transform']
+        scene.sequencer_colorspace_settings.name = original_settings['color_space']
+        scene.render.engine = original_settings['engine']
+
+    def render_and_save_image(self, context):
+        logging.info("Rendering and saving image...")
+        datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
+        texture_folder = os.path.join(os.path.dirname(bpy.data.filepath), "textures")
+        os.makedirs(texture_folder, exist_ok=True)
+        image_name = f"flat_color_{datetime_str}.png"
+        render_filepath = os.path.join(texture_folder, image_name)
+        context.scene.render.filepath = render_filepath
+        bpy.ops.render.render(write_still=True)
+
+    def restore_scene(self, context, original_engine, original_materials):
+        logging.info("Restoring original materials and render engine settings...")
+        context.scene.render.engine = original_engine
+        for obj, mat in original_materials.items():
+            if obj.type == 'MESH':
+                obj.active_material = mat
+
 
 class ZENV_OT_RenderDepth(bpy.types.Operator):
     bl_idname = "zenv.render_depth_datetime"
@@ -237,21 +357,22 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
         comp = tree.nodes.new('CompositorNodeComposite')
 
         # Transform object vertices to camera space
-        mat = camera.matrix_world.normalized().inverted()
-        local_coords = [mat @ obj.matrix_world @ v.co for v in obj.data.vertices]
-        distances = [np.linalg.norm(co - camera.location) for co in local_coords]
-        min_distance = min(distances)
-        max_distance = max(distances)
+        cam_matrix_inv = camera.matrix_world.inverted()
+        local_coords = [cam_matrix_inv @ obj.matrix_world @ Vector(v.co) for v in obj.data.vertices]
+        
+        # Calculate distances in camera space (z-depth)
+        z_depths = [-co.z for co in local_coords]  # Negative because camera looks down negative Z-axis
+        min_depth = min(z_depths)
+        max_depth = max(z_depths)
 
-        # General multiplier for depth range adjustment
-        depth_min_multiplier = 0.35  # Adjust this as needed
-        depth_multiplier = 0.5  # Adjust this as needed
         # Set up Map Range node to normalize depth
-        camera = context.scene.camera
-        map_range.inputs['From Min'].default_value = min_distance * depth_min_multiplier
-        map_range.inputs['From Max'].default_value = max_distance * depth_multiplier
+        map_range.inputs['From Min'].default_value = min_depth
+        map_range.inputs['From Max'].default_value = max_depth
         map_range.inputs['To Min'].default_value = 0
         map_range.inputs['To Max'].default_value = 1
+
+        # Adjust the curve of the depth map (optional)
+        map_range.use_clamp = True
 
         # Link nodes
         tree.links.new(render_layers.outputs['Depth'], map_range.inputs[0])
@@ -295,11 +416,13 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
 #//======================================================================================================
 def register():
     bpy.utils.register_class(ZENV_PT_RenderQuick)
+    bpy.utils.register_class(ZENV_OT_RenderComplete)
     bpy.utils.register_class(ZENV_OT_RenderColor)
     bpy.utils.register_class(ZENV_OT_RenderDepth)
     
 def unregister():
     bpy.utils.unregister_class(ZENV_PT_RenderQuick)
+    bpy.utils.unregister_class(ZENV_OT_RenderComplete)
     bpy.utils.unregister_class(ZENV_OT_RenderColor)
     bpy.utils.unregister_class(ZENV_OT_RenderDepth)
 
