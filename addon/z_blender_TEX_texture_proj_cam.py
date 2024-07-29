@@ -225,10 +225,11 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         uv_project_modifier.projectors[0].object = camera
         mesh.data.uv_layers.active.name = "UVProject"
         # Set the UV Project modifier's scale based on the camera's orthographic scale
-        aspect_ratio = camera.data.sensor_width / camera.data.sensor_height
-        uv_project_modifier.aspect_x = aspect_ratio
+        # aspect_ratio = camera.data.sensor_width / camera.data.sensor_height
+        uv_project_modifier.aspect_x = 1
         uv_project_modifier.aspect_y = 1
-        uv_project_modifier.scale_x = ortho_scale / aspect_ratio
+        #uv_project_modifier.scale_x = ortho_scale / aspect_ratio
+        uv_project_modifier.scale_x = ortho_scale 
         uv_project_modifier.scale_y = ortho_scale
         logger.info("UV Project modifier added to mesh.")
     
@@ -364,87 +365,6 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
             for mat in mats:
                 obj.data.materials.append(mat)
         logger.info("Original state restored.")
-
-    # The remove_temporary_meshes method is no longer needed as we are keeping the temporary meshes for debugging
-    # Therefore, it has been removed from the class
-
-
-class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
-    """Operator to create and bake a debug plane for texture projection visualization."""
-    bl_idname = "zenv.create_debug_plane"
-    bl_label = "Create Debug Plane"
-    bl_description = "Creates a debug plane to visualize the texture projection process"
-
-    def execute(self, context):
-        camera = context.scene.camera
-        if not camera:
-            logger.error("No active camera found.")
-            self.report({'ERROR'}, "No active camera found.")
-            return {'CANCELLED'}
-
-        intermediate_plane = self.create_plane("IntermediateDebugPlane", camera, -2)
-        self.setup_baking_material(intermediate_plane, context.scene.zenv_texture_path)
-
-        receiver_plane = self.create_plane("ReceiverPlane", camera, -2.1)
-        self.setup_receiver_material(receiver_plane)
-
-        if not self.bake_texture(intermediate_plane, receiver_plane):
-            logger.error("Failed to bake texture.")
-            self.report({'ERROR'}, "Failed to bake texture.")
-            return {'CANCELLED'}
-
-        result_plane = self.create_plane("ResultDebugPlane", camera, -3)
-        self.setup_result_material(result_plane, receiver_plane)
-
-        logger.info("Debug projection plane created and texture baked successfully.")
-        self.report({'INFO'}, "Debug projection plane created and texture baked successfully.")
-        return {'FINISHED'}
-
-    def create_plane(self, name, camera, offset):
-        # Create a plane at a specified offset from the camera
-        bpy.ops.mesh.primitive_plane_add(size=1, enter_editmode=False, location=camera.location + camera.matrix_world.normalized().to_quaternion() @ Vector((0, 0, offset)))
-        plane = bpy.context.active_object
-        plane.name = name
-        plane.rotation_euler = camera.rotation_euler
-        plane.rotation_euler.x += math.pi
-        return plane
-
-    def setup_baking_material(self, plane, texture_path):
-        # Set up a material for the plane with the specified texture for baking
-        mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
-        image = bpy.data.images.load(texture_path, check_existing=True)
-        setup_material_nodes(mat, image)
-        plane.data.materials.append(mat)
-
-    def setup_receiver_material(self, plane):
-        # Set up a material for the plane that will receive the baked texture
-        mat = bpy.data.materials.new(name="ReceiverMaterial")
-        image = bpy.data.images.new(name="ReceiverTexture", width=1024, height=1024, alpha=False)
-        setup_material_nodes(mat, image)
-        plane.data.materials.append(mat)
-
-    def setup_result_material(self, plane, source_plane):
-        # Set up a material for the plane that will display the result of the baking process
-        mat = bpy.data.materials.new(name="ResultMaterial")
-        # Retrieve the texture image from the source plane's material
-        tex_image = next((node for node in source_plane.data.materials[0].node_tree.nodes if node.type == 'TEX_IMAGE'), None)
-        if tex_image and tex_image.image:
-            setup_material_nodes(mat, tex_image.image)
-            plane.data.materials.append(mat)
-        else:
-            logger.error("Failed to find the texture image on the source plane.")
-
-    def bake_texture(self, source_plane, target_plane):
-        # Perform the baking process from the source plane to the target plane
-        bpy.context.scene.render.engine = 'CYCLES'
-        bpy.context.scene.cycles.bake_type = 'DIFFUSE'
-        bpy.context.scene.render.bake.use_pass_direct = False
-        bpy.context.scene.render.bake.use_pass_indirect = False
-        source_plane.select_set(True)
-        target_plane.select_set(True)
-        bpy.context.view_layer.objects.active = target_plane
-        bpy.ops.object.bake(type='DIFFUSE', save_mode='EXTERNAL', use_selected_to_active=True)
-        return True
     
 #//======================================================================================================
 # GLOBAL FUNCTIONS 
@@ -470,7 +390,7 @@ def register():
     bpy.utils.register_class(ZENV_PT_CamProjPanel)
     bpy.utils.register_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.register_class(ZENV_OT_BakeTexture)
-    bpy.utils.register_class(ZENV_OT_CreateDebugPlane)  # Register the new operator
+
     bpy.types.Scene.zenv_texture_path = bpy.props.StringProperty(
         name="Texture File Path",
         subtype='FILE_PATH'
@@ -487,7 +407,7 @@ def unregister():
     bpy.utils.unregister_class(ZENV_PT_CamProjPanel)
     bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.unregister_class(ZENV_OT_BakeTexture)
-    bpy.utils.unregister_class(ZENV_OT_CreateDebugPlane)  # Unregister the new operator
+
     del bpy.types.Scene.zenv_texture_path
     del bpy.types.Scene.zenv_ortho_scale
 
