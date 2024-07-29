@@ -40,7 +40,7 @@ class ZENV_PT_CamProjPanel(bpy.types.Panel):
 
 
 #//==================================================================================================
-
+# CREATE ORTHOGRAPHIC CAMERA FROM CURRENT VIEW 
 class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
     """Operator to set the camera to the current view."""
     bl_idname = "zenv.create_camera_proj"
@@ -68,9 +68,6 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
             self.report({'ERROR'}, "Failed to set orthographic camera properties.")
             return False
         return True
-
-        self.match_camera_to_current_view(camera_object)
-        self.set_orthographic_camera_properties(camera_object)
 
     def match_camera_to_current_view(self, camera_object):
         """Match the camera object's transformation with the current 3D view."""
@@ -328,6 +325,13 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
                 obj.data.materials.append(mat)
         logger.info("Cleanup completed.")
 
+    def remove_temporary_meshes(self, context):
+        """Remove temporary meshes created during the baking process."""
+        for obj in context.selected_objects:
+            if "temp_" in obj.name:
+                bpy.data.meshes.remove(obj.data, do_unlink=True)
+
+
 class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
     """Operator to create and bake a debug plane for texture projection visualization."""
     bl_idname = "zenv.create_debug_plane"
@@ -463,9 +467,4 @@ def unregister():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     register()
-    def remove_temporary_meshes(self, context):
-        """Remove temporary meshes created during the baking process."""
-        for obj in context.selected_objects:
-            if "temp_" in obj.name:
-                bpy.data.meshes.remove(obj.data, do_unlink=True)
 
