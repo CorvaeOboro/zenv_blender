@@ -83,6 +83,24 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
     bl_label = "Separate by UV Quadrant"
     bl_options = {'REGISTER', 'UNDO'}
 
+    @staticmethod
+    def get_uv_quadrant(face, uv_layer):
+        """Calculate the average UV quadrant for a given face."""
+        u_avg = sum(loop[uv_layer].uv.x for loop in face.loops) / len(face.loops)
+        v_avg = sum(loop[uv_layer].uv.y for loop in face.loops) / len(face.loops)
+        return math.floor(u_avg), math.floor(v_avg)
+
+    @classmethod
+    def separate_faces_by_quadrant(cls, bm, uv_layer):
+        """Separate faces by their UV quadrant."""
+        quadrant_faces = {}
+        for face in bm.faces:
+            quadrant_id = cls.get_uv_quadrant(face, uv_layer)
+            if quadrant_id not in quadrant_faces:
+                quadrant_faces[quadrant_id] = []
+            quadrant_faces[quadrant_id].append(face)
+        return quadrant_faces
+
     def execute(self, context):
         obj = context.active_object
         if not obj or obj.type != 'MESH':
@@ -93,27 +111,14 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(obj.data)
         uv_layer = bm.loops.layers.uv.verify()
         
-        # Dictionary to store faces by their quadrant
-        quadrant_faces = {}
 
-        # Determine the quadrant for each face
-        for face in bm.faces:
-            u_avg = sum(loop[uv_layer].uv.x for loop in face.loops) / len(face.loops)
-            v_avg = sum(loop[uv_layer].uv.y for loop in face.loops) / len(face.loops)
-
-            # Determine quadrant index based on average UV coordinates
-            quadrant_x = math.floor(u_avg)
-            quadrant_y = math.floor(v_avg)
-
-            quadrant_id = (quadrant_x, quadrant_y)
-            if quadrant_id not in quadrant_faces:
-                quadrant_faces[quadrant_id] = []
-            quadrant_faces[quadrant_id].append(face)
+        quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
 
         # Update BMesh to deselect all initially
         bpy.ops.mesh.select_all(action='DESELECT')
         bmesh.update_edit_mesh(obj.data)
         
+
         # Separate faces by quadrant
         for quadrant, faces in quadrant_faces.items():
             for face in faces:
@@ -122,6 +127,9 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
             bmesh.update_edit_mesh(obj.data)
             bpy.ops.mesh.separate(type='SELECTED')
             bpy.ops.mesh.select_all(action='DESELECT')
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+        return {'FINISHED'}
         
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
