@@ -44,15 +44,22 @@ def create_curve_data(length, angle, curve_resolution):
         raise RuntimeError("Failed to create curve data: {}".format(str(e)))
 
 def create_parabola_object(context, curve_data, rotation):
-    # Create an object with the curve data
-    curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
-    bpy.context.collection.objects.link(curve_object)
+    if not curve_data:
+        raise ValueError("Curve data must not be None")
     
 
-    # Apply rotation
-    curve_object.rotation_euler = (0, 0, rotation)
+    try:
+        # Create an object with the curve data
+        curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
+        context.collection.objects.link(curve_object)
 
-    return curve_object
+        # Apply rotation
+        curve_object.rotation_euler = (radians(rotation), 0, 0)
+
+        return curve_object
+    except Exception as e:
+        # Handle unexpected errors during object creation
+        raise RuntimeError("Failed to create parabola object: {}".format(str(e)))
 
 def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
     curve_data = create_curve_data(length, angle, curve_resolution)
@@ -92,7 +99,13 @@ def convert_curve_to_mesh(curve_object):
     # Convert curve to mesh
     bpy.context.view_layer.objects.active = curve_object
     bpy.ops.object.convert(target='MESH')
-    return curve_object
+        # Apply rotation
+        curve_object.rotation_euler = (radians(rotation), 0, 0)
+
+        return curve_object
+    except Exception as e:
+        # Handle unexpected errors during object creation
+        raise RuntimeError("Failed to create parabola object: {}".format(str(e)))
 
 
 class ZENVProperties(PropertyGroup):
