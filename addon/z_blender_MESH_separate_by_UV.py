@@ -77,6 +77,8 @@ class MESH_OT_separate_by_uv(bpy.types.Operator):
         other_uvs = [loop[uv_layer].uv.copy() for loop in face2.loops]
         return any(uv in other_uvs for uv in shared_uvs)
 
+#=============================================================================
+# SEPARATE BY UV QUADRANTS 
 class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
     """Separate the mesh by the average UV quadrant of each face"""
     bl_idname = "mesh.separate_by_uv_quadrant"
@@ -130,10 +132,9 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
 
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
-        
-        bpy.ops.object.mode_set(mode='OBJECT')
-        return {'FINISHED'}
     
+#=============================================================================
+# UI SIDE PANEL
 class MESH_PT_separate_by_uv_combined(bpy.types.Panel):
     """Creates a Panel in the Object properties window for separating by UV"""
     bl_label = "Separate Mesh by UV"
