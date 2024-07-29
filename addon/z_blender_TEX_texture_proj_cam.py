@@ -258,6 +258,11 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         bake_image = self.create_bake_image()
         self.setup_baking_material(target_mesh, bake_image)
         context.scene.render.engine = 'CYCLES'
+        # Ensure the source and target meshes are selected and the target is active
+        bpy.ops.object.select_all(action='DESELECT')
+        source_mesh.select_set(True)
+        target_mesh.select_set(True)
+        context.view_layer.objects.active = target_mesh
         bpy.ops.object.bake(type='DIFFUSE', save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True)
         if bake_image.has_data:
             bake_image.save_render(bake_image.filepath)
