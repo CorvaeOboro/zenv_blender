@@ -17,9 +17,6 @@ def create_curve_data(length, angle, curve_resolution):
     # Create a new curve object
     curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
     curve_data.dimensions = '3D'
-    spline = curve_data.splines.new('BEZIER')
-    spline.bezier_points.add(curve_resolution - 1)
-
     spline.bezier_points.add(curve_resolution - 1)
 
     
@@ -32,11 +29,6 @@ def create_curve_data(length, angle, curve_resolution):
     # Set points of the Bézier curve with handles
     set_bezier_points_with_handles(spline, start_point, control_point, end_point)
     return curve_data
-
-def create_parabola_object(context, curve_data, rotation):
-   # Create an object with the curve data
-   curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
-   bpy.context.collection.objects.link(curve_object)
 
 def create_parabola_object(context, curve_data, rotation):
     # Create an object with the curve data
@@ -72,7 +64,6 @@ def add_uv_mapping(curve_object):
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.uv.unwrap()
         bpy.ops.object.mode_set(mode='OBJECT')
-    return mesh_object
 
 def get_zenv_properties(context):
     return context.scene.zenv_properties
@@ -83,25 +74,6 @@ def draw_properties(layout, props):
     layout.prop(props, "length")
     layout.prop(props, "curve_resolution")
 
-def get_zenv_properties(context):
-    return context.scene.zenv_properties
-
-def draw_properties(layout, props):
-    layout.prop(props, "angle")
-    layout.prop(props, "rotation")
-    layout.prop(props, "length")
-    layout.prop(props, "curve_resolution")
-def convert_curve_to_mesh(curve_object):
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = curve_object
-    bpy.ops.object.convert(target='MESH')
-    return curve_object
-
-def convert_curve_to_mesh(curve_object):
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = curve_object
-    bpy.ops.object.convert(target='MESH')
-    return curve_object
 
 def convert_curve_to_mesh(curve_object):
     # Convert curve to mesh
@@ -170,9 +142,6 @@ class ZENV_PT_panel(Panel):
         props = scene.zenv_properties
         
         draw_properties(layout, props)
-        layout.prop(props, "rotation")
-        layout.prop(props, "length")
-        layout.prop(props, "curve_resolution")
         layout.operator("object.add_parabola_mesh")
 
 def register():
