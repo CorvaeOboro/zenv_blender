@@ -52,7 +52,7 @@ class MESH_OT_separate_by_uv(bpy.types.Operator):
         return {'FINISHED'}
 
     def get_first_uv_island(self, bm, uv_layer):
-        """ Find and return the first UV island as a list of face indices. """
+        """Find and return the first UV island as a list of face indices."""
         faces_visited = set()
         for face in bm.faces:
             if face not in faces_visited:
@@ -72,7 +72,7 @@ class MESH_OT_separate_by_uv(bpy.types.Operator):
         return None
 
     def faces_share_uv_edge(self, face1, face2, uv_layer):
-        """ Determine if two faces share a UV edge. """
+        """Determine if two faces share a UV edge."""
         shared_uvs = [loop[uv_layer].uv.copy() for loop in face1.loops]
         other_uvs = [loop[uv_layer].uv.copy() for loop in face2.loops]
         return any(uv in other_uvs for uv in shared_uvs)
@@ -185,3 +185,6 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
+# TODO:  MESH_OT_separate_by_uv_quadrant did not properly offset the faces after separation , organize the function so that even if no separation is neccesary it will still check to
+#  see if the UVs are in need of an offset to put them closer to 0-1 UV space
