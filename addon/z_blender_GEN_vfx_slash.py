@@ -19,15 +19,17 @@ def create_curve_data(length, angle, curve_resolution):
     curve_data.dimensions = '3D'
     spline = curve_data.splines.new('BEZIER')
     spline.bezier_points.add(2)
+
     
     # Define parabola control points
     start_point = Vector((0, 0, 0))
     control_point = Vector((length / 2, length * angle, 0))
     end_point = Vector((length, 0, 0))
+
     
     # Set points of the Bézier curve with handles
     set_bezier_points_with_handles(spline, start_point, control_point, end_point)
-   return curve_data
+    return curve_data
     
  def create_parabola_object(context, curve_data, rotation):
    # Create an object with the curve data
