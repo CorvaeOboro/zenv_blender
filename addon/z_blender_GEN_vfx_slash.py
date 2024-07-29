@@ -114,8 +114,6 @@ class OBJECT_OT_add_parabola_mesh(Operator):
         props = get_zenv_properties(context)
         parabola_object = create_parabola_mesh(context, props.angle, props.rotation, props.length, props.curve_resolution)
         if parabola_object:
-        if mesh_object:
-        if curve_object:
             self.report({'INFO'}, "Parabola mesh created successfully.")
         else:
             self.report({'ERROR'}, "Failed to create parabola mesh.")
