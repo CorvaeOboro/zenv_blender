@@ -392,6 +392,24 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
         return True
     
 #//======================================================================================================
+# GLOBAL FUNCTIONS 
+def setup_material_nodes(material, image=None):
+    """Utility function to set up material nodes."""
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    nodes.clear()
+    bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+    tex_image = nodes.new('ShaderNodeTexImage')
+    if image:
+        tex_image.image = image
+    output = nodes.new('ShaderNodeOutputMaterial')
+    links = material.node_tree.links
+    links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+    links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+    return nodes
+
+#//======================================================================================================
+# BLENDER ADDON REGISTER
 def register():
     # Register the addon's classes and properties
     bpy.utils.register_class(ZENV_PT_CamProjPanel)
@@ -422,19 +440,3 @@ def unregister():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     register()
-
-def setup_material_nodes(material, image=None):
-    """Utility function to set up material nodes."""
-    material.use_nodes = True
-    nodes = material.node_tree.nodes
-    nodes.clear()
-    bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-    tex_image = nodes.new('ShaderNodeTexImage')
-    if image:
-        tex_image.image = image
-    output = nodes.new('ShaderNodeOutputMaterial')
-    links = material.node_tree.links
-    links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
-    links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
-    return nodes
-
