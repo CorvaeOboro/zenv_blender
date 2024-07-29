@@ -68,7 +68,6 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
         self.set_orthographic_camera_properties(camera_object)
 
     def match_camera_to_current_view(self, camera_object):
-        # Match the camera object's transformation with the current view
         # Match the camera object's transformation with the current 3D view
         for area in bpy.context.screen.areas:
             if area.type == 'VIEW_3D':
@@ -77,7 +76,6 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
                 break
 
     def set_orthographic_camera_properties(self, camera_object):
-        # Set camera to orthographic and adjust orthographic scale
         # Set camera to orthographic mode and adjust its scale and clipping
         camera_object.data.type = 'ORTHO'
         camera_object.data.ortho_scale = bpy.context.scene.zenv_ortho_scale
@@ -91,7 +89,6 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
                 break
 
     def generate_unique_camera_name(self, base_name):
-        # Generate a unique camera name
         # Generate a unique camera name by appending a number to the base name
         cameras = {cam.name for cam in bpy.data.objects if cam.type == 'CAMERA'}
         i = 1
