@@ -125,7 +125,11 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         logger.info("Baking material setup completed.")
 
     def execute(self, context):
-        return self.bake_texture_workflow(context)
+        result = self.bake_texture_workflow(context)
+        # If the bake was successful, do not remove the temporary meshes for debugging
+        if result == {'FINISHED'}:
+            self.report({'INFO'}, "Bake successful. Temporary meshes kept for debugging.")
+        return result
 
     def bake_texture_workflow(self, context):
         """Main workflow for baking texture from camera projection."""
@@ -327,22 +331,19 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         subdiv_modifier.levels = 2  # Set subdivision level, adjust as needed
         subdiv_modifier.subdivision_type = 'SIMPLE'
         
-    def cleanup(self, context, meshes, original_engine, original_materials):
-        # Clean up temporary objects and restore original render engine and materials
-        logger.info("Cleaning up temporary changes.")
-        self.remove_temporary_meshes(context)
+    def cleanup(self, context, original_obj, original_engine, original_materials):
+        """Restore the original render engine and materials of selected objects."""
+        # Only restore the original render engine and materials, do not remove temporary meshes
+        logger.info("Restoring original render engine and materials.")
         context.scene.render.engine = original_engine
         for obj, mats in original_materials.items():
             obj.data.materials.clear()
             for mat in mats:
                 obj.data.materials.append(mat)
-        logger.info("Cleanup completed.")
+        logger.info("Original state restored.")
 
-    def remove_temporary_meshes(self, context):
-        """Remove temporary meshes created during the baking process."""
-        for obj in context.selected_objects:
-            if "temp_" in obj.name:
-                bpy.data.meshes.remove(obj.data, do_unlink=True)
+    # The remove_temporary_meshes method is no longer needed as we are keeping the temporary meshes for debugging
+    # Therefore, it has been removed from the class
 
 
 class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
