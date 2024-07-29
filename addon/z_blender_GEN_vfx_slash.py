@@ -18,7 +18,7 @@ def create_curve_data(length, angle, curve_resolution):
     curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
     curve_data.dimensions = '3D'
     spline = curve_data.splines.new('BEZIER')
-    spline.bezier_points.add(curve_resolution - 1)
+    spline.bezier_points.add(curve_resolution - 1)  # Fixed to use curve_resolution
 
     spline.bezier_points.add(curve_resolution - 1)
 
@@ -55,7 +55,8 @@ def create_parabola_object(context, curve_data, rotation):
 
 def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
     curve_data = create_curve_data(length, angle, curve_resolution)
-    parabola_object = create_parabola_object(context, curve_data, rotation)
+    parabola_object = create_parabola_object(context, curve_data)
+    parabola_object.rotation_euler = (0, 0, rotation)
     mesh_object = convert_curve_to_mesh(parabola_object)
     add_uv_mapping(mesh_object)
     return mesh_object
@@ -112,8 +113,8 @@ class OBJECT_OT_add_parabola_mesh(Operator):
     
     def execute(self, context):
         props = get_zenv_properties(context)
-        parabola_object = create_parabola_mesh(context, props.angle, props.rotation, props.length, props.curve_resolution)
-        if parabola_object:
+        mesh_object = create_parabola_mesh(context, props.angle, props.rotation, props.length, props.curve_resolution)
+        if mesh_object:
         if mesh_object:
         if curve_object:
             self.report({'INFO'}, "Parabola mesh created successfully.")
@@ -171,6 +172,12 @@ def draw_properties(layout, props):
     layout.prop(props, "rotation")
     layout.prop(props, "length")
     layout.prop(props, "curve_resolution")
+def convert_curve_to_mesh(curve_object):
+    # Convert curve to mesh
+    bpy.context.view_layer.objects.active = curve_object
+    bpy.ops.object.convert(target='MESH')
+    return curve_object
+
 def convert_curve_to_mesh(curve_object):
     # Convert curve to mesh
     bpy.context.view_layer.objects.active = curve_object
