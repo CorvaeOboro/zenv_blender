@@ -74,6 +74,42 @@ def add_uv_mapping(curve_object):
         bpy.ops.object.mode_set(mode='OBJECT')
     return mesh_object
 
+def get_zenv_properties(context):
+    return context.scene.zenv_properties
+
+def draw_properties(layout, props):
+    layout.prop(props, "angle")
+    layout.prop(props, "rotation")
+    layout.prop(props, "length")
+    layout.prop(props, "curve_resolution")
+
+def get_zenv_properties(context):
+    return context.scene.zenv_properties
+
+def draw_properties(layout, props):
+    layout.prop(props, "angle")
+    layout.prop(props, "rotation")
+    layout.prop(props, "length")
+    layout.prop(props, "curve_resolution")
+def convert_curve_to_mesh(curve_object):
+    # Convert curve to mesh
+    bpy.context.view_layer.objects.active = curve_object
+    bpy.ops.object.convert(target='MESH')
+    return curve_object
+
+def convert_curve_to_mesh(curve_object):
+    # Convert curve to mesh
+    bpy.context.view_layer.objects.active = curve_object
+    bpy.ops.object.convert(target='MESH')
+    return curve_object
+
+def convert_curve_to_mesh(curve_object):
+    # Convert curve to mesh
+    bpy.context.view_layer.objects.active = curve_object
+    bpy.ops.object.convert(target='MESH')
+    return curve_object
+
+
 class ZENVProperties(PropertyGroup):
     angle: FloatProperty(
         name="Angle",
@@ -119,6 +155,8 @@ class OBJECT_OT_add_parabola_mesh(Operator):
             self.report({'ERROR'}, "Failed to create parabola mesh.")
         return {'FINISHED'}
 
+#===================================================================
+# UI PANEL
 class ZENV_PT_panel(Panel):
     bl_idname = "ZENV_PT_panel"
     bl_label = "Parabola Slash Mesh Generator"
@@ -151,38 +189,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
-def get_zenv_properties(context):
-    return context.scene.zenv_properties
-
-def draw_properties(layout, props):
-    layout.prop(props, "angle")
-    layout.prop(props, "rotation")
-    layout.prop(props, "length")
-    layout.prop(props, "curve_resolution")
-
-def get_zenv_properties(context):
-    return context.scene.zenv_properties
-
-def draw_properties(layout, props):
-    layout.prop(props, "angle")
-    layout.prop(props, "rotation")
-    layout.prop(props, "length")
-    layout.prop(props, "curve_resolution")
-def convert_curve_to_mesh(curve_object):
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = curve_object
-    bpy.ops.object.convert(target='MESH')
-    return curve_object
-
-def convert_curve_to_mesh(curve_object):
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = curve_object
-    bpy.ops.object.convert(target='MESH')
-    return curve_object
-
-def convert_curve_to_mesh(curve_object):
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = curve_object
-    bpy.ops.object.convert(target='MESH')
-    return curve_object
