@@ -112,46 +112,44 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
         uv_layer = bm.loops.layers.uv.verify()
         
 
-        quadrant_faces = MESH_OT_separate_by_uv_quadrant.separate_faces_by_quadrant(bm, uv_layer)
+        quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
 
         quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
         
 
-        # Separate faces by quadrant
+        # Apply UV offset to ensure UVs are within 0-1 UV space
         for quadrant, faces in quadrant_faces.items():
+            bpy.ops.mesh.select_all(action='DESELECT')
             for face in faces:
                 face.select_set(True)
-
-            # Update mesh and separate selected faces
-            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=True)
+            bmesh.update_edit_mesh(obj.data)
             bpy.ops.mesh.separate(type='SELECTED')
-            bpy.ops.object.mode_set(mode='OBJECT')  # Ensure we are in object mode before getting the new object
-            bpy.ops.mesh.select_all(action='DESELECT')
-            # Ensure each iteration starts with a fresh selection
-            bm.faces.ensure_lookup_table()
+            bpy.ops.object.mode_set(mode='OBJECT')
 
             # Calculate the offset for the quadrant
-            offset_x = -1 if quadrant[0] == 0 else 1
-            offset_y = -1 if quadrant[1] == 0 else 1
+            offset_x = -quadrant[0]
+            offset_y = -quadrant[1]
 
-            # Get the newly created object
-            new_obj = context.selected_objects[0]
-            bpy.ops.object.mode_set(mode='EDIT')  # Switch to edit mode to get the bmesh of the new object
-            new_bm = bmesh.new()
-            new_bm.from_mesh(new_obj.data)
-            new_uv_layer = new_bm.loops.layers.uv.verify()
+            # Apply the offset to the UV coordinates of the separated objects
+            for separated_obj in context.selected_objects:
+                if separated_obj == obj:
+                    continue  # Skip the original object
+                bpy.context.view_layer.objects.active = separated_obj
+                bpy.ops.object.mode_set(mode='EDIT')
+                separated_bm = bmesh.from_edit_mesh(separated_obj.data)
+                separated_uv_layer = separated_bm.loops.layers.uv.verify()
+                for face in separated_bm.faces:
+                    for loop in face.loops:
+                        loop_uv = loop[separated_uv_layer].uv
+                        loop_uv.x += offset_x
+                        loop_uv.y += offset_y
+                bmesh.update_edit_mesh(separated_obj.data)
+                bpy.ops.object.mode_set(mode='OBJECT')
 
-            # Apply the offset to the UV coordinates
-            for face in new_bm.faces:
-                for loop in face.loops:
-                    loop_uv = loop[new_uv_layer].uv
-                    loop_uv.x += offset_x
-                    loop_uv.y += offset_y
-
-            bpy.ops.object.mode_set(mode='OBJECT')  # Switch back to object mode before updating the mesh
-            # Update the mesh with the new UVs
-            new_bm.to_mesh(new_obj.data)
-            new_bm.free()
+        # Deselect all and set the original object as active
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
 
         return {'FINISHED'}
 
