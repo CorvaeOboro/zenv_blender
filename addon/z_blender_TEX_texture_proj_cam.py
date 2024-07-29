@@ -102,6 +102,23 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     bl_label = "Bake Texture"
     bl_description = "Bakes the texture of the selected object using a camera projection"
 
+    def setup_baking_material(self, mesh, image):
+        """Set up a material for the mesh with the specified image for baking."""
+        mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        tex_image = nodes.new('ShaderNodeTexImage')
+        tex_image.image = image
+        output = nodes.new('ShaderNodeOutputMaterial')
+        links = mat.node_tree.links
+        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        mesh.data.materials.clear()
+        mesh.data.materials.append(mat)
+        logger.info("Baking material setup completed.")
+
     def execute(self, context):
         if not self.initial_checks(context):
             return {'CANCELLED'}
@@ -206,7 +223,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     def perform_baking(self, context, source_mesh, target_mesh, original_obj):
         # Perform the baking process using Cycles render engine
         logger.info("Performing texture baking.")
-        bake_image = bpy.data.images.new(name="BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S"), width=1024, height=1024)
+        bake_image = bpy.data.images.new(name="BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S"), width=1024, height=1024, alpha=True)
         self.setup_baking_material(target_mesh, bake_image)
         context.scene.render.engine = 'CYCLES'
         bpy.ops.object.bake(type='DIFFUSE', save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True)
