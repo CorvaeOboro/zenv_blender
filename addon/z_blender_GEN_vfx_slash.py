@@ -62,14 +62,24 @@ def create_parabola_object(context, curve_data, rotation):
         raise RuntimeError("Failed to create parabola object: {}".format(str(e)))
 
 def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
-    curve_data = create_curve_data(length, angle, curve_resolution)
-    parabola_object = create_parabola_object(context, curve_data, rotation)
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = parabola_object
-    bpy.ops.object.convert(target='MESH')
-    # Add UV mapping
-    add_uv_mapping(parabola_object)
-    return parabola_object
+    try:
+        curve_data = create_curve_data(length, angle, curve_resolution)
+        parabola_object = create_parabola_object(context, curve_data, rotation)
+        # Ensure the object is the active one
+        context.view_layer.objects.active = parabola_object
+        context.view_layer.update()
+
+        # Convert curve to mesh
+        bpy.ops.object.convert(target='MESH')
+
+        # Add UV mapping if the object is a mesh
+        if parabola_object.type == 'MESH':
+            add_uv_mapping(parabola_object)
+
+        return parabola_object
+    except Exception as e:
+        # Handle unexpected errors during mesh creation
+        raise RuntimeError("Failed to create parabola mesh: {}".format(str(e)))
 
 def set_bezier_points_with_handles(spline, start, control, end):
     spline.bezier_points[0].co = start
