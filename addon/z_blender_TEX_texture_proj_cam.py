@@ -45,6 +45,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
     """Operator to set the camera to the current view."""
     bl_idname = "zenv.create_camera_proj"
     bl_label = "Set Camera View"
+    bl_description = "Creates an orthographic camera matching the current 3D view"
 
     def execute(self, context):
         try:
@@ -56,6 +57,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
             return {'CANCELLED'}
 
     def create_orthographic_camera(self, context):
+        # Generate a unique name for the new camera and create it
         camera_name = self.generate_unique_camera_name("CAM_ORTHO_PROJ_")
         bpy.ops.object.camera_add()
         camera_object = bpy.context.object
@@ -67,6 +69,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
 
     def match_camera_to_current_view(self, camera_object):
         # Match the camera object's transformation with the current view
+        # Match the camera object's transformation with the current 3D view
         for area in bpy.context.screen.areas:
             if area.type == 'VIEW_3D':
                 region_3d = area.spaces.active.region_3d
@@ -75,6 +78,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
 
     def set_orthographic_camera_properties(self, camera_object):
         # Set camera to orthographic and adjust orthographic scale
+        # Set camera to orthographic mode and adjust its scale and clipping
         camera_object.data.type = 'ORTHO'
         camera_object.data.ortho_scale = bpy.context.scene.zenv_ortho_scale
 
@@ -88,6 +92,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
 
     def generate_unique_camera_name(self, base_name):
         # Generate a unique camera name
+        # Generate a unique camera name by appending a number to the base name
         cameras = {cam.name for cam in bpy.data.objects if cam.type == 'CAMERA'}
         i = 1
         while f"{base_name}{i}" in cameras:
@@ -98,6 +103,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     """Bake textures of selected object from a dyplicate with camera projected UVs."""
     bl_idname = "zenv.bake_cam_proj_texture"
     bl_label = "Bake Texture"
+    bl_description = "Bakes the texture of the selected object using a camera projection"
 
     def execute(self, context):
         if not self.initial_checks(context):
@@ -124,6 +130,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         return {'FINISHED'}
 
     def initial_checks(self, context):
+        # Check for the presence of a selected object, an active camera, and that the object is a mesh
         if not context.selected_objects:
             self.report({'ERROR'}, "No object selected.")
             return False
@@ -137,11 +144,13 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
 
     def prepare_meshes(self, context, original_obj):
         # Prepares the meshes required for the baking process
+        # Create duplicates of the original object for camera projection and baking setup
         camera_proj_mesh = self.create_camera_projection_mesh(context, original_obj)
         bake_setup_mesh = self.create_bake_setup_mesh(context, original_obj)
         return camera_proj_mesh, bake_setup_mesh
 
     def create_camera_projection_mesh(self, context, original_obj):
+        # Duplicate the original object and prepare it for camera projection
         """Create a temporary mesh for camera projection."""
         bpy.ops.object.select_all(action='DESELECT')
         original_obj.select_set(True)
@@ -153,6 +162,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         return camera_proj_mesh
     
     def create_bake_setup_mesh(self, context, original_obj):
+        # Duplicate the original object and prepare it for baking
         """Create a temporary mesh for bake setup."""
         bpy.ops.object.select_all(action='DESELECT')
         original_obj.select_set(True)
@@ -164,6 +174,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         return bake_setup_mesh
     
     def setup_projection_material(self, context, obj):
+        # Set up a material with the provided image texture for camera projection
         logger.info("Setting up projection material.")
         image_path = bpy.path.abspath(context.scene.zenv_texture_path)
         if not os.path.isfile(image_path):
@@ -196,6 +207,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         return True
 
     def perform_baking(self, context, source_mesh, target_mesh, original_obj):
+        # Perform the baking process using Cycles render engine
         logger.info("Performing texture baking.")
         bake_image = bpy.data.images.new(name="BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S"), width=1024, height=1024)
         self.setup_baking_material(target_mesh, bake_image)
@@ -210,6 +222,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
             return None
 
     def apply_baked_texture(self, context, mesh, texture_path):
+        # Apply the baked texture to the mesh using a new material
         logger.info("Applying baked texture to mesh.")
         mat = bpy.data.materials.get("FinalMaterial") or bpy.data.materials.new(name="FinalMaterial")
         mat.use_nodes = True
@@ -227,12 +240,14 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         logger.info("Texture applied successfully.")
 
     def subdivide_mesh(self, mesh):
+        # Subdivide the mesh to increase its resolution for better baking results
         """Subdivide the mesh without smoothing."""
         subdiv_modifier = mesh.modifiers.new(name="Subdiv", type='SUBSURF')
         subdiv_modifier.levels = 2  # Set subdivision level, adjust as needed
         subdiv_modifier.subdivision_type = 'SIMPLE'
         
     def cleanup(self, context, meshes, original_engine, original_materials):
+        # Clean up temporary objects and restore original render engine and materials
         logger.info("Cleaning up temporary changes.")
         for mesh in meshes:
             bpy.data.meshes.remove(mesh.data, do_unlink=True)
@@ -247,6 +262,7 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
     """Operator to create and bake a debug plane for texture projection visualization."""
     bl_idname = "zenv.create_debug_plane"
     bl_label = "Create Debug Plane"
+    bl_description = "Creates a debug plane to visualize the texture projection process"
 
     def execute(self, context):
         camera = context.scene.camera
@@ -274,6 +290,7 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
         return {'FINISHED'}
 
     def create_plane(self, name, camera, offset):
+        # Create a plane at a specified offset from the camera
         bpy.ops.mesh.primitive_plane_add(size=1, enter_editmode=False, location=camera.location + camera.matrix_world.normalized().to_quaternion() @ Vector((0, 0, offset)))
         plane = bpy.context.active_object
         plane.name = name
@@ -282,6 +299,7 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
         return plane
 
     def setup_baking_material(self, plane, texture_path):
+        # Set up a material for the plane with the specified texture for baking
         mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
@@ -297,6 +315,7 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
         plane.data.materials.append(mat)
 
     def setup_receiver_material(self, plane):
+        # Set up a material for the plane that will receive the baked texture
         mat = bpy.data.materials.new(name="ReceiverMaterial")
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
@@ -312,6 +331,7 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
         plane.data.materials.append(mat)
 
     def setup_result_material(self, plane, source_plane):
+        # Set up a material for the plane that will display the result of the baking process
         mat = bpy.data.materials.new(name="ResultMaterial")
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
@@ -331,6 +351,7 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
             logger.error("Failed to find the texture image on the source plane.")
 
     def bake_texture(self, source_plane, target_plane):
+        # Perform the baking process from the source plane to the target plane
         bpy.context.scene.render.engine = 'CYCLES'
         bpy.context.scene.cycles.bake_type = 'DIFFUSE'
         bpy.context.scene.render.bake.use_pass_direct = False
@@ -343,6 +364,7 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
     
 #//======================================================================================================
 def register():
+    # Register the addon's classes and properties
     bpy.utils.register_class(ZENV_PT_CamProjPanel)
     bpy.utils.register_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.register_class(ZENV_OT_BakeTexture)
@@ -359,6 +381,7 @@ def register():
     )
 
 def unregister():
+    # Unregister the addon's classes and properties
     bpy.utils.unregister_class(ZENV_PT_CamProjPanel)
     bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.unregister_class(ZENV_OT_BakeTexture)
