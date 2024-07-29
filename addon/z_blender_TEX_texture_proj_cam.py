@@ -288,6 +288,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         context.scene.render.bake.use_pass_indirect = False
         context.scene.render.bake.use_pass_color = True
         logger.info("Render settings configured for baking Diffuse color only.")
+        
     def create_bake_image(self):
         """Create a new image for baking."""
         image_name = "BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S")
