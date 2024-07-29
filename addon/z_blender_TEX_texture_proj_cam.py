@@ -276,9 +276,13 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         """Create a new image for baking."""
         image_name = "BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S")
         image = bpy.data.images.new(name=image_name, width=1024, height=1024, alpha=True)
-        # Define a valid file path for the image
-        image.filepath_raw = bpy.path.abspath("//" + image_name + ".png")
+        # Define a valid file path for the image within a "textures" subfolder
+        textures_folder = bpy.path.abspath("//textures/")
+        if not os.path.exists(textures_folder):
+            os.makedirs(textures_folder)
+        image.filepath_raw = os.path.join(textures_folder, image_name + ".png")
         image.file_format = 'PNG'
+        logger.debug("Bake image will be saved to: %s", image.filepath_raw)
         return image
 
     def apply_baked_texture(self, context, mesh, texture_path):
