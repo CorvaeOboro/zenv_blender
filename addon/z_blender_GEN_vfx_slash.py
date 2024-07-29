@@ -81,13 +81,24 @@ def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
         # Handle unexpected errors during mesh creation
         raise RuntimeError("Failed to create parabola mesh: {}".format(str(e)))
 
-def set_bezier_points_with_handles(spline, start, control, end):
-    spline.bezier_points[0].co = start
-    spline.bezier_points[1].co = control
-    spline.bezier_points[2].co = end
-    for point in spline.bezier_points:
-        point.handle_right_type = 'AUTO'
-        point.handle_left_type = 'AUTO'
+def set_bezier_points_with_handles(spline, points):
+    """
+    Set the control points for a Bezier spline and adjust handles.
+
+    :param spline: The Bezier spline to modify.
+    :param points: A list of Vector objects representing the control points.
+    """
+    if len(points) < 2:
+        raise ValueError("At least two points are required to create a Bezier curve.")
+
+    # Add the necessary number of points to the spline
+    spline.bezier_points.add(len(points) - 1)
+
+    # Assign the control points to the spline
+    for i, point in enumerate(points):
+        spline.bezier_points[i].co = point
+        spline.bezier_points[i].handle_right_type = 'AUTO'
+        spline.bezier_points[i].handle_left_type = 'AUTO'
 
 def add_uv_mapping(curve_object):
     if curve_object.type == 'MESH':
