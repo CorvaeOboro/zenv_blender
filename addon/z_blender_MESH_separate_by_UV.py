@@ -154,8 +154,7 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
             new_bm.free()
 
         return {'FINISHED'}
-        bpy.ops.object.mode_set(mode='OBJECT')
-        return {'FINISHED'}
+
     
 #=============================================================================
 # UI SIDE PANEL
