@@ -119,16 +119,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     def setup_baking_material(self, mesh, image):
         """Set up a material for the mesh with the specified image for baking."""
         mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        nodes.clear()
-        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-        tex_image = nodes.new('ShaderNodeTexImage')
-        tex_image.image = image
-        output = nodes.new('ShaderNodeOutputMaterial')
-        links = mat.node_tree.links
-        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
-        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        setup_material_nodes(mat, image)
         mesh.data.materials.clear()
         mesh.data.materials.append(mat)
         logger.info("Baking material setup completed.")
@@ -256,16 +247,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     def setup_baking_material(self, mesh, image):
         """Set up a material for the mesh with the specified image for baking."""
         mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        nodes.clear()
-        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-        tex_image = nodes.new('ShaderNodeTexImage')
-        tex_image.image = image
-        output = nodes.new('ShaderNodeOutputMaterial')
-        links = mat.node_tree.links
-        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
-        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        setup_material_nodes(mat, image)
         mesh.data.materials.clear()
         mesh.data.materials.append(mat)
         logger.info("Baking material setup completed.")
@@ -375,51 +357,24 @@ class ZENV_OT_CreateDebugPlane(bpy.types.Operator):
     def setup_baking_material(self, plane, texture_path):
         # Set up a material for the plane with the specified texture for baking
         mat = bpy.data.materials.get("BakingMaterial") or bpy.data.materials.new(name="BakingMaterial")
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        nodes.clear()
-        bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
-        tex_image = nodes.new(type='ShaderNodeTexImage')
-        tex_image.name = "BakingTextureNode"  # Correct naming
-        output = nodes.new(type='ShaderNodeOutputMaterial')
-        tex_image.image = bpy.data.images.load(texture_path, check_existing=True)
-        links = mat.node_tree.links
-        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
-        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        image = bpy.data.images.load(texture_path, check_existing=True)
+        setup_material_nodes(mat, image)
         plane.data.materials.append(mat)
 
     def setup_receiver_material(self, plane):
         # Set up a material for the plane that will receive the baked texture
         mat = bpy.data.materials.new(name="ReceiverMaterial")
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        nodes.clear()
-        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-        tex_image = nodes.new('ShaderNodeTexImage')
-        tex_image.name = "ReceiverTextureNode"  # Ensure consistent naming
-        output = nodes.new('ShaderNodeOutputMaterial')
-        tex_image.image = bpy.data.images.new(name="ReceiverTexture", width=1024, height=1024, alpha=False)
-        links = mat.node_tree.links
-        links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
-        links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        image = bpy.data.images.new(name="ReceiverTexture", width=1024, height=1024, alpha=False)
+        setup_material_nodes(mat, image)
         plane.data.materials.append(mat)
 
     def setup_result_material(self, plane, source_plane):
         # Set up a material for the plane that will display the result of the baking process
         mat = bpy.data.materials.new(name="ResultMaterial")
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        nodes.clear()
-        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
-        output = nodes.new('ShaderNodeOutputMaterial')
-        # Retrieve the texture node using the correct name
-        tex_node = source_plane.data.materials[0].node_tree.nodes.get("ReceiverTextureNode")
-        if tex_node and tex_node.image:
-            tex_image = nodes.new('ShaderNodeTexImage')
-            tex_image.image = tex_node.image
-            links = mat.node_tree.links
-            links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
-            links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+        # Retrieve the texture image from the source plane's material
+        tex_image = next((node for node in source_plane.data.materials[0].node_tree.nodes if node.type == 'TEX_IMAGE'), None)
+        if tex_image and tex_image.image:
+            setup_material_nodes(mat, tex_image.image)
             plane.data.materials.append(mat)
         else:
             logger.error("Failed to find the texture image on the source plane.")
@@ -467,4 +422,19 @@ def unregister():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     register()
+
+def setup_material_nodes(material, image=None):
+    """Utility function to set up material nodes."""
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    nodes.clear()
+    bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+    tex_image = nodes.new('ShaderNodeTexImage')
+    if image:
+        tex_image.image = image
+    output = nodes.new('ShaderNodeOutputMaterial')
+    links = material.node_tree.links
+    links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
+    links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
+    return nodes
 
