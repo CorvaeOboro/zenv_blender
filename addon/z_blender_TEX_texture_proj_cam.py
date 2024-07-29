@@ -34,9 +34,9 @@ class ZENV_PT_CamProjPanel(bpy.types.Panel):
         layout = self.layout
         layout.operator("zenv.create_camera_proj")
         layout.operator("zenv.bake_cam_proj_texture")
-        layout.operator("zenv.create_debug_plane")
         layout.prop(context.scene, "zenv_texture_path")
         layout.prop(context.scene, "zenv_ortho_scale")
+        layout.operator("zenv.create_debug_plane")
 
 
 #//==================================================================================================
@@ -44,7 +44,7 @@ class ZENV_PT_CamProjPanel(bpy.types.Panel):
 class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
     """Operator to set the camera to the current view."""
     bl_idname = "zenv.create_camera_proj"
-    bl_label = "Set Camera View"
+    bl_label = "Create Camera View"
     bl_description = "Creates an orthographic camera matching the current 3D view"
 
     def execute(self, context):
@@ -101,7 +101,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
 class ZENV_OT_BakeTexture(bpy.types.Operator):
     """Bake textures of selected object from a duplicate with camera projected UVs."""
     bl_idname = "zenv.bake_cam_proj_texture"
-    bl_label = "Bake Texture"
+    bl_label = "Bake Projected Texture"
     bl_description = "Bakes the texture of the selected object using a camera projection"
 
     def setup_baking_material(self, mesh, image):
