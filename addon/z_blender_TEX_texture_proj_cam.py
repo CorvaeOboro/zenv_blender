@@ -48,15 +48,12 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
     bl_description = "Creates an orthographic camera matching the current 3D view"
 
     def execute(self, context):
-        try:
-            self.create_orthographic_camera(context)
-            return {'FINISHED'}
-        except Exception as e:
-            logger.error("Failed to create orthographic camera: %s", e)
-            self.report({'ERROR'}, "Failed to create orthographic camera.")
+        if not self.create_orthographic_camera(context):
             return {'CANCELLED'}
+        return {'FINISHED'}
 
     def create_orthographic_camera(self, context):
+        """Create an orthographic camera and match it to the current view."""
         # Generate a unique name for the new camera and create it
         camera_name = self.generate_unique_camera_name("CAM_ORTHO_PROJ_")
         bpy.ops.object.camera_add()
@@ -64,18 +61,32 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
         camera_object.name = camera_name
         context.scene.camera = camera_object
 
+        if not self.match_camera_to_current_view(camera_object):
+            self.report({'ERROR'}, "Failed to match camera to current view.")
+            return False
+        if not self.set_orthographic_camera_properties(camera_object):
+            self.report({'ERROR'}, "Failed to set orthographic camera properties.")
+            return False
+        return True
+
         self.match_camera_to_current_view(camera_object)
         self.set_orthographic_camera_properties(camera_object)
 
     def match_camera_to_current_view(self, camera_object):
+        """Match the camera object's transformation with the current 3D view."""
         # Match the camera object's transformation with the current 3D view
         for area in bpy.context.screen.areas:
             if area.type == 'VIEW_3D':
                 region_3d = area.spaces.active.region_3d
                 camera_object.matrix_world = region_3d.view_matrix.inverted()
                 break
+        else:
+            logger.error("Failed to find a VIEW_3D area to match camera view.")
+            return False
+        return True
 
     def set_orthographic_camera_properties(self, camera_object):
+        """Set camera to orthographic mode and adjust its scale and clipping."""
         # Set camera to orthographic mode and adjust its scale and clipping
         camera_object.data.type = 'ORTHO'
         camera_object.data.ortho_scale = bpy.context.scene.zenv_ortho_scale
@@ -87,6 +98,10 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
                 camera_object.data.clip_start = space_data.clip_start
                 camera_object.data.clip_end = space_data.clip_end
                 break
+        else:
+            logger.error("Failed to find a VIEW_3D area to set camera properties.")
+            return False
+        return True
 
     def generate_unique_camera_name(self, base_name):
         # Generate a unique camera name by appending a number to the base name
