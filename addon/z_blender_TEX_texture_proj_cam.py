@@ -137,28 +137,43 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         logger.info("Baking material setup completed.")
 
     def execute(self, context):
+        return self.bake_texture_workflow(context)
+
+    def bake_texture_workflow(self, context):
+        """Main workflow for baking texture from camera projection."""
         if not self.initial_checks(context):
             return {'CANCELLED'}
 
-        original_obj = context.active_object
-        original_engine = context.scene.render.engine
-        original_materials = {obj: obj.data.materials[:] for obj in context.selected_objects}
-
-        camera_proj_mesh, bake_setup_mesh = self.prepare_meshes(context, original_obj)
+        state = self.save_current_state(context)
+        camera_proj_mesh, bake_setup_mesh = self.prepare_meshes(context, context.active_object)
         if not camera_proj_mesh or not bake_setup_mesh:
+            self.restore_state(context, state)
             return {'CANCELLED'}
 
         if not self.setup_projection_material(context, camera_proj_mesh):
+            self.restore_state(context, state)
             return {'CANCELLED'}
 
-        baked_texture_path = self.perform_baking(context, camera_proj_mesh, bake_setup_mesh, original_obj)
+        baked_texture_path = self.perform_baking(context, camera_proj_mesh, bake_setup_mesh)
         if not baked_texture_path:
-            self.cleanup(context, [camera_proj_mesh, bake_setup_mesh], original_engine, original_materials)
+            self.restore_state(context, state)
             return {'CANCELLED'}
 
         self.apply_baked_texture(context, bake_setup_mesh, baked_texture_path)
-        self.cleanup(context, [camera_proj_mesh, bake_setup_mesh], original_engine, original_materials)
+        self.restore_state(context, state)
         return {'FINISHED'}
+
+    def save_current_state(self, context):
+        """Save the current render engine and materials of selected objects."""
+        return {
+            'original_obj': context.active_object,
+            'original_engine': context.scene.render.engine,
+            'original_materials': {obj: obj.data.materials[:] for obj in context.selected_objects}
+        }
+
+    def restore_state(self, context, state):
+        """Restore the original render engine and materials of selected objects."""
+        self.cleanup(context, state['original_engine'], state['original_materials'])
 
     def initial_checks(self, context):
         # Check for the presence of a selected object, an active camera, and that the object is a mesh
@@ -261,7 +276,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     def perform_baking(self, context, source_mesh, target_mesh, original_obj):
         # Perform the baking process using Cycles render engine
         logger.info("Performing texture baking.")
-        bake_image = bpy.data.images.new(name="BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S"), width=1024, height=1024, alpha=True)
+        bake_image = self.create_bake_image()
         self.setup_baking_material(target_mesh, bake_image)
         context.scene.render.engine = 'CYCLES'
         bpy.ops.object.bake(type='DIFFUSE', save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True)
@@ -272,6 +287,10 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         else:
             logger.error("Failed to bake image data.")
             return None
+
+    def create_bake_image(self):
+        """Create a new image for baking."""
+        return bpy.data.images.new(name="BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S"), width=1024, height=1024, alpha=True)
 
     def apply_baked_texture(self, context, mesh, texture_path):
         # Apply the baked texture to the mesh using a new material
@@ -301,8 +320,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     def cleanup(self, context, meshes, original_engine, original_materials):
         # Clean up temporary objects and restore original render engine and materials
         logger.info("Cleaning up temporary changes.")
-        for mesh in meshes:
-            bpy.data.meshes.remove(mesh.data, do_unlink=True)
+        self.remove_temporary_meshes(context)
         context.scene.render.engine = original_engine
         for obj, mats in original_materials.items():
             obj.data.materials.clear()
@@ -445,3 +463,9 @@ def unregister():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     register()
+    def remove_temporary_meshes(self, context):
+        """Remove temporary meshes created during the baking process."""
+        for obj in context.selected_objects:
+            if "temp_" in obj.name:
+                bpy.data.meshes.remove(obj.data, do_unlink=True)
+
