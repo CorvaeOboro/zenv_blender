@@ -15,7 +15,7 @@ import bmesh
 import math
 
 #===========================================================
-
+# SEPARATE BY UV ISLANDS
 class MESH_OT_separate_by_uv(bpy.types.Operator):
     """Separate the mesh by UV islands"""
     bl_idname = "mesh.separate_by_uv_islands"
@@ -183,6 +183,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
-# TODO:  MESH_OT_separate_by_uv_quadrant did not properly offset the faces after separation , organize the function so that even if no separation is neccesary it will still check to
-#  see if the UVs are in need of an offset to put them closer to 0-1 UV space
