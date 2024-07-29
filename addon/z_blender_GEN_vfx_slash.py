@@ -10,6 +10,7 @@ bl_info = {
 
 import bpy
 from bpy.types import Operator, Panel, PropertyGroup
+from math import radians
 from mathutils import Vector
 from bpy.props import FloatProperty, IntProperty, PointerProperty
 
