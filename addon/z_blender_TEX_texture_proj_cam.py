@@ -125,11 +125,28 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         logger.info("Baking material setup completed.")
 
     def execute(self, context):
-        result = self.bake_texture_workflow(context)
-        # If the bake was successful, do not remove the temporary meshes for debugging
-        if result == {'FINISHED'}:
-            self.report({'INFO'}, "Bake successful. Temporary meshes kept for debugging.")
-        return result
+        if not self.initial_checks(context):
+            return {'CANCELLED'}
+
+        state = self.save_current_state(context)
+        camera_proj_mesh, bake_setup_mesh = self.prepare_meshes(context, context.active_object)
+        if not camera_proj_mesh or not bake_setup_mesh:
+            self.restore_state(context, state)
+            return {'CANCELLED'}
+
+        if not self.setup_projection_material(context, camera_proj_mesh):
+            self.restore_state(context, state)
+            return {'CANCELLED'}
+
+        baked_texture_path = self.perform_baking(context, camera_proj_mesh, bake_setup_mesh, state['original_obj'])
+        if not baked_texture_path:
+            self.restore_state(context, state)
+            return {'CANCELLED'}
+
+        self.apply_baked_texture(context, bake_setup_mesh, baked_texture_path)
+        self.restore_state(context, state)
+        self.report({'INFO'}, "Bake successful. Temporary meshes kept for debugging.")
+        return {'FINISHED'}
 
     def bake_texture_workflow(self, context):
         """Main workflow for baking texture from camera projection."""
