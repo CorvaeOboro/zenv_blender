@@ -13,7 +13,7 @@ from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Vector
 from bpy.props import FloatProperty, IntProperty, PointerProperty
 
-def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
+def create_curve_data(length, angle, curve_resolution):
     # Create a new curve object
     curve_data = bpy.data.curves.new('ParabolaCurve', type='CURVE')
     curve_data.dimensions = '3D'
@@ -27,8 +27,10 @@ def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
     
     # Set points of the Bézier curve with handles
     set_bezier_points_with_handles(spline, start_point, control_point, end_point)
+   return curve_data
     
-    # Create an object with the curve data
+ def create_parabola_object(context, curve_data, rotation):
+   # Create an object with the curve data
     curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
     bpy.context.collection.objects.link(curve_object)
     
@@ -42,8 +44,9 @@ def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
     # Add UV mapping
     add_uv_mapping(curve_object)
 
-    return curve_object
-
+def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
+    curve_data = create_curve_data(length, angle, curve_resolution)
+    curve_object = create_parabola_object(context, curve_data, rotation)
 def set_bezier_points_with_handles(spline, start, control, end):
     spline.bezier_points[0].co = start
     spline.bezier_points[1].co = control
@@ -52,18 +55,16 @@ def set_bezier_points_with_handles(spline, start, control, end):
         point.handle_right_type = 'AUTO'
         point.handle_left_type = 'AUTO'
 
-def add_uv_mapping(curve_object):
+def add_uv_mapping(mesh_object):
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.uv.unwrap()
     bpy.ops.object.mode_set(mode='OBJECT')
 
-    # Add UV mapping
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.uv.unwrap()
-    bpy.ops.object.mode_set(mode='OBJECT')
+    return mesh_object
 
-    return curve_object
-
+def create_parabola_mesh(context, angle, rotation, length, curve_resolution):
+    curve_data = create_curve_data(length, angle, curve_resolution)
+    curve_object = create_parabola_object(context, curve_data, rotation)
 class ZENVProperties(PropertyGroup):
     angle: FloatProperty(
         name="Angle",
@@ -98,10 +99,15 @@ class OBJECT_OT_add_parabola_mesh(Operator):
     bl_idname = "object.add_parabola_mesh"
     bl_label = "Add Parabola Mesh"
     bl_options = {'REGISTER', 'UNDO'}
+
     
     def execute(self, context):
         props = get_zenv_properties(context)
-        create_parabola_mesh(context, props.angle, props.rotation, props.length, props.curve_resolution)
+        curve_object = create_parabola_mesh(context, props.angle, props.rotation, props.length, props.curve_resolution)
+        if curve_object:
+            self.report({'INFO'}, "Parabola mesh created successfully.")
+        else:
+            self.report({'ERROR'}, "Failed to create parabola mesh.")
         return {'FINISHED'}
 
 class ZENV_PT_panel(Panel):
@@ -136,6 +142,15 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
+def get_zenv_properties(context):
+    return context.scene.zenv_properties
+
+def draw_properties(layout, props):
+    layout.prop(props, "angle")
+    layout.prop(props, "rotation")
+    layout.prop(props, "length")
+    layout.prop(props, "curve_resolution")
 
 def get_zenv_properties(context):
     return context.scene.zenv_properties
