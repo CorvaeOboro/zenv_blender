@@ -30,6 +30,12 @@ def create_curve_data(length, angle, curve_resolution):
     # Set points of the Bézier curve with handles
     set_bezier_points_with_handles(spline, start_point, control_point, end_point)
     return curve_data
+
+def create_parabola_object(context, curve_data, rotation):
+   # Create an object with the curve data
+   curve_object = bpy.data.objects.new('ParabolaCurve', curve_data)
+   bpy.context.collection.objects.link(curve_object)
+   ...
     
  def create_parabola_object(context, curve_data, rotation):
    # Create an object with the curve data
