@@ -151,12 +151,12 @@ class MESH_PT_separate_by_uv_combined(bpy.types.Panel):
 
 
 def register():
+    bpy.utils.register_class(MESH_OT_separate_by_uv)
     bpy.utils.register_class(MESH_OT_separate_by_uv_quadrant)
-
-    
     bpy.utils.register_class(MESH_PT_separate_by_uv_combined)
 
 def unregister():
+    bpy.utils.unregister_class(MESH_OT_separate_by_uv)
     bpy.utils.unregister_class(MESH_OT_separate_by_uv_quadrant)
     bpy.utils.unregister_class(MESH_PT_separate_by_uv_combined)
 
