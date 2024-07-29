@@ -224,13 +224,13 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         uv_project_modifier.projector_count = 1
         uv_project_modifier.projectors[0].object = camera
         mesh.data.uv_layers.active.name = "UVProject"
-        # Set the UV Project modifier's scale based on the camera's orthographic scale
-        # aspect_ratio = camera.data.sensor_width / camera.data.sensor_height
-        uv_project_modifier.aspect_x = 1
-        uv_project_modifier.aspect_y = 1
-        #uv_project_modifier.scale_x = ortho_scale / aspect_ratio
-        uv_project_modifier.scale_x = ortho_scale 
-        uv_project_modifier.scale_y = ortho_scale
+        # Calculate the UV Project modifier's scale based on the inverse relationship with the camera's orthographic scale
+        # Assuming a linear relationship derived from given examples
+        m = -1/6
+        b = 5/6
+        uv_scale = m * ortho_scale + b
+        uv_project_modifier.scale_x = uv_scale
+        uv_project_modifier.scale_y = uv_scale
         logger.info("UV Project modifier added to mesh.")
     
     def setup_projection_material(self, context, obj):
