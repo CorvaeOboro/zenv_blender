@@ -117,16 +117,24 @@ def draw_properties(layout, props):
 
 
 def convert_curve_to_mesh(curve_object):
-    # Convert curve to mesh
-    bpy.context.view_layer.objects.active = curve_object
-    bpy.ops.object.convert(target='MESH')
-        # Apply rotation
-        curve_object.rotation_euler = (radians(rotation), 0, 0)
+    """
+    Convert a curve object to a mesh object.
 
-        return curve_object
+    :param curve_object: The curve object to convert.
+    :return: The mesh object if conversion is successful, None otherwise.
+    """
+    if curve_object.type != 'CURVE':
+        raise TypeError("The provided object is not a curve.")
+
+    try:
+        # Set the curve object as the active object
+        bpy.context.view_layer.objects.active = curve_object
+        # Convert the active curve to a mesh
+        bpy.ops.object.convert(target='MESH')
+        return bpy.context.view_layer.objects.active  # The active object is now the mesh
     except Exception as e:
-        # Handle unexpected errors during object creation
-        raise RuntimeError("Failed to create parabola object: {}".format(str(e)))
+        # Handle unexpected errors during conversion
+        raise RuntimeError("Failed to convert curve to mesh: {}".format(str(e)))
 
 
 class ZENVProperties(PropertyGroup):
