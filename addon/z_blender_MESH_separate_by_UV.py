@@ -114,7 +114,7 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
         uv_layer = bm.loops.layers.uv.verify()
         
 
-        quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
+        quadrant_faces = MESH_OT_separate_by_uv_quadrant.separate_faces_by_quadrant(bm, uv_layer)
 
         # Update BMesh to deselect all initially
         bpy.ops.mesh.select_all(action='DESELECT')
@@ -152,13 +152,12 @@ class MESH_PT_separate_by_uv_combined(bpy.types.Panel):
 
 def register():
     bpy.utils.register_class(MESH_OT_separate_by_uv_quadrant)
-    bpy.utils.register_class(MESH_OT_separate_by_uv_quadrant)
+
     
     bpy.utils.register_class(MESH_PT_separate_by_uv_combined)
 
 def unregister():
     bpy.utils.unregister_class(MESH_OT_separate_by_uv_quadrant)
-    bpy.utils.unregister_class(MESH_OT_separate_by_uv)
     bpy.utils.unregister_class(MESH_PT_separate_by_uv_combined)
 
 if __name__ == "__main__":
