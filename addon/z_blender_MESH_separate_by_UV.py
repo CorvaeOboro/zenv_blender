@@ -125,6 +125,7 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
             # Update mesh and separate selected faces
             bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=True)
             bpy.ops.mesh.separate(type='SELECTED')
+            bpy.ops.object.mode_set(mode='OBJECT')  # Ensure we are in object mode before getting the new object
             bpy.ops.mesh.select_all(action='DESELECT')
             # Ensure each iteration starts with a fresh selection
             bm.faces.ensure_lookup_table()
@@ -135,6 +136,7 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
 
             # Get the newly created object
             new_obj = context.selected_objects[0]
+            bpy.ops.object.mode_set(mode='EDIT')  # Switch to edit mode to get the bmesh of the new object
             new_bm = bmesh.new()
             new_bm.from_mesh(new_obj.data)
             new_uv_layer = new_bm.loops.layers.uv.verify()
@@ -146,10 +148,12 @@ class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
                     loop_uv.x += offset_x
                     loop_uv.y += offset_y
 
+            bpy.ops.object.mode_set(mode='OBJECT')  # Switch back to object mode before updating the mesh
             # Update the mesh with the new UVs
             new_bm.to_mesh(new_obj.data)
             new_bm.free()
 
+        return {'FINISHED'}
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
     
