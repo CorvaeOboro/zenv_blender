@@ -398,6 +398,7 @@ def register():
     bpy.utils.register_class(ZENV_PT_CamProjPanel)
     bpy.utils.register_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.register_class(ZENV_OT_BakeTexture)
+    bpy.utils.register_class(ZENV_OT_BakeVisibilityMask)
 
     bpy.types.Scene.zenv_ortho_scale = bpy.props.FloatProperty(
         name="Orthographic Scale",
@@ -429,6 +430,7 @@ def unregister():
     bpy.utils.unregister_class(ZENV_PT_CamProjPanel)
     bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.unregister_class(ZENV_OT_BakeTexture)
+    bpy.utils.unregister_class(ZENV_OT_BakeVisibilityMask)
 
     del bpy.types.Scene.zenv_ortho_scale
     del bpy.types.Scene.zenv_texture_resolution
@@ -439,3 +441,125 @@ def unregister():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     register()
+class ZENV_OT_BakeVisibilityMask(bpy.types.Operator):
+    """Bake visibility mask of selected object from camera view."""
+    bl_idname = "zenv.bake_visibility_mask"
+    bl_label = "Bake Visibility Mask"
+    bl_description = "Bakes a black and white visibility mask from the camera's perspective"
+
+    def execute(self, context):
+        if not self.initial_checks(context):
+            return {'CANCELLED'}
+
+        state = self.save_current_state(context)
+        visibility_mask_mesh = self.create_visibility_mask_mesh(context, state['original_obj'])
+        if not visibility_mask_mesh:
+            self.restore_state(context, state)
+            return {'CANCELLED'}
+
+        visibility_mask_path = self.perform_visibility_baking(context, visibility_mask_mesh, state['original_obj'])
+        if not visibility_mask_path:
+            self.restore_state(context, state)
+            return {'CANCELLED'}
+
+        self.apply_visibility_mask(context, visibility_mask_mesh, visibility_mask_path)
+        self.restore_state(context, state)
+        self.report({'INFO'}, "Visibility mask bake successful.")
+        return {'FINISHED'}
+
+    def create_visibility_mask_mesh(self, context, original_obj):
+        # Duplicate the original object and prepare it for visibility mask baking
+        bpy.ops.object.select_all(action='DESELECT')
+        original_obj.select_set(True)
+        context.view_layer.objects.active = original_obj
+        bpy.ops.object.duplicate(linked=False, mode='TRANSLATION')
+        visibility_mask_mesh = context.active_object
+        visibility_mask_mesh.name = "temp_visibility_mask_mesh"
+        return visibility_mask_mesh
+
+    def perform_visibility_baking(self, context, mask_mesh, original_obj):
+        # Perform the baking process for the visibility mask
+        logger.info("Performing visibility mask baking.")
+        bake_image = self.create_bake_image()
+        self.setup_visibility_material(mask_mesh, bake_image)
+        self.set_render_settings_for_baking(context)
+        # Ensure the mask mesh is selected and active
+        bpy.ops.object.select_all(action='DESELECT')
+        mask_mesh.select_set(True)
+        context.view_layer.objects.active = mask_mesh
+        bpy.ops.object.bake(type='EMIT', save_mode='EXTERNAL', filepath=bake_image.filepath)
+        if bake_image.has_data:
+            bake_image.save_render(bake_image.filepath)
+            logger.info("Visibility mask baking completed successfully.")
+            return bake_image.filepath
+        else:
+            logger.error("Failed to bake visibility mask.")
+            return None
+
+    def setup_visibility_material(self, mesh, image):
+        """Set up a material for the mesh with the specified image for baking visibility."""
+        mat = bpy.data.materials.get("VisibilityMaskMaterial") or bpy.data.materials.new(name="VisibilityMaskMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        geometry = nodes.new('ShaderNodeNewGeometry')
+        emission = nodes.new('ShaderNodeEmission')
+        output = nodes.new('ShaderNodeOutputMaterial')
+        links = mat.node_tree.links
+        links.new(emission.inputs['Color'], geometry.outputs['Backfacing'])
+        links.new(output.inputs['Surface'], emission.outputs['Emission'])
+        mesh.data.materials.clear()
+        mesh.data.materials.append(mat)
+        logger.info("Visibility mask material setup completed.")
+
+    def apply_visibility_mask(self, context, mesh, mask_path):
+        # Apply the visibility mask to the mesh using a new material
+        logger.info("Applying visibility mask to mesh.")
+        mat = bpy.data.materials.get("FinalVisibilityMaskMaterial") or bpy.data.materials.new(name="FinalVisibilityMaskMaterial")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        tex_image = nodes.new('ShaderNodeTexImage')
+        tex_image.image = bpy.data.images.load(mask_path, check_existing=True)
+        output = nodes.new('ShaderNodeOutputMaterial')
+        links = mat.node_tree.links
+        links.new(output.inputs['Surface'], tex_image.outputs['Color'])
+        mesh.data.materials.clear()
+        mesh.data.materials.append(mat)
+        logger.info("Visibility mask applied successfully.")
+
+    def initial_checks(self, context):
+        # Check for the presence of a selected object and that the object is a mesh
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No object selected.")
+            return False
+        if context.active_object.type != 'MESH':
+            self.report({'ERROR'}, "The active object must be a mesh.")
+            return False
+        return True
+
+    def save_current_state(self, context):
+        """Save the current render engine and materials of selected objects."""
+        return {
+            'original_obj': context.active_object,
+            'original_engine': context.scene.render.engine,
+            'original_materials': {obj: obj.data.materials[:] for obj in context.selected_objects}
+        }
+
+    def restore_state(self, context, state):
+        """Restore the original render engine and materials of selected objects."""
+        self.cleanup(context, state['original_obj'], state['original_engine'], state['original_materials'])
+
+    def cleanup(self, context, original_obj, original_engine, original_materials):
+        """Restore the original render engine and materials of selected objects."""
+        # Only restore the original render engine and materials, do not remove temporary meshes
+        logger.info("Restoring original render engine and materials.")
+        context.scene.render.engine = original_engine
+        for obj, mats in original_materials.items():
+            obj.data.materials.clear()
+            for mat in mats:
+                obj.data.materials.append(mat)
+        if not context.scene.zenv_debug_mode:
+            bpy.data.objects.remove(bpy.data.objects["temp_visibility_mask_mesh"], do_unlink=True)
+        logger.info("Original state restored.")
+
