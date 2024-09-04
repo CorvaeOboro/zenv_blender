@@ -34,6 +34,7 @@ class ZENV_PT_CamProjPanel(bpy.types.Panel):
         layout = self.layout
         layout.operator("zenv.create_camera_proj")
         layout.operator("zenv.bake_cam_proj_texture")
+        layout.prop(context.scene, "zenv_ortho_scale")
         layout.prop(context.scene, "zenv_texture_path")
 
 
@@ -84,7 +85,7 @@ class ZENV_OT_NewCameraOrthoProj(bpy.types.Operator):
         """Set camera to orthographic mode and adjust its scale and clipping."""
         # Set camera to orthographic mode and adjust its scale and clipping
         camera_object.data.type = 'ORTHO'
-        camera_object.data.ortho_scale = bpy.context.scene.zenv_ortho_scale
+        camera_object.data.ortho_scale = bpy.context.scene.zenv_ortho_scale  # Use the new property
 
         # Adjust camera clip start and end based on the current view settings
         for area in bpy.context.screen.areas:
@@ -378,6 +379,11 @@ def setup_material_nodes(material, image=None):
     links.new(output.inputs['Surface'], bsdf.outputs['BSDF'])
     return nodes
 
+def update_ortho_scale(self, context):
+    camera = context.scene.camera
+    if camera and camera.data.type == 'ORTHO':
+        camera.data.ortho_scale = self.zenv_ortho_scale
+
 #//======================================================================================================
 # BLENDER ADDON REGISTER
 def register():
@@ -386,6 +392,14 @@ def register():
     bpy.utils.register_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.register_class(ZENV_OT_BakeTexture)
 
+    bpy.types.Scene.zenv_ortho_scale = bpy.props.FloatProperty(
+        name="Orthographic Scale",
+        description="Orthographic scale for the camera projection",
+        default=6.0,
+        min=0.01,
+        max=1000.0,
+        update=update_ortho_scale
+    )
     bpy.types.Scene.zenv_texture_path = bpy.props.StringProperty(
         name="Texture File Path",
         subtype='FILE_PATH'
@@ -397,6 +411,7 @@ def unregister():
     bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
     bpy.utils.unregister_class(ZENV_OT_BakeTexture)
 
+    del bpy.types.Scene.zenv_ortho_scale
     del bpy.types.Scene.zenv_texture_path
 
 
