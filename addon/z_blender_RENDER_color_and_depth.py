@@ -3,7 +3,7 @@ bl_info = {
     "category": "ZENV",
     "author": "CorvaeOboro",
     "version": (1, 0),
-    "blender": (2, 80, 0),
+    "blender": (3, 80, 0),
     "location": "View3D > ZENV",
     "description": " renders quick simple color and depth images with datetime suffix",
 }
@@ -279,7 +279,6 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         for obj, mat in original_materials.items():
             if obj.type == 'MESH':
                 obj.active_material = mat
-
 
 class ZENV_OT_RenderDepth(bpy.types.Operator):
     bl_idname = "zenv.render_depth_datetime"

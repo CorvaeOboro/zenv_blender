@@ -1,11 +1,10 @@
 bl_info = {
-    "name": "Separate Mesh by UV Islands",
+    "name": "Separate Mesh by UV Islands or UDIM",
     "author": "CorvaeOboro",
     "version": (1, 0),
-    "blender": (2, 80, 0),
+    "blender": (3, 80, 0),
     "location": "View3D > Sidebar > ZENV Tab",
-    "description": "Separates a mesh into new objects based on UV islands",
-    "warning": "",
+    "description": "Separates a mesh into new objects based on UV islands , or UV quadrant",
     "wiki_url": "",
     "category": "ZENV",
 }

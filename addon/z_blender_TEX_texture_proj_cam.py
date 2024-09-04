@@ -317,10 +317,11 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         context.scene.render.bake.use_pass_color = True
         logger.info("Render settings configured for baking Diffuse color only.")
         
-    def create_bake_image(self):
+    def create_bake_image(self, context):
         """Create a new image for baking."""
         image_name = "BakeImage" + datetime.now().strftime("%Y%m%d%H%M%S")
-        image = bpy.data.images.new(name=image_name, width=1024, height=1024, alpha=True)
+        bake_resolution = context.scene.zenv_texture_resolution
+        image = bpy.data.images.new(name=image_name, width=bake_resolution, height=bake_resolution, alpha=True)
         # Define a valid file path for the image within a "textures" subfolder
         textures_folder = bpy.path.abspath("//textures/")
         if not os.path.exists(textures_folder):
@@ -391,56 +392,7 @@ def update_ortho_scale(self, context):
     if camera and camera.data.type == 'ORTHO':
         camera.data.ortho_scale = self.zenv_ortho_scale
 
-#//======================================================================================================
-# BLENDER ADDON REGISTER
-def register():
-    # Register the addon's classes and properties
-    bpy.utils.register_class(ZENV_PT_CamProjPanel)
-    bpy.utils.register_class(ZENV_OT_NewCameraOrthoProj)
-    bpy.utils.register_class(ZENV_OT_BakeTexture)
-    bpy.utils.register_class(ZENV_OT_BakeVisibilityMask)
-
-    bpy.types.Scene.zenv_ortho_scale = bpy.props.FloatProperty(
-        name="Orthographic Scale",
-        description="Orthographic scale for the camera projection",
-        default=6.0,
-        min=0.01,
-        max=1000.0,
-        update=update_ortho_scale
-    )
-    bpy.types.Scene.zenv_texture_resolution = bpy.props.IntProperty(
-        name="Texture Resolution",
-        description="Resolution for the texture to be baked",
-        default=1024,
-        min=1,
-        max=16384
-    )
-    bpy.types.Scene.zenv_texture_path = bpy.props.StringProperty(
-        name="Texture File Path",
-        subtype='FILE_PATH'
-    )
-    bpy.types.Scene.zenv_debug_mode = bpy.props.BoolProperty(
-        name="Debug Mode",
-        description="Keep temporary meshes after baking for debugging",
-        default=False
-    )
-
-def unregister():
-    # Unregister the addon's classes and properties
-    bpy.utils.unregister_class(ZENV_PT_CamProjPanel)
-    bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
-    bpy.utils.unregister_class(ZENV_OT_BakeTexture)
-    bpy.utils.unregister_class(ZENV_OT_BakeVisibilityMask)
-
-    del bpy.types.Scene.zenv_ortho_scale
-    del bpy.types.Scene.zenv_texture_resolution
-    del bpy.types.Scene.zenv_texture_path
-    del bpy.types.Scene.zenv_debug_mode
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    register()
+    
 class ZENV_OT_BakeVisibilityMask(bpy.types.Operator):
     """Bake visibility mask of selected object from camera view."""
     bl_idname = "zenv.bake_visibility_mask"
@@ -480,7 +432,7 @@ class ZENV_OT_BakeVisibilityMask(bpy.types.Operator):
     def perform_visibility_baking(self, context, mask_mesh, original_obj):
         # Perform the baking process for the visibility mask
         logger.info("Performing visibility mask baking.")
-        bake_image = self.create_bake_image()
+        bake_image = self.create_bake_image(context)
         self.setup_visibility_material(mask_mesh, bake_image)
         self.set_render_settings_for_baking(context)
         # Ensure the mask mesh is selected and active
@@ -563,3 +515,54 @@ class ZENV_OT_BakeVisibilityMask(bpy.types.Operator):
             bpy.data.objects.remove(bpy.data.objects["temp_visibility_mask_mesh"], do_unlink=True)
         logger.info("Original state restored.")
 
+
+#//======================================================================================================
+# BLENDER ADDON REGISTER
+def register():
+    # Register the addon's classes and properties
+    bpy.utils.register_class(ZENV_PT_CamProjPanel)
+    bpy.utils.register_class(ZENV_OT_NewCameraOrthoProj)
+    bpy.utils.register_class(ZENV_OT_BakeTexture)
+    bpy.utils.register_class(ZENV_OT_BakeVisibilityMask)
+
+    bpy.types.Scene.zenv_ortho_scale = bpy.props.FloatProperty(
+        name="Orthographic Scale",
+        description="Orthographic scale for the camera projection",
+        default=6.0,
+        min=0.01,
+        max=1000.0,
+        update=update_ortho_scale
+    )
+    bpy.types.Scene.zenv_texture_resolution = bpy.props.IntProperty(
+        name="Texture Resolution",
+        description="Resolution for the texture to be baked",
+        default=1024,
+        min=1,
+        max=16384
+    )
+    bpy.types.Scene.zenv_texture_path = bpy.props.StringProperty(
+        name="Texture File Path",
+        subtype='FILE_PATH'
+    )
+    bpy.types.Scene.zenv_debug_mode = bpy.props.BoolProperty(
+        name="Debug Mode",
+        description="Keep temporary meshes after baking for debugging",
+        default=False
+    )
+
+def unregister():
+    # Unregister the addon's classes and properties
+    bpy.utils.unregister_class(ZENV_PT_CamProjPanel)
+    bpy.utils.unregister_class(ZENV_OT_NewCameraOrthoProj)
+    bpy.utils.unregister_class(ZENV_OT_BakeTexture)
+    bpy.utils.unregister_class(ZENV_OT_BakeVisibilityMask)
+
+    del bpy.types.Scene.zenv_ortho_scale
+    del bpy.types.Scene.zenv_texture_resolution
+    del bpy.types.Scene.zenv_texture_path
+    del bpy.types.Scene.zenv_debug_mode
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    register()
