@@ -299,7 +299,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
         source_mesh.select_set(True)
         target_mesh.select_set(True)
         context.view_layer.objects.active = target_mesh
-        bpy.ops.object.bake(type='DIFFUSE', pass_filter={'COLOR'}, save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True)
+        bpy.ops.object.bake(type='DIFFUSE', pass_filter={'COLOR'}, save_mode='EXTERNAL', filepath=bake_image.filepath, use_selected_to_active=True, cage_extrusion=0.01, max_ray_distance=0.01)
         if bake_image.has_data:
             bake_image.save_render(bake_image.filepath)
             logger.info("Baking completed successfully.")
