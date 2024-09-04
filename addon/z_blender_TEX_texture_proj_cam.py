@@ -37,6 +37,7 @@ class ZENV_PT_CamProjPanel(bpy.types.Panel):
         layout.prop(context.scene, "zenv_ortho_scale")
         layout.prop(context.scene, "zenv_texture_resolution")
         layout.prop(context.scene, "zenv_texture_path")
+        layout.prop(context.scene, "zenv_debug_mode", text="Debug")
 
 
 #//==================================================================================================
@@ -363,6 +364,9 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
             obj.data.materials.clear()
             for mat in mats:
                 obj.data.materials.append(mat)
+        if not context.scene.zenv_debug_mode:
+            bpy.data.objects.remove(bpy.data.objects["temp_camera_proj_mesh"], do_unlink=True)
+            bpy.data.objects.remove(bpy.data.objects["temp_bake_setup_mesh"], do_unlink=True)
         logger.info("Original state restored.")
     
 #//======================================================================================================
@@ -414,6 +418,11 @@ def register():
         name="Texture File Path",
         subtype='FILE_PATH'
     )
+    bpy.types.Scene.zenv_debug_mode = bpy.props.BoolProperty(
+        name="Debug Mode",
+        description="Keep temporary meshes after baking for debugging",
+        default=False
+    )
 
 def unregister():
     # Unregister the addon's classes and properties
@@ -424,6 +433,7 @@ def unregister():
     del bpy.types.Scene.zenv_ortho_scale
     del bpy.types.Scene.zenv_texture_resolution
     del bpy.types.Scene.zenv_texture_path
+    del bpy.types.Scene.zenv_debug_mode
 
 
 if __name__ == "__main__":
