@@ -291,7 +291,7 @@ class ZENV_OT_BakeTexture(bpy.types.Operator):
     def perform_baking(self, context, source_mesh, target_mesh, original_obj):
         # Perform the baking process using Cycles render engine
         logger.info("Performing texture baking.")
-        bake_image = self.create_bake_image()
+        bake_image = self.create_bake_image(context)
         self.setup_baking_material(target_mesh, bake_image)
         self.set_render_settings_for_baking(context)
         # Ensure the source and target meshes are selected and the target is active
