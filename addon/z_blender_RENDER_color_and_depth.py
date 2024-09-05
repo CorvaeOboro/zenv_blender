@@ -5,7 +5,7 @@ bl_info = {
     "version": (1, 0),
     "blender": (3, 80, 0),
     "location": "View3D > ZENV",
-    "description": " renders quick simple color and depth images with datetime suffix",
+    "description": " renders quick flat color and depth images with datetime suffix",
 }
 #//==================================================================================================
 import bpy
@@ -195,9 +195,8 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         # Restore original state
         self.restore_scene_state(context, original_state)
 
+        return {'FINISHED'}
 
-        return {'FINISHED'}
-        return {'FINISHED'}
 
     def store_scene_state(self, context):
         state = {
