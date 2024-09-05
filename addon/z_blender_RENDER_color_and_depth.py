@@ -175,13 +175,6 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
 
         # Store original state
         original_state = self.store_scene_state(context)
-        # Store original settings
-        original_settings = {
-            'engine': context.scene.render.engine,
-            'display_device': context.scene.display_settings.display_device,
-            'view_transform': context.scene.view_settings.view_transform,
-            'color_space': context.scene.sequencer_colorspace_settings.name
-        }
 
         # Set up for accurate color rendering
         self.setup_render_settings(context) # Standard , not AgX 
