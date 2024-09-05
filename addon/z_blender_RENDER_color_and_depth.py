@@ -195,6 +195,8 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         # Restore original state
         self.restore_scene_state(context, original_state)
 
+
+        return {'FINISHED'}
         return {'FINISHED'}
 
     def store_scene_state(self, context):
