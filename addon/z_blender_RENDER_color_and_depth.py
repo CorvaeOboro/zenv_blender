@@ -190,7 +190,6 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
 
         return {'FINISHED'}
 
-
     def store_scene_state(self, context):
         state = {
             'engine': context.scene.render.engine,
@@ -212,9 +211,9 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         context.scene.display_settings.display_device = state['settings']['display_device']
         context.scene.view_settings.view_transform = state['settings']['view_transform']
         context.scene.sequencer_colorspace_settings.name = state['settings']['color_space']
+        context.scene.render.engine = state['settings']['engine']
 
-        # Restore original settings
-        self.restore_original_settings(context, original_settings)
+
 
         return {'FINISHED'}
         
@@ -274,14 +273,6 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         # Adjust additional settings to ensure flat color rendering with no shading effects
         scene.world.color = (1, 1, 1)  # World background color to white
 
-    def restore_original_settings(self, context, original_settings):
-        logging.info("Restoring original render settings...")
-        scene = context.scene
-        scene.display_settings.display_device = original_settings['display_device']
-        scene.view_settings.view_transform = original_settings['view_transform']
-        scene.sequencer_colorspace_settings.name = original_settings['color_space']
-        scene.render.engine = original_settings['engine']
-
     def render_and_save_image(self, context):
         logging.info("Rendering and saving image...")
         datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -292,12 +283,6 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         context.scene.render.filepath = render_filepath
         bpy.ops.render.render(write_still=True)
 
-    def restore_scene(self, context, original_engine, original_materials):
-        logging.info("Restoring original materials and render engine settings...")
-        context.scene.render.engine = original_engine
-        for obj, mat in original_materials.items():
-            if obj.type == 'MESH':
-                obj.active_material = mat
 
 class ZENV_OT_RenderDepth(bpy.types.Operator):
     bl_idname = "zenv.render_depth_datetime"
@@ -352,18 +337,6 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
     def store_compositor_nodes(self, context):
         nodes = context.scene.node_tree.nodes
         return {n.name: n.type for n in nodes}
-
-    def restore_scene(self, context, camera, original_engine, original_settings, original_clip_start, original_clip_end, original_compositor_nodes):
-        logging.info("Restoring original scene settings...")
-        camera.data.clip_start = original_clip_start
-        camera.data.clip_end = original_clip_end
-        context.scene.render.engine = original_engine
-        context.scene.render.image_settings.file_format = original_settings
-
-        # Restore compositor nodes
-        if original_compositor_nodes:
-            self.restore_compositor_nodes(context)
-            print("restore")
 
     def setup_rendering(self, context, camera, obj):
         logging.info("Setting up rendering...")
@@ -425,7 +398,6 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
 
         # Link Render Layers to Composite
         tree.links.new(render_layers_node.outputs[0], composite_node.inputs[0])
-
 
     def render_image(self, context, obj):
         logging.info("Rendering image...")
