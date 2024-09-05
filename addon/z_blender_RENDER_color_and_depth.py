@@ -167,14 +167,14 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
 
     def execute(self, context):
         logging.info("Starting flat color rendering...")
+
         
         if not context.scene.camera:
             self.report({'ERROR'}, "No active camera found.")
             return {'CANCELLED'}
 
         # Store original state
-        original_engine = context.scene.render.engine
-        original_materials = {obj: obj.active_material for obj in bpy.data.objects if obj.type == 'MESH'}
+        original_state = self.store_scene_state(context)
         # Store original settings
         original_settings = {
             'engine': context.scene.render.engine,
@@ -193,7 +193,32 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         self.render_and_save_image(context)
 
         # Restore original state
-        self.restore_scene(context, original_engine, original_materials)
+        self.restore_scene_state(context, original_state)
+
+        return {'FINISHED'}
+
+    def store_scene_state(self, context):
+        state = {
+            'engine': context.scene.render.engine,
+            'materials': {obj: obj.active_material for obj in bpy.data.objects if obj.type == 'MESH'},
+            'settings': {
+                'display_device': context.scene.display_settings.display_device,
+                'view_transform': context.scene.view_settings.view_transform,
+                'color_space': context.scene.sequencer_colorspace_settings.name
+            }
+        }
+        return state
+
+    def restore_scene_state(self, context, state):
+        logging.info("Restoring original scene state...")
+        context.scene.render.engine = state['engine']
+        for obj, mat in state['materials'].items():
+            if obj.type == 'MESH':
+                obj.active_material = mat
+        context.scene.display_settings.display_device = state['settings']['display_device']
+        context.scene.view_settings.view_transform = state['settings']['view_transform']
+        context.scene.sequencer_colorspace_settings.name = state['settings']['color_space']
+
         # Restore original settings
         self.restore_original_settings(context, original_settings)
 
@@ -294,11 +319,7 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
             return {'CANCELLED'}
 
         # Store original settings
-        original_clip_start = camera.data.clip_start
-        original_clip_end = camera.data.clip_end
-        original_engine = context.scene.render.engine
-        original_settings = context.scene.render.image_settings.file_format
-        original_compositor_nodes = self.store_compositor_nodes(context) if context.scene.use_nodes else None
+        original_state = self.store_scene_state(context, camera)
 
         # Setup for rendering
         self.setup_rendering(context, camera, obj)
@@ -307,13 +328,32 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
         rendered_image_path = self.render_image(context, obj)
 
         # Restore original settings
-        self.restore_scene(context, camera, original_engine, original_settings, original_clip_start, original_clip_end, original_compositor_nodes)
+        self.restore_scene_state(context, camera, original_state)
 
         if not rendered_image_path:
             return {'CANCELLED'}
 
         logging.info("Rendered image successfully.")
         return {'FINISHED'}
+
+    def store_scene_state(self, context, camera):
+        state = {
+            'clip_start': camera.data.clip_start,
+            'clip_end': camera.data.clip_end,
+            'engine': context.scene.render.engine,
+            'settings': context.scene.render.image_settings.file_format,
+            'compositor_nodes': self.store_compositor_nodes(context) if context.scene.use_nodes else None
+        }
+        return state
+
+    def restore_scene_state(self, context, camera, state):
+        logging.info("Restoring original scene state...")
+        camera.data.clip_start = state['clip_start']
+        camera.data.clip_end = state['clip_end']
+        context.scene.render.engine = state['engine']
+        context.scene.render.image_settings.file_format = state['settings']
+        if state['compositor_nodes']:
+            self.restore_compositor_nodes(context)
 
     def store_compositor_nodes(self, context):
         nodes = context.scene.node_tree.nodes
