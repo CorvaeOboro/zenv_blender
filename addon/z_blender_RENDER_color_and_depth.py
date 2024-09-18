@@ -19,6 +19,7 @@ from mathutils import Vector
 import math
 import logging
 logger = logging.getLogger(__name__)
+#import tempfile
 
 # UI
 class ZENV_PT_RenderQuick(bpy.types.Panel):
@@ -37,34 +38,43 @@ class ZENV_PT_RenderQuick(bpy.types.Panel):
 
 #//==================================================================================================
 
+# GLOBAL Store and Restore Scene State , 
+# scene state settings and linked data blocks are a huge pain , instead we are just saving a temp scene to restore 
+def save_temporary_blend():
+    # Save the current main .blend file to a temporary file
+    temp_dir = os.path.dirname(bpy.data.filepath)
+    temp_blend_path = os.path.join(temp_dir, "temp_scene_20240906.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=temp_blend_path, copy=True)
+    return temp_blend_path
+
+def restore_from_temporary_blend(temp_blend_path):
+    # Load the temporary .blend file to restore the state
+    bpy.ops.wm.open_mainfile(filepath=temp_blend_path)
+    os.remove(temp_blend_path)
+
+#//==================================================================================================
+
+
 class ZENV_OT_RenderComplete(bpy.types.Operator):
     bl_idname = "zenv.render_complete_datetime"
     bl_label = "Render Complete Shading Lighting"
 
     def execute(self, context):
         logging.info("Starting complete shading lighting rendering...")
-        selected_objects = context.selected_objects
-
-        if not context.scene.camera or not selected_objects:
-            self.report({'ERROR'}, "No active camera or selected objects found.")
+        # Save the current Blender file state
+        temp_blend_path = save_temporary_blend()
+        
+        try:
+            # Setup and perform rendering
+            self.setup_rendering(context)
+            self.render_and_save_image(context)
+        except Exception as e:
+            logger.error(f"Rendering failed: {str(e)}")
+            self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
-
-        # Store original state
-        original_materials = {o: o.active_material for o in bpy.data.objects if o.type == 'MESH'}
-        original_engine = context.scene.render.engine
-        original_settings = context.scene.render.image_settings.file_format
-        original_clip_start = context.scene.camera.data.clip_start
-        original_clip_end = context.scene.camera.data.clip_end
-
-        # Setup for rendering
-        self.setup_rendering(context, selected_objects)
-
-        # Render and save image
-        self.render_and_save_image(context, selected_objects)
-
-        # Restore original state
-        self.restore_scene(context, original_materials, original_engine, original_settings, original_clip_start, original_clip_end)
-
+        finally:
+            # Restore the original state from the temporary file
+            restore_from_temporary_blend(temp_blend_path)
         return {'FINISHED'}
 
     def setup_rendering(self, context, selected_objects):
@@ -111,7 +121,6 @@ class ZENV_OT_RenderComplete(bpy.types.Operator):
                     temp_material.node_tree.links.new(texture_node.outputs['Color'], bsdf.inputs['Base Color'])
                     break  # Assuming first image texture is the diffuse texture
 
-
     def adjust_camera_clipping(self, camera, obj):
         # Transform the bounding box coordinates to world space
         world_verts = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
@@ -125,19 +134,6 @@ class ZENV_OT_RenderComplete(bpy.types.Operator):
         max_distance = max(distances)
         camera.data.clip_start = max(min_distance * 0.9, 0.1)  # Avoid too small clipping start
         camera.data.clip_end = max_distance * 1.1  # Slightly beyond the furthest point
-
-    def restore_scene(self, context, original_materials, original_engine, original_settings, original_clip_start, original_clip_end):
-        logging.info("Restoring original scene settings...")
-        # Restore materials
-        for o in bpy.data.objects:
-            if o.type == 'MESH':
-                o.active_material = original_materials.get(o)
-
-        # Restore render settings
-        context.scene.render.engine = original_engine
-        context.scene.render.image_settings.file_format = original_settings
-        context.scene.camera.data.clip_start = original_clip_start
-        context.scene.camera.data.clip_end = original_clip_end
 
     def render_and_save_image(self, context, selected_objects):
         logging.info("Rendering and saving image...")
@@ -168,13 +164,12 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
     def execute(self, context):
         logging.info("Starting flat color rendering...")
 
-        
         if not context.scene.camera:
             self.report({'ERROR'}, "No active camera found.")
             return {'CANCELLED'}
 
-        # Store original state
-        original_state = self.store_scene_state(context)
+        # Save the current Blender file state
+        temp_blend_path = save_temporary_blend()
 
         # Set up for accurate color rendering
         self.setup_render_settings(context) # Standard , not AgX 
@@ -185,35 +180,8 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         # Render and save image
         self.render_and_save_image(context)
 
-        # Restore original state
-        self.restore_scene_state(context, original_state)
-
-        return {'FINISHED'}
-
-    def store_scene_state(self, context):
-        state = {
-            'engine': context.scene.render.engine,
-            'materials': {obj: obj.active_material for obj in bpy.data.objects if obj.type == 'MESH'},
-            'settings': {
-                'display_device': context.scene.display_settings.display_device,
-                'view_transform': context.scene.view_settings.view_transform,
-                'color_space': context.scene.sequencer_colorspace_settings.name
-            }
-        }
-        return state
-
-    def restore_scene_state(self, context, state):
-        logging.info("Restoring original scene state...")
-        context.scene.render.engine = state['engine']
-        for obj, mat in state['materials'].items():
-            if obj.type == 'MESH':
-                obj.active_material = mat
-        context.scene.display_settings.display_device = state['settings']['display_device']
-        context.scene.view_settings.view_transform = state['settings']['view_transform']
-        context.scene.sequencer_colorspace_settings.name = state['settings']['color_space']
-        context.scene.render.engine = state['settings']['engine']
-
-
+        # Restore the original state from the temporary file
+        restore_from_temporary_blend(temp_blend_path)
 
         return {'FINISHED'}
         
@@ -283,7 +251,6 @@ class ZENV_OT_RenderColor(bpy.types.Operator):
         context.scene.render.filepath = render_filepath
         bpy.ops.render.render(write_still=True)
 
-
 class ZENV_OT_RenderDepth(bpy.types.Operator):
     bl_idname = "zenv.render_depth_datetime"
     bl_label = "Render Depth Map"
@@ -297,8 +264,8 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
             self.report({'ERROR'}, "No active camera or selected object found.")
             return {'CANCELLED'}
 
-        # Store original settings
-        original_state = self.store_scene_state(context, camera)
+        # Save the current Blender file state
+        temp_blend_path = save_temporary_blend()
 
         # Setup for rendering
         self.setup_rendering(context, camera, obj)
@@ -306,37 +273,14 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
         # Render and save image
         rendered_image_path = self.render_image(context, obj)
 
-        # Restore original settings
-        self.restore_scene_state(context, camera, original_state)
+        # Restore the original state from the temporary file
+        restore_from_temporary_blend(temp_blend_path)
 
         if not rendered_image_path:
             return {'CANCELLED'}
 
         logging.info("Rendered image successfully.")
         return {'FINISHED'}
-
-    def store_scene_state(self, context, camera):
-        state = {
-            'clip_start': camera.data.clip_start,
-            'clip_end': camera.data.clip_end,
-            'engine': context.scene.render.engine,
-            'settings': context.scene.render.image_settings.file_format,
-            'compositor_nodes': self.store_compositor_nodes(context) if context.scene.use_nodes else None
-        }
-        return state
-
-    def restore_scene_state(self, context, camera, state):
-        logging.info("Restoring original scene state...")
-        camera.data.clip_start = state['clip_start']
-        camera.data.clip_end = state['clip_end']
-        context.scene.render.engine = state['engine']
-        context.scene.render.image_settings.file_format = state['settings']
-        if state['compositor_nodes']:
-            self.restore_compositor_nodes(context)
-
-    def store_compositor_nodes(self, context):
-        nodes = context.scene.node_tree.nodes
-        return {n.name: n.type for n in nodes}
 
     def setup_rendering(self, context, camera, obj):
         logging.info("Setting up rendering...")
@@ -384,20 +328,6 @@ class ZENV_OT_RenderDepth(bpy.types.Operator):
         tree.links.new(render_layers.outputs['Depth'], map_range.inputs[0])
         tree.links.new(map_range.outputs[0], invert.inputs[1])
         tree.links.new(invert.outputs[0], comp.inputs[0])
-
-    def restore_compositor_nodes(self, context):
-        logging.info("Restoring to default compositor nodes...")
-        tree = context.scene.node_tree
-        tree.nodes.clear()
-
-        # Create Render Layers node
-        render_layers_node = tree.nodes.new('CompositorNodeRLayers')
-
-        # Create Composite node
-        composite_node = tree.nodes.new('CompositorNodeComposite')
-
-        # Link Render Layers to Composite
-        tree.links.new(render_layers_node.outputs[0], composite_node.inputs[0])
 
     def render_image(self, context, obj):
         logging.info("Rendering image...")

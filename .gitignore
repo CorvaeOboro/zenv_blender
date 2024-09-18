@@ -154,3 +154,4 @@ cython_debug/
 
 **/backup/**
 .aider*
+00_start_aider.bat
