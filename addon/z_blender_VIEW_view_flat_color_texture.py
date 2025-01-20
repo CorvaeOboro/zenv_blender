@@ -1,15 +1,17 @@
+# VIEW FLAT TEXTURE MODE
+# unlit , color view , no outlines
+
 bl_info = {
     "name": "VIEW Flat Texture View",
     "category": "ZENV",
     "author": "CorvaeOboro",
     "version": (1, 0),
-    "blender": (2, 80, 0),
+    "blender": (4, 0, 0),
     "location": "3D View > Sidebar > ZENV",
     "description": "Changes the viewport settings to flat color texture",
 }  
 
 import bpy
-
 
 class ZENV_OT_flat_texture_view(bpy.types.Operator):
     """Set viewport to flat texture view"""
@@ -25,6 +27,7 @@ class ZENV_OT_flat_texture_view(bpy.types.Operator):
                 shading.type = 'SOLID'
                 shading.light = 'FLAT'
                 shading.color_type = 'TEXTURE'
+                shading.show_object_outline = False
         return {'FINISHED'}
 
 
