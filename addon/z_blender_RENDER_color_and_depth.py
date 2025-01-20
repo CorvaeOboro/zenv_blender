@@ -3,7 +3,7 @@ bl_info = {
     "category": "ZENV",
     "author": "CorvaeOboro",
     "version": (1, 0),
-    "blender": (3, 80, 0),
+    "blender": (4, 0, 0),
     "location": "View3D > ZENV",
     "description": " renders quick flat color and depth images with datetime suffix",
 }
