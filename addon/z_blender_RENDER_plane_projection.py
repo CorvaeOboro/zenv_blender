@@ -1,13 +1,15 @@
+# RENDER PLANE PROJECTION
+# custom raytrace renderer using a plane as the image plane
+# useful for projecting depth maps or textures from a plane
+
 bl_info = {
-    "name": "Custom Raytrace Renderer",
+    "name": "RENDER Plane Projection",
+    "category": "ZENV",
     "author": "CorvaeOboro",
     "version": (1, 0),
-    "blender": (2, 92, 0),
-    "location": "View3D > Tools",
-    "description": "Implements a custom raytrace renderer using a plane as the image plane.",
-    "warning": "",
-    "wiki_url": "",
-    "category": "Rendering"
+    "blender": (4, 0, 0),
+    "location": "View3D > ZENV",
+    "description": "Custom raytrace renderer using a plane as the image plane",
 }
 
 import bpy
@@ -17,7 +19,33 @@ from bpy.props import IntProperty
 import os
 from datetime import datetime
 
+# ------------------------------------------------------------------------
+#    Properties
+# ------------------------------------------------------------------------
+
+class ZENV_PG_PlaneProjection_Properties(bpy.types.PropertyGroup):
+    """Properties for plane projection rendering"""
+    pixel_width: IntProperty(
+        name="Pixel Width",
+        description="Width of the rendered image in pixels",
+        default=100,
+        min=1,
+        max=1000
+    )
+    pixel_height: IntProperty(
+        name="Pixel Height",
+        description="Height of the rendered image in pixels",
+        default=100,
+        min=1,
+        max=1000
+    )
+
+# ------------------------------------------------------------------------
+#    Utility Functions
+# ------------------------------------------------------------------------
+
 def perform_ray_cast(context, plane, pixel_width, pixel_height):
+    """Perform raycast from plane points and return results"""
     if plane.type != 'MESH':
         return None
     
@@ -48,6 +76,7 @@ def perform_ray_cast(context, plane, pixel_width, pixel_height):
     return results
 
 def save_rendered_image(render_image, base_path):
+    """Save rendered image to file with timestamp"""
     render_dir = os.path.join(base_path, "render")
     os.makedirs(render_dir, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -57,6 +86,7 @@ def save_rendered_image(render_image, base_path):
     render_image.save()
 
 def create_line_object(context, start, end, hit):
+    """Create a line object for debug visualization"""
     mesh = bpy.data.meshes.new(name="Ray Line")
     obj = bpy.data.objects.new("Ray Line", mesh)
     context.collection.objects.link(obj)
@@ -70,7 +100,14 @@ def create_line_object(context, start, end, hit):
         material.diffuse_color = (1.0, 0.0, 0.0, 0.5)  # Red for no hit, semi-transparent
     return obj
 
+def clear_debug_lines(context):
+    """Remove all debug line objects from the scene"""
+    for obj in list(context.collection.objects):
+        if "Ray Line" in obj.name:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
 def raycast_from_plane_debug(context, plane, pixel_width, pixel_height):
+    """Debug visualization of plane projection raycasts"""
     results = perform_ray_cast(context, plane, pixel_width, pixel_height)
     if not results:
         return
@@ -80,6 +117,7 @@ def raycast_from_plane_debug(context, plane, pixel_width, pixel_height):
         create_line_object(context, world_pos, ray_end, result)
 
 def raycast_from_plane(context, plane, pixel_width, pixel_height):
+    """Render image from plane projection"""
     results = perform_ray_cast(context, plane, pixel_width, pixel_height)
     if not results:
         return None
@@ -101,82 +139,121 @@ def raycast_from_plane(context, plane, pixel_width, pixel_height):
     save_rendered_image(render_image, base_path)
     return render_image
 
+# ------------------------------------------------------------------------
+#    Operators
+# ------------------------------------------------------------------------
 
-def clear_debug_lines(context):
-    for obj in list(context.collection.objects):
-        if "Ray Line" in obj.name:
-            bpy.data.objects.remove(obj, do_unlink=True)
-
-class RENDER_OT_custom_raytracer_debug(bpy.types.Operator):
-    bl_idname = "render.custom_raytracer_debug"
+class ZENV_OT_PlaneProjection_Debug(bpy.types.Operator):
+    """Debug visualization of plane projection raycasts"""
+    bl_idname = "zenv.planeprojection_debug"
     bl_label = "Debug Raycast Plane"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        plane = context.active_object
-        if not plane:
-            self.report({'ERROR'}, "No active mesh object selected")
+        try:
+            plane = context.active_object
+            if not plane or plane.type != 'MESH':
+                self.report({'ERROR'}, "No active mesh object selected")
+                return {'CANCELLED'}
+                
+            props = context.scene.zenv_planeprojection_props
+            raycast_from_plane_debug(context, plane, props.pixel_width, props.pixel_height)
+            self.report({'INFO'}, "Debug raycast visualization complete")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Error in debug raycast: {str(e)}")
             return {'CANCELLED'}
-        raycast_from_plane_debug(context, plane, context.scene.pixel_width, context.scene.pixel_height)
-        self.report({'INFO'}, "Debug raycast complete")
-        return {'FINISHED'}
 
-class RENDER_OT_custom_raytracer(bpy.types.Operator):
-    bl_idname = "render.custom_raytracer"
+class ZENV_OT_PlaneProjection_Render(bpy.types.Operator):
+    """Render image from plane projection"""
+    bl_idname = "zenv.planeprojection_render"
     bl_label = "Render from Plane"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        plane = context.active_object
-        if not plane:
-            self.report({'ERROR'}, "No active mesh object selected")
+        try:
+            plane = context.active_object
+            if not plane or plane.type != 'MESH':
+                self.report({'ERROR'}, "No active mesh object selected")
+                return {'CANCELLED'}
+                
+            props = context.scene.zenv_planeprojection_props
+            image = raycast_from_plane(context, plane, props.pixel_width, props.pixel_height)
+            if image is None:
+                self.report({'ERROR'}, "Failed to render from the plane")
+                return {'CANCELLED'}
+                
+            self.report({'INFO'}, "Render complete")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Error in rendering: {str(e)}")
             return {'CANCELLED'}
-        image = raycast_from_plane(context, plane, context.scene.pixel_width, context.scene.pixel_height)
-        if image is None:
-            self.report({'ERROR'}, "Failed to render from the plane")
-            return {'CANCELLED'}
-        self.report({'INFO'}, "Render complete")
-        return {'FINISHED'}
 
-class RENDER_OT_clear_debug_lines(bpy.types.Operator):
-    bl_idname = "render.clear_debug_lines"
+class ZENV_OT_PlaneProjection_ClearDebug(bpy.types.Operator):
+    """Clear debug visualization lines"""
+    bl_idname = "zenv.planeprojection_clear_debug"
     bl_label = "Clear Debug Lines"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        clear_debug_lines(context)
-        self.report({'INFO'}, "Debug lines cleared")
-        return {'FINISHED'}
+        try:
+            clear_debug_lines(context)
+            self.report({'INFO'}, "Debug lines cleared")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Error clearing debug lines: {str(e)}")
+            return {'CANCELLED'}
 
-class ZENV_PT_Panel(bpy.types.Panel):
-    bl_label = "ZENV"
-    bl_idname = "ZENV_PT_Panel"
+# ------------------------------------------------------------------------
+#    Panel
+# ------------------------------------------------------------------------
+
+class ZENV_PT_PlaneProjection_Panel(bpy.types.Panel):
+    """Panel for plane projection rendering tools"""
+    bl_label = "Plane Projection"
+    bl_idname = "ZENV_PT_planeprojection"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="Raycast Settings:")
-        layout.prop(context.scene, "pixel_width", text="Pixel Width")
-        layout.prop(context.scene, "pixel_height", text="Pixel Height")
+        props = context.scene.zenv_planeprojection_props
+        
+        box = layout.box()
+        box.label(text="Resolution:", icon='RESTRICT_RENDER_OFF')
+        col = box.column(align=True)
+        col.prop(props, "pixel_width", text="Width")
+        col.prop(props, "pixel_height", text="Height")
+        
         layout.separator()
-        layout.operator("render.custom_raytracer", text="Render Image from Plane")
-        layout.operator("render.custom_raytracer_debug", text="Debug Image from Plane")
-        layout.operator("render.clear_debug_lines", text="Clear Debug Lines")
+        
+        col = layout.column(align=True)
+        col.operator("zenv.planeprojection_render", text="Render Image", icon='RENDER_STILL')
+        col.operator("zenv.planeprojection_debug", text="Debug View", icon='SNAP_FACE')
+        col.operator("zenv.planeprojection_clear_debug", text="Clear Debug", icon='CANCEL')
+
+# ------------------------------------------------------------------------
+#    Registration
+# ------------------------------------------------------------------------
+
+classes = (
+    ZENV_PG_PlaneProjection_Properties,
+    ZENV_OT_PlaneProjection_Debug,
+    ZENV_OT_PlaneProjection_Render,
+    ZENV_OT_PlaneProjection_ClearDebug,
+    ZENV_PT_PlaneProjection_Panel,
+)
 
 def register():
-    bpy.utils.register_class(RENDER_OT_custom_raytracer)
-    bpy.utils.register_class(RENDER_OT_custom_raytracer_debug)
-    bpy.utils.register_class(RENDER_OT_clear_debug_lines)
-    bpy.utils.register_class(ZENV_PT_Panel)
-    bpy.types.Scene.pixel_width = IntProperty(name="Pixel Width", default=100, min=1, max=1000)
-    bpy.types.Scene.pixel_height = IntProperty(name="Pixel Height", default=100, min=1, max=1000)
+    for current_class in classes:
+        bpy.utils.register_class(current_class)
+    bpy.types.Scene.zenv_planeprojection_props = bpy.props.PointerProperty(type=ZENV_PG_PlaneProjection_Properties)
 
 def unregister():
-    bpy.utils.unregister_class(RENDER_OT_custom_raytracer)
-    bpy.utils.unregister_class(RENDER_OT_custom_raytracer_debug)
-    bpy.utils.unregister_class(RENDER_OT_clear_debug_lines)
-    bpy.utils.unregister_class(ZENV_PT_Panel)
-    del bpy.types.Scene.pixel_width
-    del bpy.types.Scene.pixel_height
+    for current_class in reversed(classes):
+        bpy.utils.unregister_class(current_class)
+    del bpy.types.Scene.zenv_planeprojection_props
 
 if __name__ == "__main__":
     register()
