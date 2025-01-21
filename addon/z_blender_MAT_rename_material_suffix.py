@@ -1,128 +1,164 @@
+# MATERIAL RENAME AFFIX
+# prefix and suffix addition or removal for material names
+
 bl_info = {
-    "name": "MAT Rename Material add or remove affix ",
+    "name": "MAT Rename Material Suffix",
     "category": "ZENV",
     "author": "CorvaeOboro",
     "version": (1, 0),
-    "blender": (2, 80, 0),
+    "blender": (4, 0, 0),
     "location": "View3D > ZENV",
-    "description": " add or remove customizable prefix and suffix to material names, for selected or all . Added to Side tab "
+    "description": "Add or remove customizable prefix and suffix to material names"
 }
 
 import bpy
+from bpy.props import StringProperty, BoolProperty
+from bpy.types import Panel, Operator, PropertyGroup
 
-# Operator for adding prefix or suffix to materials
-class MATERIAL_OT_add(bpy.types.Operator):
-    bl_idname = "material.add_custom"
-    bl_label = "Add Custom Prefix/Suffix"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    type: bpy.props.StringProperty()  # "prefix" or "suffix"
-
-    def execute(self, context):
-        prefix = context.scene.custom_prefix
-        suffix = context.scene.custom_suffix
-        apply_to_all = context.scene.apply_to_all_materials
-
-        def apply_prefix_suffix(obj):
-            for mat_slot in obj.material_slots:
-                if mat_slot.material:
-                    if self.type == "prefix" and not mat_slot.material.name.startswith(prefix):
-                        mat_slot.material.name = prefix + mat_slot.material.name
-                    elif self.type == "suffix" and not mat_slot.material.name.endswith(suffix):
-                        mat_slot.material.name += suffix
-
-        if apply_to_all:
-            for obj in bpy.data.objects:
-                if obj.type == 'MESH':
-                    apply_prefix_suffix(obj)
+class ZENV_MaterialRename_Mixin:
+    """Shared functionality for material renaming operators"""
+    
+    def process_materials(self, context, operation="add"):
+        """Process materials based on settings"""
+        settings = context.scene.zenv_rename_props
+        processed = 0
+        
+        def process_material(material):
+            if not material:
+                return False
+                
+            name = material.name
+            changed = False
+            
+            if self.type == "prefix":
+                if operation == "add" and not name.startswith(settings.prefix):
+                    material.name = settings.prefix + name
+                    changed = True
+                elif operation == "remove" and name.startswith(settings.prefix):
+                    material.name = name[len(settings.prefix):]
+                    changed = True
+            else:  # suffix
+                if operation == "add" and not name.endswith(settings.suffix):
+                    material.name = name + settings.suffix
+                    changed = True
+                elif operation == "remove" and name.endswith(settings.suffix):
+                    material.name = name[:-len(settings.suffix)]
+                    changed = True
+                    
+            return changed
+        
+        # Process materials based on scope
+        if settings.apply_to_all:
+            for material in bpy.data.materials:
+                if process_material(material):
+                    processed += 1
         else:
-            obj = context.object
+            obj = context.active_object
             if obj and obj.type == 'MESH':
-                apply_prefix_suffix(obj)
+                for slot in obj.material_slots:
+                    if process_material(slot.material):
+                        processed += 1
+                        
+        return processed
 
+class ZENV_OT_AddAffix(Operator, ZENV_MaterialRename_Mixin):
+    """Add prefix or suffix to material names"""
+    bl_idname = "zenv.add_material_affix"
+    bl_label = "Add"
+    bl_description = "Add prefix or suffix to material names"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    type: StringProperty()  # "prefix" or "suffix"
+    
+    def execute(self, context):
+        processed = self.process_materials(context, "add")
+        self.report({'INFO'}, f"Added {self.type} to {processed} materials")
         return {'FINISHED'}
 
-# Operator for removing prefix or suffix from materials
-class MATERIAL_OT_remove(bpy.types.Operator):
-    bl_idname = "material.remove_custom"
-    bl_label = "Remove Custom Prefix/Suffix"
+class ZENV_OT_RemoveAffix(Operator, ZENV_MaterialRename_Mixin):
+    """Remove prefix or suffix from material names"""
+    bl_idname = "zenv.remove_material_affix"
+    bl_label = "Remove"
+    bl_description = "Remove prefix or suffix from material names"
     bl_options = {'REGISTER', 'UNDO'}
-
-    type: bpy.props.StringProperty()  # "prefix" or "suffix"
-
+    
+    type: StringProperty()  # "prefix" or "suffix"
+    
     def execute(self, context):
-        prefix = context.scene.custom_prefix
-        suffix = context.scene.custom_suffix
-        apply_to_all = context.scene.apply_to_all_materials
-
-        def remove_prefix_suffix(obj):
-            for mat_slot in obj.material_slots:
-                if mat_slot.material:
-                    if self.type == "prefix" and mat_slot.material.name.startswith(prefix):
-                        mat_slot.material.name = mat_slot.material.name[len(prefix):]
-                    elif self.type == "suffix" and mat_slot.material.name.endswith(suffix):
-                        mat_slot.material.name = mat_slot.material.name[:-len(suffix)]
-
-        if apply_to_all:
-            for obj in bpy.data.objects:
-                if obj.type == 'MESH':
-                    remove_prefix_suffix(obj)
-        else:
-            obj = context.object
-            if obj and obj.type == 'MESH':
-                remove_prefix_suffix(obj)
-
+        processed = self.process_materials(context, "remove")
+        self.report({'INFO'}, f"Removed {self.type} from {processed} materials")
         return {'FINISHED'}
 
-# Panel in the UI side tab
-class MATERIAL_PT_custom_panel(bpy.types.Panel):
-    bl_label = "Material Custom Prefix/Suffix"
-    bl_idname = "ZENV_Material_Custom_Naming_Ops"
+class ZENV_PG_RenameProps(PropertyGroup):
+    """Properties for material renaming"""
+    prefix: StringProperty(
+        name="Prefix",
+        description="Prefix to add to material names",
+        default="d_"
+    )
+    suffix: StringProperty(
+        name="Suffix",
+        description="Suffix to add to material names",
+        default="_MI"
+    )
+    apply_to_all: BoolProperty(
+        name="Apply to All Materials",
+        description="Apply changes to all materials in the scene instead of just selected object",
+        default=False
+    )
+
+class ZENV_PT_MaterialRenameSuffix(Panel):
+    """Panel for material name prefix/suffix operations"""
+    bl_label = "Material Name Affix"
+    bl_idname = "ZENV_PT_material_rename_suffix"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
-
+    
     def draw(self, context):
         layout = self.layout
-        scene = context.scene
+        props = context.scene.zenv_rename_props
+        
+        # Prefix section
+        box = layout.box()
+        box.label(text="Prefix Operations")
+        row = box.row()
+        row.prop(props, "prefix", text="")
+        row = box.row(align=True)
+        op = row.operator("zenv.add_material_affix", text="Add")
+        op.type = "prefix"
+        op = row.operator("zenv.remove_material_affix", text="Remove")
+        op.type = "prefix"
+        
+        # Suffix section
+        box = layout.box()
+        box.label(text="Suffix Operations")
+        row = box.row()
+        row.prop(props, "suffix", text="")
+        row = box.row(align=True)
+        op = row.operator("zenv.add_material_affix", text="Add")
+        op.type = "suffix"
+        op = row.operator("zenv.remove_material_affix", text="Remove")
+        op.type = "suffix"
+        
+        # Settings
+        box = layout.box()
+        box.label(text="Settings")
+        box.prop(props, "apply_to_all")
 
-        # Prefix operations
-        row = layout.row()
-        row.label(text="Prefix:")
-        row.prop(scene, "custom_prefix", text="")
-        row = layout.row(align=True)
-        row.operator("material.add_custom", text="Add").type = "prefix"
-        row.operator("material.remove_custom", text="Remove").type = "prefix"
-        layout.separator()
-
-        # Suffix operations
-        row = layout.row()
-        row.label(text="Suffix:")
-        row.prop(scene, "custom_suffix", text="")
-        row = layout.row(align=True)
-        row.operator("material.add_custom", text="Add").type = "suffix"
-        row.operator("material.remove_custom", text="Remove").type = "suffix"
-        layout.separator()
-
-        # Apply to all materials checkbox
-        layout.prop(scene, "apply_to_all_materials", text="Apply to All Materials in Scene")
-
-# Registering the classes and properties
 def register():
-    bpy.utils.register_class(MATERIAL_OT_add)
-    bpy.utils.register_class(MATERIAL_OT_remove)
-    bpy.utils.register_class(MATERIAL_PT_custom_panel)
-    bpy.types.Scene.custom_prefix = bpy.props.StringProperty(default="d_")
-    bpy.types.Scene.custom_suffix = bpy.props.StringProperty(default="_MI")
-    bpy.types.Scene.apply_to_all_materials = bpy.props.BoolProperty(default=False)
+    bpy.utils.register_class(ZENV_PG_RenameProps)
+    bpy.utils.register_class(ZENV_OT_AddAffix)
+    bpy.utils.register_class(ZENV_OT_RemoveAffix)
+    bpy.utils.register_class(ZENV_PT_MaterialRenameSuffix)
+    bpy.types.Scene.zenv_rename_props = bpy.props.PointerProperty(type=ZENV_PG_RenameProps)
 
 def unregister():
-    bpy.utils.unregister_class(MATERIAL_OT_add)
-    bpy.utils.unregister_class(MATERIAL_OT_remove)
-    bpy.utils.unregister_class(MATERIAL_PT_custom_panel)
-    del bpy.types.Scene.custom_prefix
-    del bpy.types.Scene.custom_suffix
-    del bpy.types.Scene.apply_to_all_materials
+    bpy.utils.unregister_class(ZENV_PG_RenameProps)
+    bpy.utils.unregister_class(ZENV_OT_AddAffix)
+    bpy.utils.unregister_class(ZENV_OT_RemoveAffix)
+    bpy.utils.unregister_class(ZENV_PT_MaterialRenameSuffix)
+    del bpy.types.Scene.zenv_rename_props
 
 if __name__ == "__main__":
     register()
