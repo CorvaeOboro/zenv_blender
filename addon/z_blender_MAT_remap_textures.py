@@ -1,108 +1,211 @@
+"""
+MAT Remap Textures - A Blender addon for texture path remapping.
+
+remap texture paths in materials, switch between texture sets.
+"""
+
 bl_info = {
-    "name": "Texture Remap",
-    "blender": (2, 80, 0),
+    "name": "MAT Remap Textures",
+    "author": "CorvaeOboro",
+    "version": (1, 1),
+    "blender": (4, 0, 0),
+    "location": "View3D > ZENV",
+    "description": "Remap texture paths in materials",
     "category": "ZENV",
 }
 
 import bpy
 import os
-from bpy.props import StringProperty, PointerProperty
-from bpy.types import Panel, Operator, PropertyGroup
+from bpy.types import Operator, Panel, PropertyGroup
+from bpy.props import StringProperty, EnumProperty, PointerProperty
 
-class ZENV_OT_UpdateTextures(Operator):
-    bl_idname = "zenv.update_textures"
-    bl_label = "Update Textures"
-    bl_description = "Updates all textures to point to images in the specified folder"
+# ------------------------------------------------------------------------
+#    Properties
+# ------------------------------------------------------------------------
 
-    def execute(self, context):
-        scn = context.scene
-        dir_path = scn.zenv_tool_props.folder_path
-
-        if not os.path.isdir(dir_path):
-            self.report({'ERROR'}, "Invalid directory path.")
-            return {'CANCELLED'}
-
-        # Update textures by file match
-        for image in bpy.data.images:
-            if image.source == 'FILE':
-                image_path = os.path.join(dir_path, f"{image.name}.png")
-                if os.path.exists(image_path):
-                    image.filepath = image_path
-                else:
-                    self.report({'WARNING'}, f"No matching PNG file found for {image.name}")
-
-        self.report({'INFO'}, "Textures updated successfully.")
-        return {'FINISHED'}
-
-class ZENV_OT_AssignTexturesByMaterial(Operator):
-    bl_idname = "zenv.assign_textures_by_material"
-    bl_label = "Assign Textures by Material"
-    bl_description = "Assigns textures based on material names by removing a specified suffix"
-
-    def execute(self, context):
-        scn = context.scene
-        dir_path = scn.zenv_tool_props.folder_path
-        suffix = scn.zenv_tool_props.material_suffix
-
-        if not os.path.isdir(dir_path):
-            self.report({'ERROR'}, "Invalid directory path.")
-            return {'CANCELLED'}
-
-        # Update textures based on material name
-        for mat in bpy.data.materials:
-            if mat.use_nodes and mat.node_tree:
-                base_name = mat.name.removesuffix(suffix)
-                image_path = os.path.join(dir_path, f"{base_name}.png")
-                if os.path.exists(image_path):
-                    for node in mat.node_tree.nodes:
-                        if node.type == 'TEX_IMAGE':
-                            node.image = bpy.data.images.load(image_path, check_existing=True)
-                else:
-                    self.report({'WARNING'}, f"No matching PNG file found for {mat.name} as {base_name} in {image_path}")
-
-        self.report({'INFO'}, "Materials updated successfully.")
-        return {'FINISHED'}
-
-class ZENV_PG_ToolProps(PropertyGroup):
-    folder_path: StringProperty(
-        name="Folder Path",
-        description="Directory path where the .png files are located",
+class ZENV_PG_RemapTextures_Properties(PropertyGroup):
+    """Properties for texture remapping."""
+    old_path: StringProperty(
+        name="Old Path",
+        description="Path to replace in texture references",
+        default="",
+        maxlen=1024,
         subtype='DIR_PATH'
     )
-    material_suffix: StringProperty(
-        name="Material Suffix",
-        description="Suffix to remove from material names when matching textures",
-        default="_MI"
+    new_path: StringProperty(
+        name="New Path",
+        description="New path to use for texture references",
+        default="",
+        maxlen=1024,
+        subtype='DIR_PATH'
+    )
+    image_ext: EnumProperty(
+        name="Image Extension",
+        description="Image file extension to use",
+        items=[
+            ('.png', "PNG", "Use PNG format"),
+            ('.bmp', "BMP", "Use BMP format"),
+            ('.jpg', "JPG", "Use JPG format"),
+            ('.tga', "TGA", "Use TGA format"),
+            ('.tif', "TIF", "Use TIF format"),
+        ],
+        default='.png'
     )
 
-class ZENV_PT_MainPanel(Panel):
-    bl_label = "Texture Remap"
-    bl_idname = "ZENV_PT_main_panel"
+# ------------------------------------------------------------------------
+#    Operators
+# ------------------------------------------------------------------------
+
+class ZENV_OT_RemapTextures(Operator):
+    """Remap texture paths in materials."""
+    bl_idname = "zenv.remap_textures"
+    bl_label = "Remap Textures"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the texture remapping operation."""
+        try:
+            props = context.scene.zenv_remap_props
+            old_path = props.old_path
+            new_path = props.new_path
+            ext = props.image_ext
+            
+            # Validate paths
+            if not old_path or not new_path:
+                self.report({'ERROR'}, "Both old and new paths must be specified")
+                return {'CANCELLED'}
+
+            # Convert to absolute paths
+            old_path = os.path.abspath(old_path)
+            new_path = os.path.abspath(new_path)
+            
+            # Clean up paths
+            old_path = old_path.replace('\\', '/')
+            new_path = new_path.replace('\\', '/')
+            if old_path.endswith('/'):
+                old_path = old_path[:-1]
+            if new_path.endswith('/'):
+                new_path = new_path[:-1]
+
+            # Track changes
+            remapped_count = 0
+            
+            # Process all materials
+            for mat in bpy.data.materials:
+                if not mat.use_nodes:
+                    continue
+                    
+                # Process all nodes
+                for node in mat.node_tree.nodes:
+                    if node.type == 'TEX_IMAGE' and node.image:
+                        img = node.image
+                        if img.filepath:
+                            old_filepath = os.path.abspath(
+                                bpy.path.abspath(img.filepath)
+                            ).replace('\\', '/')
+                            
+                            # Check if old path is in filepath
+                            if old_path in old_filepath:
+                                # Get the relative path after old_path
+                                rel_path = old_filepath[old_filepath.find(old_path) + len(old_path):].lstrip('/')
+                                
+                                # Change extension if needed
+                                base_path = os.path.splitext(rel_path)[0]
+                                new_filepath = f"{new_path}/{base_path}{ext}"
+                                
+                                # Ensure the directory exists
+                                os.makedirs(os.path.dirname(new_filepath), exist_ok=True)
+                                
+                                # Update filepath and reload image
+                                if os.path.exists(new_filepath):
+                                    img.filepath = new_filepath
+                                    img.filepath_raw = new_filepath
+                                    img.reload()
+                                    remapped_count += 1
+                                else:
+                                    self.report(
+                                        {'WARNING'}, 
+                                        f"File not found: {new_filepath}"
+                                    )
+
+            if remapped_count > 0:
+                # Force update of all image users
+                for img in bpy.data.images:
+                    img.update_tag()
+                
+                # Redraw all areas to show changes
+                for area in context.screen.areas:
+                    area.tag_redraw()
+                
+                self.report(
+                    {'INFO'}, 
+                    f"Remapped {remapped_count} texture paths"
+                )
+                return {'FINISHED'}
+            else:
+                self.report(
+                    {'WARNING'}, 
+                    "No textures were remapped. Check paths and files."
+                )
+                return {'CANCELLED'}
+            
+        except Exception as e:
+            self.report({'ERROR'}, f"Error remapping textures: {str(e)}")
+            return {'CANCELLED'}
+
+# ------------------------------------------------------------------------
+#    Panel
+# ------------------------------------------------------------------------
+
+class ZENV_PT_RemapTexturesPanel(Panel):
+    """Panel for texture remapping tools."""
+    bl_label = "Remap Textures"
+    bl_idname = "ZENV_PT_remap_textures"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
 
     def draw(self, context):
+        """Draw the panel layout."""
         layout = self.layout
-        scn = context.scene
-        layout.prop(scn.zenv_tool_props, "folder_path")
-        layout.prop(scn.zenv_tool_props, "material_suffix")
-        layout.operator("zenv.update_textures", icon='FILE_REFRESH')
-        layout.operator("zenv.assign_textures_by_material", icon='MATERIAL')
+        props = context.scene.zenv_remap_props
+
+        # Path inputs
+        box = layout.box()
+        box.label(text="Path Settings:", icon='FILE_FOLDER')
+        col = box.column(align=True)
+        col.prop(props, "old_path")
+        col.prop(props, "new_path")
+        col.prop(props, "image_ext")
+
+        # Remap button
+        box = layout.box()
+        box.label(text="Remap:", icon='FILE_REFRESH')
+        box.operator(ZENV_OT_RemapTextures.bl_idname)
+
+# ------------------------------------------------------------------------
+#    Registration
+# ------------------------------------------------------------------------
+
+classes = (
+    ZENV_PG_RemapTextures_Properties,
+    ZENV_OT_RemapTextures,
+    ZENV_PT_RemapTexturesPanel,
+)
 
 def register():
-    bpy.utils.register_class(ZENV_OT_UpdateTextures)
-    bpy.utils.register_class(ZENV_OT_AssignTexturesByMaterial)
-    bpy.utils.register_class(ZENV_PG_ToolProps)
-    bpy.utils.register_class(ZENV_PT_MainPanel)
-    bpy.types.Scene.zenv_tool_props = PointerProperty(type=ZENV_PG_ToolProps)
+    """Register the addon classes."""
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
+    bpy.types.Scene.zenv_remap_props = PointerProperty(
+        type=ZENV_PG_RemapTextures_Properties
+    )
 
 def unregister():
-    bpy.utils.unregister_class(ZENV_OT_UpdateTextures)
-    bpy.utils.unregister_class(ZENV_OT_AssignTexturesByMaterial)
-    bpy.utils.unregister_class(ZENV_PG_ToolProps)
-    bpy.utils.unregister_class(ZENV_PT_MainPanel)
-    del bpy.types.Scene.zenv_tool_props
+    """Unregister the addon classes."""
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
+    del bpy.types.Scene.zenv_remap_props
 
 if __name__ == "__main__":
     register()
