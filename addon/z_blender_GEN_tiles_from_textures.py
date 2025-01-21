@@ -1,109 +1,235 @@
+"""
+Generate Random Tiles from Textures - A Blender addon for texture visualization.
+
+This addon creates a grid of planes with randomly assigned textures from a
+selected folder. It's particularly useful for:
+- Reviewing texture seams in a texture set
+- Visualizing texture variations
+- Testing material setups with different textures
+"""
+
 bl_info = {
-    "name": "Random Tiles by Textures",
+    "name": "GEN random Tiles by Textures",
     "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (2, 80, 0),  # Update as needed
-    "location": "View3D > Sidebar > Random Tiles by Textures",
+    "version": (1, 2),
+    "blender": (4, 0, 0),
+    "location": "View3D > ZENV",
     "description": "Create a grid of planes with random textures",
-    "category": "Object",
+    "category": "ZENV",
 }
 
 import bpy
 import random
 import os
-from bpy.props import StringProperty, CollectionProperty
-from bpy.types import Operator, Panel
+from bpy.types import Operator, Panel, PropertyGroup
+from bpy.props import IntProperty, BoolProperty, PointerProperty
 from bpy_extras.io_utils import ImportHelper
 
-class OT_CreateRandomTiles(Operator, ImportHelper):
-    bl_idname = "object.create_random_tiles"
+# ------------------------------------------------------------------------
+#    Properties
+# ------------------------------------------------------------------------
+
+class ZENV_PG_TileProperties(PropertyGroup):
+    """Property group for tile generation settings."""
+    grid_size: IntProperty(
+        name="Grid Size",
+        description="Number of rows and columns in the grid",
+        default=10,
+        min=1,
+        max=100
+    )
+    random_rotation: BoolProperty(
+        name="Random Rotation",
+        description="Randomly rotate each tile",
+        default=False
+    )
+
+# ------------------------------------------------------------------------
+#    Operator
+# ------------------------------------------------------------------------
+
+class ZENV_OT_CreateRandomTiles(Operator, ImportHelper):
+    """Create a grid of planes with random textures from a folder."""
+    bl_idname = "zenv.create_random_tiles"
     bl_label = "Create Random Tiles"
     bl_options = {'REGISTER', 'UNDO'}
 
-    filter_glob: StringProperty(
-        default='*.png;*.jpg;*.jpeg;*.tga;*.bmp',
+    # File browser properties
+    filename_ext = ""
+    filter_glob: bpy.props.StringProperty(
+        default="*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.tga",
         options={'HIDDEN'}
     )
+    files: bpy.props.CollectionProperty(
+        type=bpy.types.OperatorFileListElement,
+    )
+    directory: bpy.props.StringProperty(
+        subtype='DIR_PATH'
+    )
 
-    files: CollectionProperty(type=bpy.types.OperatorFileListElement)
-    directory: StringProperty(subtype='DIR_PATH')
+    @staticmethod
+    def create_material_from_texture(texture_path):
+        """Create a new material with the given texture."""
+        # Get the texture name from the path
+        texture_name = os.path.splitext(os.path.basename(texture_path))[0]
+        
+        # Create a new material
+        material = bpy.data.materials.new(name=f"Material_{texture_name}")
+        material.use_nodes = True
+        nodes = material.node_tree.nodes
+        
+        # Clear default nodes
+        nodes.clear()
+        
+        # Create nodes
+        principled_bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        texture_node = nodes.new('ShaderNodeTexImage')
+        output_node = nodes.new('ShaderNodeOutputMaterial')
+        
+        # Load and assign the image
+        texture_node.image = bpy.data.images.load(texture_path)
+        
+        # Link nodes
+        links = material.node_tree.links
+        links.new(texture_node.outputs['Color'], 
+                 principled_bsdf.inputs['Base Color'])
+        links.new(principled_bsdf.outputs['BSDF'], 
+                 output_node.inputs['Surface'])
+        
+        # Position nodes for better organization
+        output_node.location = (300, 0)
+        principled_bsdf.location = (0, 0)
+        texture_node.location = (-300, 0)
+        
+        return material
+
+    def create_plane(self, context, location, material):
+        """Create a plane with the given material at the specified location."""
+        bpy.ops.mesh.primitive_plane_add(
+            size=1.0,
+            enter_editmode=False,
+            align='WORLD',
+            location=location
+        )
+        plane = bpy.context.active_object
+        
+        # Random rotation if enabled - use 90 degree increments
+        if context.scene.zenv_tile_props.random_rotation:
+            # Choose from 0, 90, 180, or 270 degrees (in radians)
+            rotation = random.choice([0, 1.5708, 3.1416, 4.7124])
+            plane.rotation_euler.z = rotation
+        
+        # Assign material
+        if plane.data.materials:
+            plane.data.materials[0] = material
+        else:
+            plane.data.materials.append(material)
+            
+        return plane
+
+    def create_tile_grid(self, context, materials):
+        """Create a grid of planes with random materials."""
+        props = context.scene.zenv_tile_props
+        grid_size = props.grid_size
+        
+        # Calculate grid dimensions
+        total_width = grid_size
+        start_x = -total_width / 2
+        start_y = -total_width / 2
+        
+        # Create grid
+        for row in range(grid_size):
+            for col in range(grid_size):
+                # Calculate position
+                x = start_x + col
+                y = start_y + row
+                location = (x, y, 0)
+                
+                # Create plane with random material
+                material = random.choice(materials)
+                self.create_plane(context, location, material)
 
     def execute(self, context):
-        textures = [os.path.join(self.directory, f.name) for f in self.files]
-        if not textures:
-            self.report({'ERROR'}, "No textures selected")
+        """Execute the operator."""
+        # Get selected files
+        files = [os.path.join(self.directory, file.name) 
+                for file in self.files]
+        if not files:
+            self.report({'ERROR'}, "No texture files selected")
             return {'CANCELLED'}
-        # Proceed to create materials and grid
-        create_random_tiles(context, textures)
-        return {'FINISHED'}
-
-def create_material_from_texture(texture_path):
-    import bpy
-    import os
-
-    mat_name = os.path.splitext(os.path.basename(texture_path))[0] + "_MI"
-    if mat_name in bpy.data.materials:
-        mat = bpy.data.materials[mat_name]
-    else:
-        mat = bpy.data.materials.new(name=mat_name)
-        mat.use_nodes = True
-        bsdf = mat.node_tree.nodes.get("Principled BSDF")
-        tex_image = mat.node_tree.nodes.new('ShaderNodeTexImage')
+            
         try:
-            tex_image.image = bpy.data.images.load(texture_path)
-        except:
-            print("Cannot load image %s" % texture_path)
-            return None
-        mat.node_tree.links.new(bsdf.inputs['Base Color'], tex_image.outputs['Color'])
-    return mat
+            # Create materials from textures
+            materials = []
+            for file_path in files:
+                material = self.create_material_from_texture(file_path)
+                materials.append(material)
+            
+            # Create grid of planes
+            self.create_tile_grid(context, materials)
+            
+            grid_size = context.scene.zenv_tile_props.grid_size
+            self.report(
+                {'INFO'}, 
+                f"Created {grid_size}x{grid_size} tile grid with "
+                f"{len(materials)} textures"
+            )
+            return {'FINISHED'}
+            
+        except Exception as e:
+            self.report({'ERROR'}, f"Error creating tiles: {str(e)}")
+            return {'CANCELLED'}
 
-def create_plane_at(i, j, materials):
-    import bpy
-    import random
-    bpy.ops.mesh.primitive_plane_add(size=1, enter_editmode=False, location=(i, j, 0))
-    obj = bpy.context.active_object
-    mat = random.choice(materials)
-    if mat is None:
-        return
-    if obj.data.materials:
-        # assign to 1st material slot
-        obj.data.materials[0] = mat
-    else:
-        # no slots
-        obj.data.materials.append(mat)
 
-def create_random_tiles(context, texture_paths):
-    materials = []
-    for texture_path in texture_paths:
-        mat = create_material_from_texture(texture_path)
-        if mat:
-            materials.append(mat)
-    if not materials:
-        print("No materials created")
-        return
-    # Create grid of planes
-    for i in range(20):
-        for j in range(20):
-            create_plane_at(i, j, materials)
+# ------------------------------------------------------------------------
+#    Panel
+# ------------------------------------------------------------------------
 
-class RandomTilesPanel(Panel):
-    bl_label = "ZENV"
-    bl_idname = "VIEW3D_PT_random_tiles"
+class ZENV_PT_RandomTilesPanel(Panel):
+    """Panel for creating random texture tiles."""
+    bl_label = "Random Texture Tiles"
+    bl_idname = "ZENV_PT_random_tiles"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Random Tiles by Textures'  # This creates the tab
+    bl_category = 'ZENV'
 
     def draw(self, context):
+        """Draw the panel layout."""
         layout = self.layout
-        layout.operator("object.create_random_tiles", text="Create Random Tiles")
+        props = context.scene.zenv_tile_props
+        
+        box = layout.box()
+        box.label(text="Grid Settings:", icon='GRID')
+        col = box.column(align=True)
+        col.prop(props, "grid_size")
+        col.prop(props, "random_rotation")
+        
+        box = layout.box()
+        box.label(text="Create Tiles:", icon='TEXTURE')
+        box.operator(ZENV_OT_CreateRandomTiles.bl_idname)
+
+
+# ------------------------------------------------------------------------
+#    Registration
+# ------------------------------------------------------------------------
+
+classes = (
+    ZENV_PG_TileProperties,
+    ZENV_OT_CreateRandomTiles,
+    ZENV_PT_RandomTilesPanel,
+)
 
 def register():
-    bpy.utils.register_class(OT_CreateRandomTiles)
-    bpy.utils.register_class(RandomTilesPanel)
+    """Register the addon classes."""
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    bpy.types.Scene.zenv_tile_props = PointerProperty(type=ZENV_PG_TileProperties)
 
 def unregister():
-    bpy.utils.unregister_class(OT_CreateRandomTiles)
-    bpy.utils.unregister_class(RandomTilesPanel)
+    """Unregister the addon classes."""
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+    del bpy.types.Scene.zenv_tile_props
 
 if __name__ == "__main__":
     register()
