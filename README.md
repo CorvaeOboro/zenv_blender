@@ -19,12 +19,13 @@ each addon is a self contained python file , to be installed and enabled individ
 ## MESH
 - [separate_by_material](addon/z_blender_MESH_separate_by_material.py) - for each material detach mesh into parts 
 - [separate_by_UV](addon/z_blender_MESH_separate_by_UV.py) - for each uv island detach mesh into parts
-- [separate_by_UV_quadrant](addon/z_blender_MESH_separate_by_UV_quadrant.py) - split mesh along UV seams and transform
+- [split_by_uv_quadrant](addon/z_blender_MESH_split_by_uv_quadrant.py) - split mesh along UV seams and transform
 - [separate_by_axis](addon/z_blender_MESH_separate_by_axis.py) - separate mesh parts by axis
 - [rename_objects_by_material](addon/z_blender_MESH_rename_objects_by_material.py) - rename objects by material name
 - [noise_displace](addon/z_blender_MESH_noise_displace.py) - 3D noise-based surface displacement with presets
 - [cut_world_bricker](addon/z_blender_MESH_cut_world_bricker.py) - Cut mesh into brick like segments
-- [subdivide_by_world](addon/z_blender_MESH_subdivide_by_world_units.py) - Subdivide mesh based on world units
+- [to_UV_space](addon/z_blender_MESH_to_UV_space.py) - transform mesh to match UV layout in 3D space
+- [wood_grain](addon/z_blender_MESH_wood_grain.py) - generate wood grain patterns on mesh
 
 ## GENERATIVE
 - [tiles_from_textures](addon/z_blender_GEN_tiles_from_textures.py) - generate random tiles from texture set for tiling and seam blending review
@@ -52,8 +53,11 @@ each addon is a self contained python file , to be installed and enabled individ
 - [uv_mirror_zero_pivot](addon/z_blender_UV_uv_mirror_zero_pivot.py) - U or V mirroring with pivot always at zero instead of the default of selected center
 
 ## RENDER
-- [render_color_and_depth](addon/z_blender_RENDER_color_and_depth.py) - with object selected renders a depth image auto fit to object bounds , and a flat shaded color render. useful for use with camera projected texture workflow
-- [plane_projection](addon/z_blender_RENDER_plane_projection.py) - simple raytrace renderer for plane projection
+- [color](addon/z_blender_RENDER_color.py) - render color and depth passes
+- [depth](addon/z_blender_RENDER_depth.py) - render depth passes
+
+## CLEAN
+- [scene_optimizer](addon/z_blender_CLEAN_scene_optimizer.py) - optimize scene by removing unused data and cleaning up scene structure
 
 # EXAMPLE WORKFLOWS
 - DIFFUSION CAMERA PROJECTION TEXTURING = [texture_proj_cam](addon/z_blender_TEX_texture_proj_cam.py) creates a square camera from view > [render_color_and_depth](addon/z_blender_RENDER_color_and_depth.py) renders color and depth images > img2img diffusion ( stable diffuson ) > [texture_proj_cam](addon/z_blender_TEX_texture_proj_cam.py) bakes texture projection from camera
