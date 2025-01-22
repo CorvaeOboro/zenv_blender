@@ -1,137 +1,186 @@
+"""
+MAT Unlit Convert 
+
+Convert materials to unlit by removing all nodes except basecolor and opacity textures and
+connecting them directly to the emission material output.
+"""
+
 bl_info = {
-    "name": "Emission Material Converter",
-    "category": "ZENV",
+    "name": "MAT Unlit Convert",
     "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (2, 80, 0),
-    "location": "3D View > Sidebar > ZENV",
-    "description": "Converts all materials to emission-based materials and reverts them back",
+    "version": (1, 1),
+    "blender": (4, 0, 0),
+    "location": "View3D > ZENV",
+    "description": "Convert materials to unlit",
+    "category": "ZENV",
 }
 
 import bpy
-class OBJECT_OT_ConvertToEmission(bpy.types.Operator):
-    bl_idname = "object.convert_to_emission"
-    bl_label = "Convert to Emission"
+from bpy.types import Operator, Panel, PropertyGroup
+from bpy.props import BoolProperty, PointerProperty
+
+# ------------------------------------------------------------------------
+#    Properties
+# ------------------------------------------------------------------------
+
+class ZENV_PG_UnlitConvert_Properties(PropertyGroup):
+    """Properties for unlit material conversion."""
+    preserve_alpha: BoolProperty(
+        name="Preserve Alpha",
+        description="Keep alpha/transparency connections",
+        default=False
+    )
+
+# ------------------------------------------------------------------------
+#    Operators
+# ------------------------------------------------------------------------
+
+class ZENV_OT_UnlitConvert(Operator):
+    """Convert materials to unlit by connecting textures directly to output."""
+    bl_idname = "zenv.unlit_convert"
+    bl_label = "Convert to Unlit"
     bl_options = {'REGISTER', 'UNDO'}
 
-    @classmethod
-    def poll(cls, context):
-        return context.object is not None
-
     def execute(self, context):
-        for material in bpy.data.materials:
-            self.report({'INFO'},f"Processing material: {material.name}")
-            if not material.use_nodes:
-                self.report({'INFO'},"Enabling use_nodes for material")
-                material.use_nodes = True
-            nodes = material.node_tree.nodes
-            links = material.node_tree.links
+        """Execute the material conversion."""
+        try:
+            props = context.scene.zenv_unlit_props
+            converted_count = 0
+            
+            # Process all materials
+            for mat in bpy.data.materials:
+                if not mat.use_nodes:
+                    continue
+                
+                nodes = mat.node_tree.nodes
+                links = mat.node_tree.links
+                
+                # Store texture nodes and their connections
+                texture_nodes = []
+                alpha_connections = []
+                
+                # Find texture nodes connected to Base Color
+                for node in nodes:
+                    if node.type == 'BSDF_PRINCIPLED':
+                        if node.inputs['Base Color'].is_linked:
+                            from_node = node.inputs['Base Color'].links[0].from_node
+                            if from_node.type == 'TEX_IMAGE':
+                                texture_nodes.append(from_node)
+                                # Store alpha connections if needed
+                                if props.preserve_alpha and node.inputs['Alpha'].is_linked:
+                                    alpha_node = node.inputs['Alpha'].links[0].from_node
+                                    if alpha_node.type == 'TEX_IMAGE':
+                                        alpha_connections.append(
+                                            (alpha_node, node, node.inputs['Alpha'])
+                                        )
+                
+                if not texture_nodes:
+                    continue
+                
+                # Clear all nodes
+                nodes.clear()
+                
+                # Create new nodes
+                output = nodes.new('ShaderNodeOutputMaterial')
+                emission = nodes.new('ShaderNodeEmission')
+                output.location = (300, 0)
+                emission.location = (0, 0)
+                
+                # Add back texture nodes
+                for i, tex_node in enumerate(texture_nodes):
+                    if not tex_node.image:
+                        continue
+                        
+                    new_tex = nodes.new('ShaderNodeTexImage')
+                    new_tex.image = tex_node.image
+                    new_tex.location = (-300, i * -300)
+                    
+                    # Copy texture node settings with valid enum values
+                    if hasattr(tex_node, 'interpolation') and tex_node.interpolation in {'Linear', 'Closest', 'Cubic', 'Smart'}:
+                        new_tex.interpolation = tex_node.interpolation
+                    if hasattr(tex_node, 'projection') and tex_node.projection in {'FLAT', 'BOX', 'SPHERE', 'TUBE'}:
+                        new_tex.projection = tex_node.projection
+                    if hasattr(tex_node, 'extension') and tex_node.extension in {'REPEAT', 'EXTEND', 'CLIP'}:
+                        new_tex.extension = tex_node.extension
+                    
+                    # Connect color to emission
+                    links.new(new_tex.outputs['Color'], emission.inputs['Color'])
+                    
+                    # Restore alpha connections if needed
+                    if props.preserve_alpha:
+                        for old_node, to_node, to_socket in alpha_connections:
+                            if old_node == tex_node:
+                                # Recreate alpha connection
+                                if to_node.name in nodes:
+                                    new_to_node = nodes[to_node.name]
+                                    if to_socket.name in new_to_node.inputs:
+                                        links.new(
+                                            new_tex.outputs['Alpha'],
+                                            new_to_node.inputs[to_socket.name]
+                                        )
+                
+                # Connect emission to output
+                links.new(emission.outputs['Emission'], output.inputs['Surface'])
+                converted_count += 1
+            
+            self.report(
+                {'INFO'}, 
+                f"Converted {converted_count} materials to unlit"
+            )
+            return {'FINISHED'}
+            
+        except Exception as e:
+            self.report({'ERROR'}, f"Error converting materials: {str(e)}")
+            return {'CANCELLED'}
 
-            # Log all node types in the material
-            for node in nodes:
-                self.report({'INFO'},f"Node: {node.name}, Type: {node.type}")
+# ------------------------------------------------------------------------
+#    Panel
+# ------------------------------------------------------------------------
 
-            # Create an Emission node and connect it to the Output node
-            emission_node = nodes.new(type='ShaderNodeEmission')
-            self.report({'INFO'},"Created Emission node")
-            output_node = next(node for node in nodes if node.type == 'OUTPUT_MATERIAL')
-
-
-            # Disconnect any existing connections to the Material Output node
-            for input_socket in output_node.inputs:
-                if input_socket.is_linked:
-                    for link in input_socket.links:
-                        links.remove(link)
-                        self.report({'INFO'},"Disconnected existing links to Material Output node")
-
-            links.new(emission_node.outputs[0], output_node.inputs[0])
-            self.report({'INFO'},"Connected Emission node to Output node")
-
-            # Find the Principled BSDF node and its connected Image Texture node
-            #principled_node = next((node for node in nodes if node.type == 'ShaderNodeBsdfPrincipled'), None)
-            principled_node = next((node for node in nodes if node.type == 'BSDF_PRINCIPLED'), None)
-
-            if principled_node:
-                self.report({'INFO'},"Found Principled BSDF node")
-                base_color_input = principled_node.inputs['Base Color']
-                if base_color_input.is_linked:
-                    texture_node = next((link.from_node for link in base_color_input.links if link.from_node.type == 'TEX_IMAGE'), None)
-                    if texture_node:
-                        self.report({'INFO'},f"Found Image Texture node: {texture_node.image.name}")
-                        # Connect the texture node to the Emission node
-                        links.new(texture_node.outputs['Color'], emission_node.inputs['Color'])
-                        self.report({'INFO'},"Connected Image Texture node to Emission node")
-                    else:
-                        self.report({'INFO'},"No Image Texture node connected to Base Color")
-                else:
-                    self.report({'INFO'},"Base Color input of Principled BSDF node is not linked")
-            else:
-                self.report({'INFO'},"No Principled BSDF node found")
-
-        self.report({'INFO'}, "Materials converted to emission")
-        return {'FINISHED'}
-
-
-
-class OBJECT_OT_RevertToBasic(bpy.types.Operator):
-    bl_idname = "object.revert_to_basic"
-    bl_label = "Revert to Basic"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return context.object is not None
-
-    def execute(self, context):
-        for material in bpy.data.materials:
-            if not material.use_nodes:
-                continue
-            nodes = material.node_tree.nodes
-            links = material.node_tree.links
-
-            # Remove all existing links and nodes except the Output node
-            for node in nodes:
-                if node.type != 'OUTPUT_MATERIAL':
-                    nodes.remove(node)
-
-            # Create a Diffuse BSDF node and connect it to the Output node
-            diffuse_node = nodes.new(type='ShaderNodeBsdfDiffuse')
-            output_node = next(node for node in nodes if node.type == 'OUTPUT_MATERIAL')
-            links.new(diffuse_node.outputs[0], output_node.inputs[0])
-
-            # Check if there was a stored texture in the material
-            if "original_texture" in material:
-                image_name = material["original_texture"]
-                if image_name in bpy.data.images:
-                    texture_node = nodes.new(type='ShaderNodeTexImage')
-                    texture_node.image = bpy.data.images[image_name]
-                    links.new(texture_node.outputs[0], diffuse_node.inputs[0])
-
-        self.report({'INFO'}, "Materials reverted to basic")
-        return {'FINISHED'}
-
-class ZENV_PT_MaterialConverterPanel(bpy.types.Panel):
-    """Creates a Panel in the 3D Viewport"""
-    bl_label = "Material Converter"
-    bl_idname = "ZENV_PT_material_converter"
+class ZENV_PT_UnlitConvertPanel(Panel):
+    """Panel for unlit material conversion."""
+    bl_label = "Convert to Unlit"
+    bl_idname = "ZENV_PT_unlit_convert"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
 
     def draw(self, context):
+        """Draw the panel layout."""
         layout = self.layout
-        layout.operator("object.convert_to_emission")
-        layout.operator("object.revert_to_basic")
+        props = context.scene.zenv_unlit_props
+        
+        box = layout.box()
+        box.label(text="Settings:", icon='MATERIAL')
+        box.prop(props, "preserve_alpha")
+        
+        box = layout.box()
+        box.label(text="Convert:", icon='SHADERFX')
+        box.operator(ZENV_OT_UnlitConvert.bl_idname)
+
+# ------------------------------------------------------------------------
+#    Registration
+# ------------------------------------------------------------------------
+
+classes = (
+    ZENV_PG_UnlitConvert_Properties,
+    ZENV_OT_UnlitConvert,
+    ZENV_PT_UnlitConvertPanel,
+)
 
 def register():
-    bpy.utils.register_class(OBJECT_OT_ConvertToEmission)
-    bpy.utils.register_class(OBJECT_OT_RevertToBasic)
-    bpy.utils.register_class(ZENV_PT_MaterialConverterPanel)
+    """Register the addon classes."""
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
+    bpy.types.Scene.zenv_unlit_props = PointerProperty(
+        type=ZENV_PG_UnlitConvert_Properties
+    )
 
 def unregister():
-    bpy.utils.unregister_class(OBJECT_OT_ConvertToEmission)
-    bpy.utils.unregister_class(OBJECT_OT_RevertToBasic)
-    bpy.utils.unregister_class(ZENV_PT_MaterialConverterPanel)
+    """Unregister the addon classes."""
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
+    del bpy.types.Scene.zenv_unlit_props
 
 if __name__ == "__main__":
     register()
