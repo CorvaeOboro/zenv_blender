@@ -1,193 +1,177 @@
+# MESH SEPARATE BY UV
+# separates mesh into individual objects based on UV islands
+# useful for splitting objects that share UV space into separate objects
+
 bl_info = {
-    "name": "Separate Mesh by UV Islands or UDIM",
-    "author": "CorvaeOboro",
-    "version": (1, 3),
-    "blender": (2, 80, 0),
-    "location": "View3D > Sidebar > ZENV Tab",
-    "description": "Separates a mesh into new objects based on UV islands or UV quadrant",
-    "wiki_url": "",
+    "name": "MESH Separate by UV Islands",
     "category": "ZENV",
+    "author": "CorvaeOboro",
+    "version": (1, 7),
+    "blender": (4, 0, 0),
+    "location": "View3D > ZENV",
+    "description": "Separates mesh into individual objects based on UV islands",
 }
 
 import bpy
 import bmesh
-import math
+from mathutils import Vector
 
-#===========================================================
-# SEPARATE BY UV ISLANDS
-class MESH_OT_separate_by_uv(bpy.types.Operator):
-    """Separate the mesh by UV islands"""
-    bl_idname = "mesh.separate_by_uv_islands"
+class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
+    """Separate the mesh by UV islands - splits mesh into individual objects based on UV borders"""
+    bl_idname = "zenv.separatebyuv_islands"
     bl_label = "Separate by UV Islands"
     bl_options = {'REGISTER', 'UNDO'}
 
+    def get_linked_faces_uv(self, start_face, uv_layer, processed_faces):
+        """Find all faces connected in UV space"""
+        island_faces = set()
+        faces_to_process = {start_face}
+
+        while faces_to_process:
+            current_face = faces_to_process.pop()
+            if current_face in island_faces:
+                continue
+
+            island_faces.add(current_face)
+            processed_faces.add(current_face)
+
+            # Check each vertex in the current face
+            for vert in current_face.verts:
+                # Get all faces connected to this vertex
+                connected_faces = set(f for e in vert.link_edges for f in e.link_faces)
+                
+                for connected_face in connected_faces:
+                    if connected_face in processed_faces:
+                        continue
+
+                    # Check if faces share UV coordinates
+                    shares_uv = False
+                    for loop in current_face.loops:
+                        if loop.vert == vert:
+                            current_uv = loop[uv_layer].uv
+                            # Find matching UV in connected face
+                            for c_loop in connected_face.loops:
+                                if c_loop.vert == vert and (c_loop[uv_layer].uv - current_uv).length < 0.00001:
+                                    shares_uv = True
+                                    break
+                            if shares_uv:
+                                break
+
+                    if shares_uv:
+                        faces_to_process.add(connected_face)
+
+        return island_faces
+
+    def find_uv_islands(self, bm, uv_layer):
+        """Find all UV islands in the mesh"""
+        islands = []
+        processed_faces = set()
+
+        for face in bm.faces:
+            if face not in processed_faces:
+                island = self.get_linked_faces_uv(face, uv_layer, processed_faces)
+                islands.append(island)
+
+        return islands
+
     def execute(self, context):
-        obj = context.active_object
-        if not obj or obj.type != 'MESH':
-            self.report({'ERROR'}, "Active object is not a mesh")
+        try:
+            obj = context.active_object
+            if not obj or obj.type != 'MESH':
+                self.report({'ERROR'}, "Active object is not a mesh")
+                return {'CANCELLED'}
+
+            # Store original mode and switch to EDIT
+            original_mode = obj.mode
+            bpy.ops.object.mode_set(mode='EDIT')
+
+            # Get mesh data
+            me = obj.data
+            bm = bmesh.from_edit_mesh(me)
+            bm.faces.ensure_lookup_table()
+
+            if not bm.loops.layers.uv:
+                self.report({'ERROR'}, "Mesh has no UV layer")
+                return {'CANCELLED'}
+
+            uv_layer = bm.loops.layers.uv.verify()
+
+            # Find UV islands
+            islands = self.find_uv_islands(bm, uv_layer)
+            
+            if not islands:
+                self.report({'WARNING'}, "No UV islands found")
+                return {'CANCELLED'}
+
+            # Mark seams between islands
+            for edge in bm.edges:
+                edge.seam = False
+                faces = edge.link_faces
+                if len(faces) == 2:
+                    # Check if faces belong to different islands
+                    face1_island = None
+                    face2_island = None
+                    for i, island in enumerate(islands):
+                        if faces[0] in island:
+                            face1_island = i
+                        if faces[1] in island:
+                            face2_island = i
+                    if face1_island != face2_island:
+                        edge.seam = True
+
+            bmesh.update_edit_mesh(me)
+
+            # Select seam edges and split
+            bpy.ops.mesh.select_all(action='DESELECT')
+            bpy.ops.mesh.select_mode(type='EDGE')
+            
+            for edge in bm.edges:
+                if edge.seam:
+                    edge.select = True
+            
+            bmesh.update_edit_mesh(me)
+            bpy.ops.mesh.edge_split()
+
+            # Separate by loose parts
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.separate(type='LOOSE')
+
+            # Return to original mode
+            bpy.ops.object.mode_set(mode=original_mode)
+
+            self.report({'INFO'}, f"Successfully separated into {len(islands)} UV islands")
+            return {'FINISHED'}
+
+        except Exception as e:
+            if 'obj' in locals():
+                bpy.ops.object.mode_set(mode=original_mode)
+            self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
             return {'CANCELLED'}
 
-        # Switch to EDIT mode and select all
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-
-        # Mark seams along UV islands
-        bpy.ops.uv.seams_from_islands(mark_seams=True, mark_sharp=False)
-
-        # Get BMesh
-        bm = bmesh.from_edit_mesh(obj.data)
-
-        # Split edges that are marked as seams
-        edges_to_split = [e for e in bm.edges if e.seam]
-        if edges_to_split:
-            bmesh.ops.split_edges(bm, edges=edges_to_split)
-            bmesh.update_edit_mesh(obj.data)
-
-        # Remove seams to clean up
-        for edge in bm.edges:
-            edge.seam = False
-        bmesh.update_edit_mesh(obj.data)
-
-        # Separate loose parts into new objects
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.separate(type='LOOSE')
-
-        # Switch back to OBJECT mode
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-        # Optionally, clean up by removing doubles (if necessary)
-        # for obj in context.selected_objects:
-        #     context.view_layer.objects.active = obj
-        #     bpy.ops.object.mode_set(mode='EDIT')
-        #     bpy.ops.mesh.select_all(action='SELECT')
-        #     bpy.ops.mesh.remove_doubles()
-        #     bpy.ops.object.mode_set(mode='OBJECT')
-
-        return {'FINISHED'}
-
-#=============================================================================
-# SEPARATE BY UV QUADRANTS 
-class MESH_OT_separate_by_uv_quadrant(bpy.types.Operator):
-    """Separate the mesh by the average UV quadrant of each face"""
-    bl_idname = "mesh.separate_by_uv_quadrant"
-    bl_label = "Separate by UV Quadrant"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        obj = context.active_object
-        bpy.ops.object.mode_set(mode='EDIT')
-        bm = bmesh.from_edit_mesh(obj.data)
-        uv_layer = bm.loops.layers.uv.verify()
-        
-        quadrant_faces = self.separate_faces_by_quadrant(bm, uv_layer)
-        self.separate_and_offset_uv(context, obj, quadrant_faces)
-        self.finish_up(context, obj)
-        return {'FINISHED'}
-    
-    def get_uv_quadrant(self, face, uv_layer):
-        """Calculate the UV quadrant for a given face based on the majority of its area."""
-        u_sum = 0
-        v_sum = 0
-        area_sum = 0
-        for loop in face.loops:
-            uv = loop[uv_layer].uv
-            area = loop.calc_area()
-            u_sum += uv.x * area
-            v_sum += uv.y * area
-            area_sum += area
-        if area_sum == 0:
-            u_avg = v_avg = 0
-        else:
-            u_avg = u_sum / area_sum
-            v_avg = v_sum / area_sum
-        return math.floor(u_avg), math.floor(v_avg)
-    
-    def separate_faces_by_quadrant(self, bm, uv_layer):
-        from collections import defaultdict
-        """Separate faces by their UV quadrant using a default dictionary."""
-        quadrant_faces = defaultdict(list)
-        for face in bm.faces:
-            quadrant_id = self.get_uv_quadrant(face, uv_layer)
-            quadrant_faces[quadrant_id].append(face)
-        return quadrant_faces
-    
-    def separate_and_offset_uv(self, context, obj, quadrant_faces):
-        """Separate faces by quadrant and offset their UVs."""
-        bpy.ops.mesh.select_all(action='DESELECT')
-        for quadrant, faces in quadrant_faces.items():
-            self.select_faces(faces)
-            self.separate_selected_faces()
-            self.offset_uv_of_separated_objects(context, obj, quadrant)
-            # Deselect separated object
-            bpy.ops.object.mode_set(mode='OBJECT')
-            separated_obj = context.selected_objects[-1]
-            separated_obj.select_set(False)
-            bpy.ops.object.mode_set(mode='EDIT')
-    
-    def select_faces(self, faces):
-        """Select given faces in the mesh."""
-        for face in faces:
-            face.select_set(True)
-        bmesh.update_edit_mesh(bpy.context.active_object.data)
-    
-    def separate_selected_faces(self):
-        """Separate the selected faces into a new object."""
-        bpy.ops.mesh.separate(type='SELECTED')
-    
-    def offset_uv_of_separated_objects(self, context, original_obj, quadrant):
-        """Offset the UVs of the separated objects based on the quadrant."""
-        offset_x, offset_y = -quadrant[0], -quadrant[1]
-        bpy.ops.object.mode_set(mode='OBJECT')
-        separated_obj = context.selected_objects[-1]
-        self.offset_uv(separated_obj, offset_x, offset_y)
-        bpy.ops.object.mode_set(mode='EDIT')
-    
-    def offset_uv(self, obj, offset_x, offset_y):
-        """Apply the offset to the UV coordinates of the object."""
-        bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.mode_set(mode='EDIT')
-        separated_bm = bmesh.from_edit_mesh(obj.data)
-        separated_uv_layer = separated_bm.loops.layers.uv.verify()
-        for face in separated_bm.faces:
-            for loop in face.loops:
-                loop_uv = loop[separated_uv_layer].uv
-                loop_uv.x += offset_x
-                loop_uv.y += offset_y
-        bmesh.update_edit_mesh(obj.data)
-    
-    def finish_up(self, context, obj):
-        """Deselect all and set the original object as active."""
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True)
-        context.view_layer.objects.active = obj
-
-
-#=============================================================================
-# UI SIDE PANEL
-class MESH_PT_separate_by_uv_combined(bpy.types.Panel):
-    """Creates a Panel in the Object properties window for separating by UV"""
-    bl_label = "Separate Mesh by UV"
-    bl_idname = "MESH_PT_separate_by_uv_combined"
+class ZENV_PT_SeparateByUV_Panel(bpy.types.Panel):
+    """Panel for UV separation tools"""
+    bl_label = "Separate by UV"
+    bl_idname = "ZENV_PT_separatebyuv"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
     
     def draw(self, context):
         layout = self.layout
-        layout.operator("mesh.separate_by_uv_islands")
-        layout.operator("mesh.separate_by_uv_quadrant")
+        layout.operator("zenv.separatebyuv_islands", icon='OUTLINER_OB_MESH')
 
+classes = (
+    ZENV_OT_SeparateByUV_Islands,
+    ZENV_PT_SeparateByUV_Panel,
+)
 
 def register():
-    bpy.utils.register_class(MESH_OT_separate_by_uv)
-    bpy.utils.register_class(MESH_OT_separate_by_uv_quadrant)
-    bpy.utils.register_class(MESH_PT_separate_by_uv_combined)
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
 
 def unregister():
-    bpy.utils.unregister_class(MESH_PT_separate_by_uv_combined)
-    bpy.utils.unregister_class(MESH_OT_separate_by_uv_quadrant)
-    bpy.utils.unregister_class(MESH_OT_separate_by_uv)
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
 
 if __name__ == "__main__":
     register()
