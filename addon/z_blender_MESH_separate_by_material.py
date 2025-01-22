@@ -1,229 +1,201 @@
 """
-MESH Separate by Material - A Blender addon for material-based mesh separation.
+MESH Separate By Material - A Blender addon for efficient mesh separation.
 
-This addon provides functionality to separate meshes into different objects based
-on their material assignments. It handles complex geometry by:
-1. Triangulating the mesh to ensure proper topology
-2. Marking edges along material boundaries
-3. Separating into distinct objects while preserving material boundaries
+Separates mesh objects by material assignments while preserving hierarchies.
 """
 
 bl_info = {
-    "name": "MESH Separate by Material",
-    "category": "ZENV",
+    "name": "MESH Separate By Material",
     "author": "CorvaeOboro",
-    "version": (1, 7),
+    "version": (1, 2),
     "blender": (4, 0, 0),
     "location": "View3D > ZENV",
-    "description": "Separates mesh into different objects based on material",
+    "description": "Separate mesh by material assignments",
+    "category": "ZENV",
 }
 
 import bpy
 import bmesh
 from bpy.types import Operator, Panel
+import time
+from mathutils import Matrix
 
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
-
-class ZENV_OT_SeparateByMaterial_Split(Operator):
-    """Separates selected mesh into multiple objects based on material assignments.
-    
-    This operator performs the following steps:
-    1. Triangulates the mesh to ensure proper topology
-    2. Marks edges between different materials
-    3. Separates the mesh into distinct objects
-    4. Names each object based on its material
-    
-    Note:
-        The original object must have materials assigned to its faces.
-    """
-    bl_idname = "zenv.separatebymaterial_split"
-    bl_label = "Split by Material"
+class ZENV_OT_SeparateByMaterial(Operator):
+    """Separate mesh objects by material assignments."""
+    bl_idname = "zenv.separate_by_material"
+    bl_label = "Separate By Material"
     bl_options = {'REGISTER', 'UNDO'}
 
-    @classmethod
-    def poll(cls, context):
-        """Check if the operator can be executed."""
-        return context.active_object and context.active_object.type == 'MESH'
+    def get_world_matrix(self, obj):
+        """Get the world matrix considering the entire parent hierarchy."""
+        if obj.parent:
+            parent_matrix = self.get_world_matrix(obj.parent)
+            return parent_matrix @ obj.matrix_local
+        return obj.matrix_local
 
-    def prepare_mesh(self, context, obj):
-        """Prepare the mesh for separation by triangulating and marking boundaries."""
-        try:
-            # Enter edit mode
-            bpy.ops.object.mode_set(mode='EDIT')
-            me = obj.data
-            bm = bmesh.from_edit_mesh(me)
-            bm.faces.ensure_lookup_table()
-            
-            # Triangulate faces
-            bmesh.ops.triangulate(
-                bm,
-                faces=bm.faces,
-                quad_method='BEAUTY',
-                ngon_method='BEAUTY'
-            )
-            
-            # Update the mesh
-            bmesh.update_edit_mesh(me)
-            bpy.ops.object.mode_set(mode='OBJECT')
-            return True
-            
-        except Exception as e:
-            self.report({'ERROR'}, f"Error preparing mesh: {str(e)}")
-            if obj.mode != 'OBJECT':
-                bpy.ops.object.mode_set(mode='OBJECT')
+    def separate_mesh(self, context, obj):
+        """Separate a mesh object by material assignments."""
+        if not obj or obj.type != 'MESH':
             return False
-
-    def get_connected_faces(self, bm, start_faces, material_index):
-        """Get all connected faces with the same material index using BMesh.
-        
-        Args:
-            bm: BMesh object
-            start_faces: Initial faces to check
-            material_index: Material index to match
             
-        Returns:
-            set: Set of connected faces with the same material
-        """
-        faces_to_check = set(start_faces)
-        checked_faces = set()
-        result_faces = set()
-        
-        while faces_to_check:
-            current_face = faces_to_check.pop()
-            checked_faces.add(current_face)
-            
-            if current_face.material_index == material_index:
-                result_faces.add(current_face)
-                
-                # Add connected faces through edges
-                for edge in current_face.edges:
-                    for linked_face in edge.link_faces:
-                        if (linked_face not in checked_faces and 
-                            linked_face not in faces_to_check):
-                            faces_to_check.add(linked_face)
-        
-        return result_faces
-
-    def separate_by_material(self, context, obj):
-        """Separate the mesh by material assignments using BMesh for accuracy."""
-        try:
-            base_name = obj.name
-            
-            # Create BMesh
-            bpy.ops.object.mode_set(mode='EDIT')
-            me = obj.data
-            bm = bmesh.from_edit_mesh(me)
-            bm.faces.ensure_lookup_table()
-            
-            # Process each material
-            for mat_index, material in enumerate(obj.data.materials):
-                if not material:
-                    continue
-                
-                # Get all faces with this material
-                material_faces = {f for f in bm.faces 
-                                if f.material_index == mat_index}
-                
-                if not material_faces:
-                    continue
-                
-                # Deselect all faces
-                for face in bm.faces:
-                    face.select = False
-                
-                # Get connected face groups
-                remaining_faces = material_faces.copy()
-                while remaining_faces:
-                    start_face = remaining_faces.pop()
-                    connected_faces = self.get_connected_faces(
-                        bm, [start_face], mat_index
-                    )
-                    
-                    # Select connected faces
-                    for face in connected_faces:
-                        face.select = True
-                        if face in remaining_faces:
-                            remaining_faces.remove(face)
-                    
-                    # Update the mesh
-                    bmesh.update_edit_mesh(me)
-                    
-                    # Separate selected faces if there are any
-                    if any(f.select for f in bm.faces):
-                        bpy.ops.mesh.separate(type='SELECTED')
-                        
-                        # Update BMesh after separation
-                        bm = bmesh.from_edit_mesh(me)
-                        bm.faces.ensure_lookup_table()
-                
-                # Exit edit mode to rename the new object
-                bpy.ops.object.mode_set(mode='OBJECT')
-                
-                # Find and rename the newly created object
-                new_objects = [o for o in context.selected_objects 
-                             if o != obj and o.type == 'MESH']
-                for new_obj in new_objects:
-                    new_obj.name = f"{base_name}_{material.name}"
-                
-                # Re-enter edit mode for next iteration
-                obj.select_set(True)
-                context.view_layer.objects.active = obj
-                bpy.ops.object.mode_set(mode='EDIT')
-                bm = bmesh.from_edit_mesh(me)
-                bm.faces.ensure_lookup_table()
-            
-            # Final cleanup
-            bpy.ops.object.mode_set(mode='OBJECT')
-            return True
-            
-        except Exception as e:
-            self.report({'ERROR'}, f"Error separating by material: {str(e)}")
-            if obj.mode != 'OBJECT':
-                bpy.ops.object.mode_set(mode='OBJECT')
+        # Get mesh data
+        mesh = obj.data
+        if not mesh.polygons or not mesh.materials:
             return False
+            
+        # Get unique material indices
+        mat_indices = set(p.material_index for p in mesh.polygons)
+        if len(mat_indices) <= 1:
+            return False
+            
+        # Store original hierarchy info
+        orig_parent = obj.parent
+        orig_collection = obj.users_collection[0]  # Primary collection
+        orig_world_matrix = self.get_world_matrix(obj)
+        orig_matrix_local = obj.matrix_local.copy()
+        
+        # Store child objects
+        children = [child for child in obj.children]
+        
+        # Track progress
+        start_time = time.time()
+        processed_count = 0
+        total_materials = len(mat_indices)
+        
+        # Make object active and enter edit mode
+        context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Get BMesh for selection
+        bm = bmesh.from_edit_mesh(mesh)
+        bm.faces.ensure_lookup_table()
+        
+        # Process each material
+        separated_objects = []
+        for mat_idx in mat_indices:
+            # Skip if no material
+            if mat_idx >= len(mesh.materials) or not mesh.materials[mat_idx]:
+                continue
+                
+            # Store material reference
+            material = mesh.materials[mat_idx]
+            
+            # Deselect all faces
+            bpy.ops.mesh.select_all(action='DESELECT')
+            
+            # Select faces with current material
+            for face in bm.faces:
+                face.select = (face.material_index == mat_idx)
+            
+            # Update mesh
+            bmesh.update_edit_mesh(mesh)
+            
+            # Separate selected faces
+            bpy.ops.mesh.separate(type='SELECTED')
+            
+            # Update progress
+            processed_count += 1
+            if time.time() - start_time > 1.0:  # Update every second
+                self.report(
+                    {'INFO'}, 
+                    f"Processing material {processed_count}/{total_materials}"
+                )
+                start_time = time.time()
+        
+        # Exit edit mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Process separated objects
+        for new_obj in context.selected_objects:
+            if new_obj != obj and new_obj.type == 'MESH':
+                separated_objects.append(new_obj)
+                
+                # Ensure proper collection membership
+                for collection in new_obj.users_collection:
+                    collection.objects.unlink(new_obj)
+                orig_collection.objects.link(new_obj)
+                
+                # Set up parent relationship
+                if orig_parent:
+                    new_obj.parent = orig_parent
+                    # Calculate and apply correct transform
+                    new_obj.matrix_local = orig_matrix_local
+                else:
+                    # If no parent, use world matrix
+                    new_obj.matrix_world = orig_world_matrix
+                
+                # Name by material
+                if (len(new_obj.data.materials) > 0 and 
+                    new_obj.data.materials[0] is not None):
+                    mat_name = new_obj.data.materials[0].name
+                    new_obj.name = f"{obj.name}_{mat_name}"
+                    new_obj.data.name = f"{obj.name}_{mat_name}_mesh"
+        
+        # Reassign children to first separated object if original will be deleted
+        if len(obj.data.polygons) == 0 and separated_objects:
+            new_parent = separated_objects[0]
+            for child in children:
+                # Store original local transform
+                child_local = child.matrix_local.copy()
+                # Reparent
+                child.parent = new_parent
+                # Restore local transform
+                child.matrix_local = child_local
+            
+            # Delete original object
+            bpy.data.objects.remove(obj, do_unlink=True)
+        
+        return True
 
     def execute(self, context):
-        """Execute the operator."""
+        """Execute the separation operation."""
         try:
-            active_obj = context.active_object
+            # Get selected objects
+            objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+            if not objects:
+                self.report({'ERROR'}, "No mesh objects selected")
+                return {'CANCELLED'}
             
-            # Check for materials
-            if not active_obj.data.materials:
-                self.report({'ERROR'}, "Object has no materials assigned")
-                return {'CANCELLED'}
-
-            # Ensure we're in object mode
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-            # Prepare the mesh
-            if not self.prepare_mesh(context, active_obj):
-                return {'CANCELLED'}
-
-            # Separate by material
-            if not self.separate_by_material(context, active_obj):
-                return {'CANCELLED'}
-
-            self.report({'INFO'}, 
-                       f"Successfully separated {active_obj.name} by materials")
+            # Track progress
+            separated_count = 0
+            total_objects = len(objects)
+            
+            # Process each object
+            for i, obj in enumerate(objects):
+                if self.separate_mesh(context, obj):
+                    separated_count += 1
+                
+                # Progress update for multiple objects
+                if total_objects > 1:
+                    self.report(
+                        {'INFO'}, 
+                        f"Processing object {i+1}/{total_objects}"
+                    )
+            
+            # Final report
+            if separated_count > 0:
+                self.report(
+                    {'INFO'}, 
+                    f"Separated {separated_count} objects by material"
+                )
+            else:
+                self.report(
+                    {'INFO'}, 
+                    "No objects needed separation"
+                )
+            
             return {'FINISHED'}
-
+            
         except Exception as e:
-            self.report({'ERROR'}, f"Error: {str(e)}")
-            if active_obj.mode != 'OBJECT':
+            self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
+            if context.active_object and context.active_object.mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode='OBJECT')
             return {'CANCELLED'}
 
-
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
-
-class ZENV_PT_SeparateByMaterial_Panel(Panel):
-    """Panel for material-based mesh separation."""
-    bl_label = "Separate by Material"
-    bl_idname = "ZENV_PT_separatebymaterial"
+class ZENV_PT_SeparateByMaterialPanel(Panel):
+    """Panel for material separation."""
+    bl_label = "Separate By Material"
+    bl_idname = "ZENV_PT_separate_by_material"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -232,20 +204,16 @@ class ZENV_PT_SeparateByMaterial_Panel(Panel):
         """Draw the panel layout."""
         layout = self.layout
         box = layout.box()
-        box.label(text="Split Mesh:", icon='MATERIAL')
-        op = box.operator(
-            ZENV_OT_SeparateByMaterial_Split.bl_idname,
-            icon='MOD_BOOLEAN'
-        )
-
+        box.label(text="Separate:", icon='MESH_DATA')
+        box.operator(ZENV_OT_SeparateByMaterial.bl_idname)
 
 # ------------------------------------------------------------------------
 #    Registration
 # ------------------------------------------------------------------------
 
 classes = (
-    ZENV_OT_SeparateByMaterial_Split,
-    ZENV_PT_SeparateByMaterial_Panel,
+    ZENV_OT_SeparateByMaterial,
+    ZENV_PT_SeparateByMaterialPanel,
 )
 
 def register():
