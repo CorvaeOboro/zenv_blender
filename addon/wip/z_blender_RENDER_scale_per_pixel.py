@@ -1,172 +1,273 @@
+# RENDER SCALE PER PIXEL
+# Calculate render scale based on desired pixels per unit
+
 bl_info = {
-    "name": "RENDER Scale per Pixel",
+    "name": "RENDER Scale Per Pixel",
     "category": "ZENV",
     "author": "CorvaeOboro",
     "version": (1, 0),
-    "blender": (3, 80, 0),
+    "blender": (4, 0, 0),
     "location": "View3D > ZENV",
-    "description": "Renders Scale per Pixel  ",
+    "description": "Calculate render scale based on desired pixels per unit",
 }
 
 import bpy
-import os
-from datetime import datetime
+import math
 import logging
-logger = logging.getLogger(__name__)
+from bpy.props import FloatProperty, IntProperty, BoolProperty
 
-# UI
-class ZENV_PT_RenderScalePerPixel(bpy.types.Panel):
-    """Creates a Panel in the Object properties window"""
-    bl_label = "Scale per Pixel Shader"
-    bl_idname = "ZENV_PT_RenderScalePerPixel"
+# ------------------------------------------------------------------------
+#    Setup Logging
+# ------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# ------------------------------------------------------------------------
+#    Properties
+# ------------------------------------------------------------------------
+
+class ZENV_RenderScale_Properties:
+    """Property management for render scale addon"""
+    
+    @classmethod
+    def register(cls):
+        bpy.types.Scene.zenv_pixels_per_unit = IntProperty(
+            name="Pixels Per Unit",
+            description="Desired number of pixels per Blender unit",
+            default=512,
+            min=1,
+            max=4096
+        )
+        
+        bpy.types.Scene.zenv_target_width = IntProperty(
+            name="Target Width",
+            description="Target width in pixels",
+            default=2048,
+            min=1,
+            max=16384
+        )
+        
+        bpy.types.Scene.zenv_target_height = IntProperty(
+            name="Target Height",
+            description="Target height in pixels",
+            default=2048,
+            min=1,
+            max=16384
+        )
+        
+        bpy.types.Scene.zenv_auto_update = BoolProperty(
+            name="Auto Update",
+            description="Automatically update render settings when values change",
+            default=False
+        )
+        
+        bpy.types.Scene.zenv_maintain_aspect = BoolProperty(
+            name="Maintain Aspect Ratio",
+            description="Maintain aspect ratio when adjusting dimensions",
+            default=True
+        )
+        
+        bpy.types.Scene.zenv_camera_distance = FloatProperty(
+            name="Camera Distance",
+            description="Distance from camera to subject",
+            default=1.0,
+            min=0.01,
+            precision=3
+        )
+
+    @classmethod
+    def unregister(cls):
+        del bpy.types.Scene.zenv_pixels_per_unit
+        del bpy.types.Scene.zenv_target_width
+        del bpy.types.Scene.zenv_target_height
+        del bpy.types.Scene.zenv_auto_update
+        del bpy.types.Scene.zenv_maintain_aspect
+        del bpy.types.Scene.zenv_camera_distance
+
+# ------------------------------------------------------------------------
+#    Utilities
+# ------------------------------------------------------------------------
+
+class ZENV_RenderScale_Utils:
+    """Utility functions for render scale calculations"""
+    
+    @staticmethod
+    def log_info(message):
+        """Log to both console and Blender info"""
+        logger.info(message)
+        if hasattr(bpy.context, 'window_manager'):
+            bpy.context.window_manager.popup_menu(
+                lambda self, context: self.layout.label(text=message),
+                title="Info",
+                icon='INFO'
+            )
+    
+    @staticmethod
+    def get_camera_fov(camera):
+        """Get camera field of view in radians"""
+        if camera.type != 'CAMERA':
+            return None
+            
+        if camera.data.type == 'PERSP':
+            return camera.data.angle
+        elif camera.data.type == 'ORTHO':
+            return math.atan(camera.data.ortho_scale / 2.0) * 2.0
+        return None
+    
+    @staticmethod
+    def calculate_render_scale(context):
+        """Calculate render scale based on pixels per unit"""
+        scene = context.scene
+        camera = scene.camera
+        
+        if not camera:
+            ZENV_RenderScale_Utils.log_info("No active camera found")
+            return
+        
+        # Get camera FOV
+        fov = ZENV_RenderScale_Utils.get_camera_fov(camera)
+        if fov is None:
+            ZENV_RenderScale_Utils.log_info("Invalid camera type")
+            return
+        
+        # Calculate visible area at camera distance
+        distance = scene.zenv_camera_distance
+        visible_width = 2.0 * distance * math.tan(fov / 2.0)
+        
+        # Calculate required resolution
+        pixels_per_unit = scene.zenv_pixels_per_unit
+        required_pixels = int(visible_width * pixels_per_unit)
+        
+        # Update render settings
+        render = scene.render
+        if scene.zenv_maintain_aspect:
+            aspect_ratio = render.resolution_y / render.resolution_x
+            render.resolution_x = required_pixels
+            render.resolution_y = int(required_pixels * aspect_ratio)
+        else:
+            render.resolution_x = required_pixels
+            render.resolution_y = required_pixels
+        
+        ZENV_RenderScale_Utils.log_info(f"Updated render resolution to {render.resolution_x}x{render.resolution_y}")
+        return True
+    
+    @staticmethod
+    def update_target_resolution(context):
+        """Update render resolution to match target dimensions"""
+        scene = context.scene
+        render = scene.render
+        
+        render.resolution_x = scene.zenv_target_width
+        if scene.zenv_maintain_aspect:
+            aspect_ratio = render.resolution_y / render.resolution_x
+            render.resolution_y = int(scene.zenv_target_width * aspect_ratio)
+        else:
+            render.resolution_y = scene.zenv_target_height
+        
+        ZENV_RenderScale_Utils.log_info(f"Updated render resolution to {render.resolution_x}x{render.resolution_y}")
+        return True
+
+# ------------------------------------------------------------------------
+#    Operators
+# ------------------------------------------------------------------------
+
+class ZENV_OT_RenderScale_Calculate(bpy.types.Operator):
+    """Calculate render scale based on pixels per unit"""
+    bl_idname = "zenv.renderscale_calculate"
+    bl_label = "Calculate Scale"
+    bl_description = "Calculate render scale based on pixels per unit"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        return context.scene.camera is not None
+    
+    def execute(self, context):
+        try:
+            if ZENV_RenderScale_Utils.calculate_render_scale(context):
+                return {'FINISHED'}
+            return {'CANCELLED'}
+        except Exception as e:
+            logger.error(f"Error calculating render scale: {str(e)}")
+            self.report({'ERROR'}, f"Calculation failed: {str(e)}")
+            return {'CANCELLED'}
+
+class ZENV_OT_RenderScale_UpdateResolution(bpy.types.Operator):
+    """Update render resolution to match target dimensions"""
+    bl_idname = "zenv.renderscale_update_resolution"
+    bl_label = "Update Resolution"
+    bl_description = "Update render resolution to match target dimensions"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        try:
+            if ZENV_RenderScale_Utils.update_target_resolution(context):
+                return {'FINISHED'}
+            return {'CANCELLED'}
+        except Exception as e:
+            logger.error(f"Error updating resolution: {str(e)}")
+            self.report({'ERROR'}, f"Update failed: {str(e)}")
+            return {'CANCELLED'}
+
+# ------------------------------------------------------------------------
+#    Panel
+# ------------------------------------------------------------------------
+
+class ZENV_PT_RenderScale_Panel(bpy.types.Panel):
+    """Panel for render scale tools"""
+    bl_label = "Render Scale"
+    bl_idname = "ZENV_PT_renderscale"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
-
+    
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene, "debug_mode", text="Debug")
-        layout.operator("zenv.render_scale_per_pixel")
+        scene = context.scene
+        
+        # Settings
+        box = layout.box()
+        box.label(text="Scale Settings:")
+        box.prop(scene, "zenv_pixels_per_unit")
+        box.prop(scene, "zenv_camera_distance")
+        box.prop(scene, "zenv_maintain_aspect")
+        box.operator("zenv.renderscale_calculate")
+        
+        # Target Resolution
+        box = layout.box()
+        box.label(text="Target Resolution:")
+        box.prop(scene, "zenv_target_width")
+        if not scene.zenv_maintain_aspect:
+            box.prop(scene, "zenv_target_height")
+        box.prop(scene, "zenv_auto_update")
+        box.operator("zenv.renderscale_update_resolution")
+        
+        # Current Resolution
+        box = layout.box()
+        box.label(text="Current Resolution:")
+        box.label(text=f"Width: {scene.render.resolution_x}px")
+        box.label(text=f"Height: {scene.render.resolution_y}px")
 
-# Property to control debug mode
-def init_properties():
-    bpy.types.Scene.debug_mode = bpy.props.BoolProperty(
-        name="Debug Mode",
-        description="Enable debug mode to prevent scene state changes",
-        default=False
-    )
+# ------------------------------------------------------------------------
+#    Registration
+# ------------------------------------------------------------------------
 
-def clear_properties():
-    del bpy.types.Scene.debug_mode
+classes = (
+    ZENV_OT_RenderScale_Calculate,
+    ZENV_OT_RenderScale_UpdateResolution,
+    ZENV_PT_RenderScale_Panel,
+)
 
-class ZENV_OT_RenderScalePerPixel(bpy.types.Operator):
-    # Operator for rendering scale per pixel
-    bl_idname = "zenv.render_scale_per_pixel"
-    bl_label = "Render Scale Per Pixel"
-
-    def execute(self, context):
-        logging.info("Starting scale per pixel rendering...")
-        selected_objects = context.selected_objects
-        debug_mode = context.scene.debug_mode
-
-        if not context.scene.camera or not selected_objects:
-            self.report({'ERROR'}, "No active camera or selected objects found.")
-            return {'CANCELLED'}
-
-        # Store original state if not in debug mode
-        original_state = self.store_scene_state(context) if not debug_mode else None
-
-        # Setup for rendering
-        self.setup_rendering(context, selected_objects)
-
-        # Render and save image
-        self.render_and_save_image(context, selected_objects)
-
-        # Restore original state if not in debug mode
-        if not debug_mode:
-            self.restore_scene_state(context, original_state)
-
-        return {'FINISHED'}
-
-    def store_scene_state(self, context):
-        # Store current render settings and materials
-        state = {
-            'render_engine': context.scene.render.engine,
-            'materials': {obj: obj.active_material for obj in context.selected_objects if obj.type == 'MESH'}
-        }
-        return state
-
-    def restore_scene_state(self, context, state):
-        context.scene.render.engine = state['render_engine']
-        for obj, mat in state['materials'].items():
-            obj.active_material = mat
-
-    def setup_rendering(self, context, selected_objects):
-        logging.info("Setting up rendering for scale per pixel...")
-        context.scene.render.engine = 'BLENDER_EEVEE'
-        context.scene.render.image_settings.file_format = 'PNG'
-
-        # Assign custom shader material to each object
-        for obj in selected_objects:
-            if obj.type == 'MESH':
-                obj.active_material = self.create_scale_shader()
-
-    def create_scale_shader():
-        # Create a shader for World Scale Per Pixel 
-        material_name = "ScalePerPixelShader"
-        material = bpy.data.materials.get(material_name) or bpy.data.materials.new(name=material_name)
-        material.use_nodes = True
-        nodes = material.node_tree.nodes
-        links = material.node_tree.links
-        nodes.clear()
-
-        # Create nodes
-        geometry_node = nodes.new(type='ShaderNodeNewGeometry')
-        camera_data_node = nodes.new(type='ShaderNodeCameraData')
-        distance_node = nodes.new(type='ShaderNodeVectorMath')
-        distance_node.operation = 'DISTANCE'
-        multiply_node = nodes.new(type='ShaderNodeMath')
-        multiply_node.operation = 'MULTIPLY'
-        log_node = nodes.new(type='ShaderNodeMath')
-        log_node.operation = 'LOGARITHM'
-        clamp_node = nodes.new(type='ShaderNodeMath')
-        clamp_node.operation = 'CLAMP'
-        map_range_node = nodes.new(type='ShaderNodeMapRange')
-        emission_node = nodes.new(type='ShaderNodeEmission')
-        output_node = nodes.new(type='ShaderNodeOutputMaterial')
-
-        # Configure nodes
-        log_node.inputs[1].default_value = 10  # Base 10 for logarithm
-        clamp_node.inputs[1].default_value = -3  # log10(0.001) for 1mm
-        clamp_node.inputs[2].default_value = 0   # log10(1) for 1m
-        # remap from -3to0 to 0to1
-        map_range_node.inputs[1].default_value = -3  # From Min
-        map_range_node.inputs[2].default_value = 0   # From Max
-        map_range_node.inputs[3].default_value = 0   # To Min
-        map_range_node.inputs[4].default_value = 1   # To Max
-
-        # Connect nodes
-        links.new(geometry_node.outputs['Position'], distance_node.inputs[0])
-        links.new(camera_data_node.outputs['View Vector'], distance_node.inputs[1])
-        links.new(distance_node.outputs['Value'], multiply_node.inputs[0])
-        # Connect a predefined texel size to multiply_node.inputs[1] if necessary
-        links.new(multiply_node.outputs[0], log_node.inputs[0])
-        links.new(log_node.outputs[0], clamp_node.inputs[0])
-        links.new(clamp_node.outputs[0], map_range_node.inputs[0])
-        links.new(map_range_node.outputs[0], emission_node.inputs[0])
-        links.new(emission_node.outputs[0], output_node.inputs[0])
-
-        return material
-
-    def render_and_save_image(self, context, selected_objects):
-        logging.info("Rendering and saving image...")
-        datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
-        texture_folder = os.path.join(os.path.dirname(bpy.data.filepath), "textures")
-        os.makedirs(texture_folder, exist_ok=True)
-
-        for obj in selected_objects:
-            image_name = f"{obj.name}_scale_per_pixel_{datetime_str}.png"
-            render_filepath = os.path.join(texture_folder, image_name)
-            context.scene.render.filepath = render_filepath
-            bpy.ops.render.render(write_still=True)
-
-            if os.path.exists(render_filepath):
-                logging.info(f"Image rendered for {obj.name} to: {render_filepath}")
-            else:
-                self.report({'ERROR'}, f"Failed to render image for {obj.name}.")
-                logging.error("Rendered image file not found for " + obj.name)
-
-# Registration
 def register():
-    init_properties()
-    bpy.utils.register_class(ZENV_PT_RenderScalePerPixel)
-    bpy.utils.register_class(ZENV_OT_RenderScalePerPixel)
-    
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
+    ZENV_RenderScale_Properties.register()
+
 def unregister():
-    clear_properties()
-    bpy.utils.unregister_class(ZENV_PT_RenderScalePerPixel)
-    bpy.utils.unregister_class(ZENV_OT_RenderScalePerPixel)
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
+    ZENV_RenderScale_Properties.unregister()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     register()
