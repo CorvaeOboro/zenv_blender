@@ -1,5 +1,6 @@
-# TEXTURE TRANSITION
-# Bake textures between meshes sharing an edge
+# TEXTURE TRANSITION by EDGE EXTRUSION
+# two meshes that are touching , one is extended onto other 
+# baking onto the other as part of creating a seamless texture transition
 
 bl_info = {
     "name": "TEX Transition Texture",
@@ -8,7 +9,7 @@ bl_info = {
     "version": (1, 1),
     "blender": (4, 0, 0),
     "location": "View3D > ZENV",
-    "description": "Bake textures between meshes sharing an edge",
+    "description": "Crete a tranisiton between two meshes by extruding the edge and baking",
 }
 
 import bpy
@@ -24,7 +25,7 @@ import math
 #    Setup Logging
 # ------------------------------------------------------------------------
 
-class ZENV_TransitionTexture_Logger:
+class ZENV_TransitionTextureExtend_Logger:
     """Logger class for transition texture operations"""
     
     @staticmethod
@@ -40,7 +41,7 @@ class ZENV_TransitionTexture_Logger:
 #    Properties
 # ------------------------------------------------------------------------
 
-class ZENV_TransitionTexture_Properties:
+class ZENV_TransitionTextureExtend_Properties:
     """Property management for texture transition addon"""
     
     @classmethod
@@ -146,13 +147,13 @@ class ZENV_TransitionTexture_Properties:
 #    Utilities
 # ------------------------------------------------------------------------
 
-class ZENV_TransitionTexture_Utils:
+class ZENV_TransitionTextureExtend_Utils:
     """Utility functions for texture transition"""
     
     @staticmethod
     def get_shared_edges(source_obj, target_obj):
         """Find edges that are touching between two meshes"""
-        ZENV_TransitionTexture_Logger.log_info(
+        ZENV_TransitionTextureExtend_Logger.log_info(
             f"Starting edge analysis between {source_obj.name} and {target_obj.name}", 
             "EDGE DETECTION"
         )
@@ -167,10 +168,10 @@ class ZENV_TransitionTexture_Utils:
         bm2.verts.ensure_lookup_table()
         bm2.edges.ensure_lookup_table()
         
-        ZENV_TransitionTexture_Logger.log_info(
+        ZENV_TransitionTextureExtend_Logger.log_info(
             f"Source mesh: {len(bm1.edges)} edges, {len(bm1.verts)} vertices", "MESH INFO"
         )
-        ZENV_TransitionTexture_Logger.log_info(
+        ZENV_TransitionTextureExtend_Logger.log_info(
             f"Target mesh: {len(bm2.edges)} edges, {len(bm2.verts)} vertices", "MESH INFO"
         )
         
@@ -245,7 +246,7 @@ class ZENV_TransitionTexture_Utils:
         bm1.free()
         bm2.free()
         
-        ZENV_TransitionTexture_Logger.log_info(
+        ZENV_TransitionTextureExtend_Logger.log_info(
             f"Found {len(shared_edges)} shared edges", "EDGE DETECTION COMPLETE"
         )
         return shared_edges
@@ -253,7 +254,7 @@ class ZENV_TransitionTexture_Utils:
     @staticmethod
     def extend_mesh_at_edge(obj, edge_data, direction, distance):
         """Extend mesh from specified edges using BMesh extrude operator"""
-        logger = ZENV_TransitionTexture_Logger
+        logger = ZENV_TransitionTextureExtend_Logger
         logger.log_info(f"Starting mesh extension for {obj.name}", "MESH EXTENSION")
         
         # Create copy of object with clear name
@@ -406,7 +407,7 @@ class ZENV_TransitionTexture_Utils:
         Extend UVs from specified edges.
         Fixed bug where `edge_data` was overwritten with an empty list.
         """
-        ZENV_TransitionTexture_Logger.log_info(f"Starting UV extension on {obj.name}", "UV EXTENSION")
+        ZENV_TransitionTextureExtend_Logger.log_info(f"Starting UV extension on {obj.name}", "UV EXTENSION")
         bpy.context.view_layer.objects.active = obj
         obj.select_set(True)
         
@@ -417,7 +418,7 @@ class ZENV_TransitionTexture_Utils:
         uv_layer = bm.loops.layers.uv.active
         if not uv_layer:
             bm.free()
-            ZENV_TransitionTexture_Logger.log_info("No active UV layer found, skipping UV extension", "UV EXTENSION")
+            ZENV_TransitionTextureExtend_Logger.log_info("No active UV layer found, skipping UV extension", "UV EXTENSION")
             return obj
         
         # Build a reference of positions & UVs for each relevant edge
@@ -487,7 +488,7 @@ class ZENV_TransitionTexture_Utils:
         
         bpy.ops.object.mode_set(mode='OBJECT')
         
-        ZENV_TransitionTexture_Logger.log_info("UV extension complete", "UV EXTENSION")
+        ZENV_TransitionTextureExtend_Logger.log_info("UV extension complete", "UV EXTENSION")
         return obj
     
     @staticmethod
@@ -535,7 +536,7 @@ class ZENV_TransitionTexture_Utils:
     @staticmethod
     def setup_render_settings(context):
         """Configure render settings for baking to avoid black bakes"""
-        logger = ZENV_TransitionTexture_Logger
+        logger = ZENV_TransitionTextureExtend_Logger
         logger.log_info("Setting up render settings for baking...")
         
         # Store original settings
@@ -576,7 +577,7 @@ class ZENV_TransitionTexture_Utils:
     @staticmethod
     def setup_bake_materials(source_obj, target_obj, context):
         """Setup temporary material for baking while preserving original materials"""
-        logger = ZENV_TransitionTexture_Logger
+        logger = ZENV_TransitionTextureExtend_Logger
         logger.log_info("Setting up bake materials...")
         
         # Ensure texture directory exists
@@ -643,7 +644,7 @@ class ZENV_TransitionTexture_Utils:
     @staticmethod
     def cleanup_material_slots(obj):
         """Remove unused material slots from the object"""
-        logger = ZENV_TransitionTexture_Logger
+        logger = ZENV_TransitionTextureExtend_Logger
         
         # Must be in object mode
         if obj.mode != 'OBJECT':
@@ -694,9 +695,9 @@ class ZENV_TransitionTexture_Utils:
 #    Operators
 # ------------------------------------------------------------------------
 
-class ZENV_OT_TransitionTexture_Bake(bpy.types.Operator):
+class ZENV_OT_TransitionTextureExtend_Bake(bpy.types.Operator):
     """Bake texture transition between selected meshes"""
-    bl_idname = "zenv.transition_bake"
+    bl_idname = "zenv.transition_bake_extend"
     bl_label = "Bake Transition"
     bl_options = {'REGISTER', 'UNDO'}
     
@@ -717,7 +718,7 @@ class ZENV_OT_TransitionTexture_Bake(bpy.types.Operator):
             target_obj = context.active_object
             source_obj = [obj for obj in context.selected_objects if obj != target_obj][0]
             
-            logger = ZENV_TransitionTexture_Logger
+            logger = ZENV_TransitionTextureExtend_Logger
             logger.log_info(f"Using selection order for baking:")
             logger.log_info(f"Source object (will be extended): {source_obj.name}")
             logger.log_info(f"Target object (active, bake target): {target_obj.name}")
@@ -734,30 +735,30 @@ class ZENV_OT_TransitionTexture_Bake(bpy.types.Operator):
             try:
                 # 0) Clean up unused material slots
                 logger.log_info("Step 0: Cleaning up unused material slots...")
-                ZENV_TransitionTexture_Utils.cleanup_material_slots(source_obj)
-                ZENV_TransitionTexture_Utils.cleanup_material_slots(target_obj)
+                ZENV_TransitionTextureExtend_Utils.cleanup_material_slots(source_obj)
+                ZENV_TransitionTextureExtend_Utils.cleanup_material_slots(target_obj)
                 
                 # 1) Setup global render/bake settings
-                original_engine = ZENV_TransitionTexture_Utils.setup_render_settings(context)
+                original_engine = ZENV_TransitionTextureExtend_Utils.setup_render_settings(context)
                 
                 # 2) Step 1: find shared edges
                 if context.scene.zenv_step_separate:
-                    ZENV_TransitionTexture_Logger.log_info("Step 1: Finding shared edges...")
-                    shared_edges = ZENV_TransitionTexture_Utils.get_shared_edges(source_obj, target_obj)
+                    ZENV_TransitionTextureExtend_Logger.log_info("Step 1: Finding shared edges...")
+                    shared_edges = ZENV_TransitionTextureExtend_Utils.get_shared_edges(source_obj, target_obj)
                     if not shared_edges:
                         self.report({'ERROR'}, "No shared edges found")
                         return {'CANCELLED'}
-                    ZENV_TransitionTexture_Logger.log_info(f"Found {len(shared_edges)} shared edges")
+                    ZENV_TransitionTextureExtend_Logger.log_info(f"Found {len(shared_edges)} shared edges")
                 else:
                     shared_edges = []
                 
                 # 3) Step 2: Extend only the source mesh
                 if context.scene.zenv_step_extend and shared_edges:
-                    ZENV_TransitionTexture_Logger.log_info("Step 2: Extending source mesh...")
+                    ZENV_TransitionTextureExtend_Logger.log_info("Step 2: Extending source mesh...")
                     # For direction, we do (target - source).normalized()
                     direction_vec = (target_obj.location - source_obj.location).normalized()
                     
-                    source_extended = ZENV_TransitionTexture_Utils.extend_mesh_at_edge(
+                    source_extended = ZENV_TransitionTextureExtend_Utils.extend_mesh_at_edge(
                         source_obj,
                         shared_edges,
                         direction_vec,
@@ -771,9 +772,9 @@ class ZENV_OT_TransitionTexture_Bake(bpy.types.Operator):
                 
                 # 4) Step 3: Extend UVs on the newly extended source
                 if context.scene.zenv_step_uvs and shared_edges:
-                    ZENV_TransitionTexture_Logger.log_info("Step 3: Extending UVs...")
+                    ZENV_TransitionTextureExtend_Logger.log_info("Step 3: Extending UVs...")
                     # Use the same direction, but maybe a smaller distance for UV
-                    source_uvs = ZENV_TransitionTexture_Utils.extend_uvs(
+                    source_uvs = ZENV_TransitionTextureExtend_Utils.extend_uvs(
                         source_extended,
                         shared_edges,
                         (target_obj.location - source_obj.location).normalized(),
@@ -787,8 +788,8 @@ class ZENV_OT_TransitionTexture_Bake(bpy.types.Operator):
                 # 5) Step 4: Create cage (optional)
                 cage_obj = None
                 if context.scene.zenv_step_cage and shared_edges:
-                    ZENV_TransitionTexture_Logger.log_info("Step 4: Creating bake cage...")
-                    cage_obj = ZENV_TransitionTexture_Utils.create_bake_cage(
+                    ZENV_TransitionTextureExtend_Logger.log_info("Step 4: Creating bake cage...")
+                    cage_obj = ZENV_TransitionTextureExtend_Utils.create_bake_cage(
                         source_uvs,
                         context.scene.zenv_transition_offset
                     )
@@ -797,13 +798,13 @@ class ZENV_OT_TransitionTexture_Bake(bpy.types.Operator):
                 
                 # 6) Step 5: Bake
                 if context.scene.zenv_step_bake:
-                    ZENV_TransitionTexture_Logger.log_info("Step 5: Setting up bake materials...")
+                    ZENV_TransitionTextureExtend_Logger.log_info("Step 5: Setting up bake materials...")
                     
                     # Use the extended mesh if available, otherwise use original source
                     bake_source = source_uvs if 'source_uvs' in locals() else source_obj
                     logger.log_info(f"Using {'extended' if bake_source != source_obj else 'original'} source mesh for baking")
                     
-                    bake_data = ZENV_TransitionTexture_Utils.setup_bake_materials(
+                    bake_data = ZENV_TransitionTextureExtend_Utils.setup_bake_materials(
                         bake_source,  # Use extended mesh
                         target_obj,
                         context
@@ -893,7 +894,7 @@ class ZENV_OT_TransitionTexture_Bake(bpy.types.Operator):
 #    Panel
 # ------------------------------------------------------------------------
 
-class ZENV_PT_TransitionTexture_Panel(bpy.types.Panel):
+class ZENV_PT_TransitionTextureExtend_Panel(bpy.types.Panel):
     """Panel for texture transition tools"""
     bl_label = "Texture Transition"
     bl_idname = "ZENV_PT_transition"
@@ -924,26 +925,26 @@ class ZENV_PT_TransitionTexture_Panel(bpy.types.Panel):
         box.prop(scene, "zenv_step_cage")
         box.prop(scene, "zenv_step_bake")
         
-        layout.operator("zenv.transition_bake")
+        layout.operator("zenv.transition_bake_extend")
 
 # ------------------------------------------------------------------------
 #    Registration
 # ------------------------------------------------------------------------
 
 classes = (
-    ZENV_OT_TransitionTexture_Bake,
-    ZENV_PT_TransitionTexture_Panel,
+    ZENV_OT_TransitionTextureExtend_Bake,
+    ZENV_PT_TransitionTextureExtend_Panel,
 )
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    ZENV_TransitionTexture_Properties.register()
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
+    ZENV_TransitionTextureExtend_Properties.register()
 
 def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
-    ZENV_TransitionTexture_Properties.unregister()
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
+    ZENV_TransitionTextureExtend_Properties.unregister()
 
 if __name__ == "__main__":
     register()
