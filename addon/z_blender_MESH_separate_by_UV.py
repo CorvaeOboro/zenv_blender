@@ -35,28 +35,37 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
             island_faces.add(current_face)
             processed_faces.add(current_face)
 
-            # Check each vertex in the current face
-            for vert in current_face.verts:
-                # Get all faces connected to this vertex
-                connected_faces = set(f for e in vert.link_edges for f in e.link_faces)
+            # Check each edge in the current face
+            for edge in current_face.edges:
+                # Get connected faces through this edge
+                connected_faces = set(f for f in edge.link_faces if f != current_face)
                 
                 for connected_face in connected_faces:
                     if connected_face in processed_faces:
                         continue
 
-                    # Check if faces share UV coordinates
+                    # Check if faces share UV coordinates along the edge
                     shares_uv = False
+                    edge_verts = set(edge.verts)
+                    
+                    # Get UV coordinates for the edge in current face
+                    current_uvs = {}
                     for loop in current_face.loops:
-                        if loop.vert == vert:
-                            current_uv = loop[uv_layer].uv
-                            # Find matching UV in connected face
-                            for c_loop in connected_face.loops:
-                                if c_loop.vert == vert and (c_loop[uv_layer].uv - current_uv).length < 0.00001:
+                        if loop.vert in edge_verts:
+                            current_uvs[loop.vert] = loop[uv_layer].uv
+                    
+                    # Check UV coordinates in connected face
+                    for loop in connected_face.loops:
+                        if loop.vert in edge_verts:
+                            connected_uv = loop[uv_layer].uv
+                            if loop.vert in current_uvs:
+                                # Compare UVs
+                                if (connected_uv - current_uvs[loop.vert]).length < 0.00001:
                                     shares_uv = True
+                                else:
+                                    shares_uv = False
                                     break
-                            if shares_uv:
-                                break
-
+                    
                     if shares_uv:
                         faces_to_process.add(connected_face)
 
@@ -74,6 +83,55 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
 
         return islands
 
+    def duplicate_island(self, context, obj, island_faces, uv_layer):
+        """Create a new object from the given UV island"""
+        # Create new mesh and bmesh
+        new_mesh = bpy.data.meshes.new(name=f"{obj.name}_island")
+        new_bm = bmesh.new()
+        
+        # Create vertex map from old to new
+        vert_map = {}
+        
+        # Copy vertices and create mapping
+        for face in island_faces:
+            for vert in face.verts:
+                if vert not in vert_map:
+                    new_vert = new_bm.verts.new(vert.co)
+                    vert_map[vert] = new_vert
+        
+        new_bm.verts.ensure_lookup_table()
+        new_bm.verts.index_update()
+        
+        # Create new UV layer
+        new_uv_layer = new_bm.loops.layers.uv.new()
+        
+        # Copy faces and their UVs
+        for face in island_faces:
+            new_verts = [vert_map[v] for v in face.verts]
+            try:
+                new_face = new_bm.faces.new(new_verts)
+                # Copy UV coordinates
+                for i, loop in enumerate(face.loops):
+                    new_face.loops[i][new_uv_layer].uv = loop[uv_layer].uv
+            except ValueError as e:
+                continue  # Skip faces that can't be created (e.g., duplicate faces)
+        
+        # Create new object
+        new_bm.to_mesh(new_mesh)
+        new_obj = bpy.data.objects.new(name=f"{obj.name}_island", object_data=new_mesh)
+        
+        # Copy materials from original object
+        for mat in obj.data.materials:
+            new_obj.data.materials.append(mat)
+        
+        # Link new object to scene
+        context.collection.objects.link(new_obj)
+        
+        # Copy transform from original object
+        new_obj.matrix_world = obj.matrix_world
+        
+        return new_obj
+
     def execute(self, context):
         try:
             obj = context.active_object
@@ -81,16 +139,17 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
                 self.report({'ERROR'}, "Active object is not a mesh")
                 return {'CANCELLED'}
 
-            # Store original mode and switch to EDIT
+            # Store original mode and switch to OBJECT
             original_mode = obj.mode
-            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.object.mode_set(mode='OBJECT')
 
-            # Get mesh data
-            me = obj.data
-            bm = bmesh.from_edit_mesh(me)
+            # Create bmesh from object
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
             bm.faces.ensure_lookup_table()
 
             if not bm.loops.layers.uv:
+                bm.free()
                 self.report({'ERROR'}, "Mesh has no UV layer")
                 return {'CANCELLED'}
 
@@ -100,50 +159,39 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
             islands = self.find_uv_islands(bm, uv_layer)
             
             if not islands:
+                bm.free()
                 self.report({'WARNING'}, "No UV islands found")
                 return {'CANCELLED'}
 
-            # Mark seams between islands
-            for edge in bm.edges:
-                edge.seam = False
-                faces = edge.link_faces
-                if len(faces) == 2:
-                    # Check if faces belong to different islands
-                    face1_island = None
-                    face2_island = None
-                    for i, island in enumerate(islands):
-                        if faces[0] in island:
-                            face1_island = i
-                        if faces[1] in island:
-                            face2_island = i
-                    if face1_island != face2_island:
-                        edge.seam = True
+            # Create new objects for each island
+            new_objects = []
+            for island in islands:
+                new_obj = self.duplicate_island(context, obj, island, uv_layer)
+                new_objects.append(new_obj)
 
-            bmesh.update_edit_mesh(me)
+            # Remove original object if we created new ones
+            if new_objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
 
-            # Select seam edges and split
-            bpy.ops.mesh.select_all(action='DESELECT')
-            bpy.ops.mesh.select_mode(type='EDGE')
-            
-            for edge in bm.edges:
-                if edge.seam:
-                    edge.select = True
-            
-            bmesh.update_edit_mesh(me)
-            bpy.ops.mesh.edge_split()
+            # Select all new objects and make the first one active
+            if new_objects:
+                for obj in new_objects:
+                    obj.select_set(True)
+                context.view_layer.objects.active = new_objects[0]
 
-            # Separate by loose parts
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.mesh.separate(type='LOOSE')
+            bm.free()
 
             # Return to original mode
-            bpy.ops.object.mode_set(mode=original_mode)
+            if original_mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode=original_mode)
 
             self.report({'INFO'}, f"Successfully separated into {len(islands)} UV islands")
             return {'FINISHED'}
 
         except Exception as e:
-            if 'obj' in locals():
+            if 'bm' in locals():
+                bm.free()
+            if 'obj' in locals() and obj:
                 bpy.ops.object.mode_set(mode=original_mode)
             self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
             return {'CANCELLED'}
