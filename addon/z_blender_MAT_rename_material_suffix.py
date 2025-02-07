@@ -147,18 +147,23 @@ class ZENV_PT_MaterialRenameSuffix(Panel):
         box.prop(props, "apply_to_all")
 
 def register():
+    # Register classes in the correct order
     bpy.utils.register_class(ZENV_PG_RenameProps)
     bpy.utils.register_class(ZENV_OT_AddAffix)
     bpy.utils.register_class(ZENV_OT_RemoveAffix)
     bpy.utils.register_class(ZENV_PT_MaterialRenameSuffix)
+    # Create the scene property
     bpy.types.Scene.zenv_rename_props = bpy.props.PointerProperty(type=ZENV_PG_RenameProps)
 
 def unregister():
-    bpy.utils.unregister_class(ZENV_PG_RenameProps)
-    bpy.utils.unregister_class(ZENV_OT_AddAffix)
-    bpy.utils.unregister_class(ZENV_OT_RemoveAffix)
+    # Remove the scene property first
+    if hasattr(bpy.types.Scene, "zenv_rename_props"):
+        del bpy.types.Scene.zenv_rename_props
+    # Unregister classes in reverse order
     bpy.utils.unregister_class(ZENV_PT_MaterialRenameSuffix)
-    del bpy.types.Scene.zenv_rename_props
+    bpy.utils.unregister_class(ZENV_OT_RemoveAffix)
+    bpy.utils.unregister_class(ZENV_OT_AddAffix)
+    bpy.utils.unregister_class(ZENV_PG_RenameProps)
 
 if __name__ == "__main__":
     register()

@@ -73,12 +73,13 @@ class ZENV_OT_RenameObjectsByMaterial(Operator):
 
     def format_name(self, base_name, props):
         """Format the name with prefix/suffix and cleanup."""
+        name = base_name
+        
         # Remove _MI if requested
-        if props.remove_mi and base_name.endswith("_MI"):
-            base_name = base_name[:-3]
+        if props.remove_mi and name.endswith("_MI"):
+            name = name[:-3]
         
         # Add prefix/suffix
-        name = base_name
         if props.prefix:
             name = f"{props.prefix}{name}"
         if props.suffix:
@@ -174,9 +175,17 @@ def register():
 
 def unregister():
     """Unregister the addon classes."""
-    for current_class_to_unregister in reversed(classes):
-        bpy.utils.unregister_class(current_class_to_unregister)
-    del bpy.types.Scene.zenv_rename_props
+    try:
+        for current_class_to_unregister in reversed(classes):
+            try:
+                bpy.utils.unregister_class(current_class_to_unregister)
+            except RuntimeError:
+                pass
+        
+        if hasattr(bpy.types.Scene, "zenv_rename_props"):
+            delattr(bpy.types.Scene, "zenv_rename_props")
+    except Exception as e:
+        print(f"Error during unregister: {str(e)}")
 
 if __name__ == "__main__":
     register()
