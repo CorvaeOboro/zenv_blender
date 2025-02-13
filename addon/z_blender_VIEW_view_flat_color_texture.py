@@ -14,25 +14,41 @@ bl_info = {
 import bpy
 
 class ZENV_OT_flat_texture_view(bpy.types.Operator):
-    """Set viewport to flat texture view"""
+    """Set viewport to flat texture view across all 3D viewports in all screens"""
     bl_idname = "zenv.flat_texture_view"
     bl_label = "Flat Texture View"
     bl_options = {'REGISTER', 'UNDO'}
 
+    def apply_shading_settings(self, space):
+        """Apply flat texture view settings to a 3D view space"""
+        shading = space.shading
+        shading.type = 'SOLID'
+        shading.light = 'FLAT'
+        shading.color_type = 'TEXTURE'
+        shading.show_object_outline = False
+
     def execute(self, context):
-        for area in bpy.context.screen.areas:
-            if area.type == 'VIEW_3D':
-                space = area.spaces.active
-                shading = space.shading
-                shading.type = 'SOLID'
-                shading.light = 'FLAT'
-                shading.color_type = 'TEXTURE'
-                shading.show_object_outline = False
+        # Store current screen and area
+        current_screen = context.window.screen
+        current_area = context.area
+
+        # Apply settings to all 3D viewports in all screens
+        processed_count = 0
+        for window in context.window_manager.windows:
+            for screen in bpy.data.screens:
+                for area in screen.areas:
+                    if area.type == 'VIEW_3D':
+                        space = area.spaces.active
+                        self.apply_shading_settings(space)
+                        processed_count += 1
+
+        # Report success
+        self.report({'INFO'}, f"Applied flat texture view to {processed_count} viewports")
         return {'FINISHED'}
 
 
 class ZENV_PT_panel(bpy.types.Panel):
-    bl_label = "VIEW"
+    bl_label = "VIEW flat color"
     bl_idname = "ZENV_VIEW_PT_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
