@@ -7,206 +7,157 @@ bl_info = {
     "author": "CorvaeOboro",
     "version": (1, 0),
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Remove opacity textures and settings from materials"
-}   
+    "location": "View3D > Sidebar > ZENV",
+    "description": "Remove opacity from all materials",
+    "category": "ZENV",
+}
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty
-from bpy.types import Panel, Operator, PropertyGroup
+from bpy.props import BoolProperty, StringProperty
+from bpy.types import Operator, Panel
 
-class MaterialOpacityUtils:
-    """Utility functions for opacity management"""
+class ZENV_OT_MATRemoveOpacity(Operator):
+    """Remove opacity from materials"""
+    bl_idname = "zenv.mat_remove_opacity"
+    bl_label = "Remove Opacity"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    apply_to_all: BoolProperty(
+        name="Apply to All Materials",
+        description="Apply to all materials in the file",
+        default=True
+    )
     
-    @staticmethod
-    def remove_opacity_links(material):
-        """Remove opacity links from a material"""
+    material_name: StringProperty(
+        name="Material Name",
+        description="Name of material to remove opacity from",
+        default=""
+    )
+
+    def _remove_opacity_from_material(self, material):
+        """Remove opacity from a single material"""
         if not material or not material.use_nodes:
             return False
-            
+
         modified = False
+        # Get the material output node
+        output_node = None
         for node in material.node_tree.nodes:
-            if node.type == 'BSDF_PRINCIPLED':
-                # Handle alpha input
-                alpha_socket = node.inputs.get('Alpha')
-                if alpha_socket and alpha_socket.is_linked:
-                    # Remove all links to alpha
-                    for link in alpha_socket.links:
-                        material.node_tree.links.remove(link)
-                    modified = True
-                    
-                # Reset alpha value
-                if alpha_socket:
-                    alpha_socket.default_value = 1.0
-                    modified = True
-                    
-                # Handle transmission input
-                transmission_socket = node.inputs.get('Transmission')
-                if transmission_socket and transmission_socket.is_linked:
-                    # Remove all links to transmission
-                    for link in transmission_socket.links:
-                        material.node_tree.links.remove(link)
-                    modified = True
-                    
-                # Reset transmission value
-                if transmission_socket:
-                    transmission_socket.default_value = 0.0
-                    modified = True
-                    
-        return modified
-    
-    @staticmethod
-    def cleanup_unused_nodes(material):
-        """Remove unused texture and mix nodes"""
-        if not material or not material.use_nodes:
+            if node.type == 'OUTPUT_MATERIAL':
+                output_node = node
+                break
+
+        if not output_node:
             return False
-            
-        modified = False
-        nodes_to_remove = []
-        
-        # Find unused nodes
-        for node in material.node_tree.nodes:
-            if node.type in {'TEX_IMAGE', 'MIX_RGB', 'MATH'}:
-                # Check if node outputs are used
-                outputs_used = False
-                for output in node.outputs:
-                    if output.links:
-                        outputs_used = True
-                        break
-                        
-                if not outputs_used:
-                    nodes_to_remove.append(node)
-        
-        # Remove unused nodes
-        for node in nodes_to_remove:
-            material.node_tree.nodes.remove(node)
-            modified = True
-            
-        return modified
-    
-    @staticmethod
-    def process_material(material, props):
-        """Process a single material"""
-        if not material:
+
+        # Get the connected node to the surface input
+        surface_input = output_node.inputs.get('Surface')
+        if not surface_input or not surface_input.links:
             return False
-            
-        modified = False
-        
-        # Remove opacity links
-        if MaterialOpacityUtils.remove_opacity_links(material):
-            modified = True
-            
-        # Clean up unused nodes
-        if props.remove_unused and MaterialOpacityUtils.cleanup_unused_nodes(material):
-            modified = True
-            
-        # Update blend mode
-        if props.force_opaque and material.blend_method != 'OPAQUE':
+
+        connected_node = surface_input.links[0].from_node
+
+        # Handle different shader types
+        if connected_node.type == 'BSDF_PRINCIPLED':
+            # Handle Alpha
+            alpha_input = connected_node.inputs.get('Alpha')
+            if alpha_input:
+                if alpha_input.default_value < 1.0:
+                    alpha_input.default_value = 1.0
+                    modified = True
+                # Remove alpha texture links if present
+                if alpha_input.links:
+                    material.node_tree.links.remove(alpha_input.links[0])
+                    modified = True
+
+            # Handle Transmission
+            transmission_input = connected_node.inputs.get('Transmission')
+            if transmission_input:
+                if transmission_input.default_value > 0.0:
+                    transmission_input.default_value = 0.0
+                    modified = True
+                if transmission_input.links:
+                    material.node_tree.links.remove(transmission_input.links[0])
+                    modified = True
+
+        elif connected_node.type == 'MIX_SHADER':
+            # Set mix factor to 1.0 to use only the second shader
+            fac_input = connected_node.inputs.get('Fac')
+            if fac_input:
+                if fac_input.default_value != 1.0:
+                    fac_input.default_value = 1.0
+                    modified = True
+                # Remove any links to the factor input
+                if fac_input.links:
+                    material.node_tree.links.remove(fac_input.links[0])
+                    modified = True
+
+        # Set material blend mode to opaque
+        if material.blend_method != 'OPAQUE':
             material.blend_method = 'OPAQUE'
             modified = True
-            
+
         return modified
 
-class ZENV_PG_OpacityRemovalProps(PropertyGroup):
-    """Properties for opacity removal"""
-    remove_unused: BoolProperty(
-        name="Remove Unused Nodes",
-        description="Remove unused texture and mix nodes after removing opacity",
-        default=True
-    )
-    
-    force_opaque: BoolProperty(
-        name="Force Opaque Blend Mode",
-        description="Set material blend mode to Opaque",
-        default=True
-    )
-    
-    scope: EnumProperty(
-        name="Scope",
-        description="Which materials to process",
-        items=[
-            ('SELECTED', "Selected Objects", "Process materials on selected objects only"),
-            ('ALL', "All Materials", "Process all materials in the scene")
-        ],
-        default='SELECTED'
-    )
-
-class ZENV_OT_RemoveOpacity(Operator):
-    """Remove opacity from materials"""
-    bl_idname = "zenv.remove_opacity"
-    bl_label = "Remove Opacity"
-    bl_description = "Remove opacity textures and settings from materials"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    @classmethod
-    def poll(cls, context):
-        if context.scene.zenv_opacity_props.scope == 'SELECTED':
-            return context.selected_objects
-        return True
-    
     def execute(self, context):
-        props = context.scene.zenv_opacity_props
         modified_count = 0
-        
-        # Get materials to process
-        materials = set()
-        if props.scope == 'SELECTED':
-            for obj in context.selected_objects:
-                if hasattr(obj.data, 'materials'):
-                    for slot in obj.material_slots:
-                        if slot.material:
-                            materials.add(slot.material)
+        skipped_count = 0
+
+        if self.apply_to_all:
+            # Process all materials
+            for material in bpy.data.materials:
+                if self._remove_opacity_from_material(material):
+                    modified_count += 1
+                else:
+                    skipped_count += 1
         else:
-            materials.update(bpy.data.materials)
-        
-        # Process materials
-        for mat in materials:
-            if MaterialOpacityUtils.process_material(mat, props):
-                modified_count += 1
-        
+            # Process single material
+            material = bpy.data.materials.get(self.material_name)
+            if material:
+                if self._remove_opacity_from_material(material):
+                    modified_count += 1
+                else:
+                    skipped_count += 1
+            else:
+                self.report({'WARNING'}, f"Material '{self.material_name}' not found")
+                return {'CANCELLED'}
+
         # Report results
         if modified_count > 0:
-            self.report({'INFO'}, f"Modified {modified_count} materials")
-        else:
-            self.report({'INFO'}, "No materials needed modification")
-            
+            self.report({'INFO'}, f"Modified {modified_count} material{'s' if modified_count > 1 else ''}")
+        if skipped_count > 0:
+            self.report({'INFO'}, f"Skipped {skipped_count} material{'s' if skipped_count > 1 else ''}")
+
         return {'FINISHED'}
 
-class ZENV_PT_OpacityRemovalPanel(Panel):
+class ZENV_PT_MATRemoveOpacity_Panel(Panel):
     """Panel for opacity removal settings"""
-    bl_label = "Remove Opacity"
-    bl_idname = "ZENV_PT_opacity_removal"
+    bl_label = "MAT Remove Opacity"
+    bl_idname = "ZENV_PT_MATRemoveOpacity_Panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
-    
+
     def draw(self, context):
         layout = self.layout
-        props = context.scene.zenv_opacity_props
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        # Add operator properties to the panel
+        op_props = layout.operator("zenv.mat_remove_opacity")
+        layout.prop(op_props, "apply_to_all")
         
-        # Settings
-        box = layout.box()
-        box.label(text="Settings")
-        col = box.column(align=True)
-        col.prop(props, "scope")
-        col.prop(props, "remove_unused")
-        col.prop(props, "force_opaque")
-        
-        # Operator
-        box = layout.box()
-        box.operator("zenv.remove_opacity")
+        # Only show material name field if not applying to all
+        if not op_props.apply_to_all:
+            layout.prop_search(op_props, "material_name", bpy.data, "materials")
 
 def register():
-    bpy.utils.register_class(ZENV_PG_OpacityRemovalProps)
-    bpy.utils.register_class(ZENV_OT_RemoveOpacity)
-    bpy.utils.register_class(ZENV_PT_OpacityRemovalPanel)
-    bpy.types.Scene.zenv_opacity_props = bpy.props.PointerProperty(type=ZENV_PG_OpacityRemovalProps)
+    bpy.utils.register_class(ZENV_OT_MATRemoveOpacity)
+    bpy.utils.register_class(ZENV_PT_MATRemoveOpacity_Panel)
 
 def unregister():
-    bpy.utils.unregister_class(ZENV_PG_OpacityRemovalProps)
-    bpy.utils.unregister_class(ZENV_OT_RemoveOpacity)
-    bpy.utils.unregister_class(ZENV_PT_OpacityRemovalPanel)
-    del bpy.types.Scene.zenv_opacity_props
+    bpy.utils.unregister_class(ZENV_PT_MATRemoveOpacity_Panel)
+    bpy.utils.unregister_class(ZENV_OT_MATRemoveOpacity)
 
 if __name__ == "__main__":
     register()
