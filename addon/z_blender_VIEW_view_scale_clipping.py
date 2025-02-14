@@ -75,14 +75,17 @@ class ZENV_ViewportUtils:
         # Default settings
         settings = {
             'scope': 'ALL',  # Use all objects by default
-            'clip_start_factor': 0.01,
-            'clip_end_factor': 10.0,
-            'view_lens': 50.0
+            'clip_start_factor': 0.01,  # Start clipping at 1% of max size
+            'clip_end_factor': 5.0,     # End clipping at 5x max size (reduced from 10x)
+            'view_lens': 50.0,          # Standard lens
+            'zoom_factor': 0.5          # Zoom factor to get closer to objects
         }
         
         # Get largest object size
         max_size = 0.0
         active_obj = None
+        bounds_center = mathutils.Vector((0, 0, 0))
+        total_objects = 0
         
         objects = context.scene.objects  # Always use all objects
             
@@ -91,49 +94,75 @@ class ZENV_ViewportUtils:
             if size > max_size:
                 max_size = size
                 active_obj = obj
+            bounds_center += obj.matrix_world.translation
+            total_objects += 1
                 
-        if max_size == 0.0:
+        if max_size == 0.0 or total_objects == 0:
             return False
+
+        # Calculate average center and adjusted size
+        bounds_center /= total_objects
+        adjusted_size = max_size * settings['zoom_factor']  # Use half the max size for closer view
+
+        # Calculate clip values
+        clip_start = max(adjusted_size * settings['clip_start_factor'], 0.001)
+        clip_end = adjusted_size * settings['clip_end_factor']
             
-        # Update viewport settings
-        for area in context.screen.areas:
-            if area.type == 'VIEW_3D':
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D':
-                        # Update clipping
-                        space.clip_start = max_size * settings['clip_start_factor']
-                        space.clip_end = max_size * settings['clip_end_factor']
-                        space.lens = settings['view_lens']
-                            
-        # Focus view on object
-        if active_obj:
-            context.view_layer.objects.active = active_obj
-            bpy.ops.view3d.view_selected()
-            
-        return True
+        # Update viewport settings across all screens
+        processed_count = 0
+        for window in context.window_manager.windows:
+            for screen in bpy.data.screens:
+                for area in screen.areas:
+                    if area.type == 'VIEW_3D':
+                        for space in area.spaces:
+                            if space.type == 'VIEW_3D':
+                                # Update clip values
+                                space.clip_start = clip_start
+                                space.clip_end = clip_end
+                                # Update lens
+                                space.lens = settings['view_lens']
+                                
+                                # Update view distance for closer look
+                                region3d = space.region_3d
+                                if region3d:
+                                    # Set view distance based on adjusted size
+                                    region3d.view_distance = adjusted_size * 2
+                                    # Look at center of bounds
+                                    region3d.view_location = bounds_center
+                                
+                                processed_count += 1
+        
+        return processed_count
 
 class ZENV_OT_UpdateViewport(Operator):
-    """Update viewport settings based on object size"""
+    """Update viewport settings based on object size across all viewports"""
     bl_idname = "zenv.update_viewport"
     bl_label = "View Fit Bounds"
-    bl_description = "Adjust viewport clipping to fit scene bounds"
+    bl_description = "Adjust viewport clipping to fit scene bounds in all viewports"
     bl_options = {'REGISTER', 'UNDO'}
     
     @classmethod
     def poll(cls, context):
-        return bool(context.scene.objects)
-    
+        return context.scene.objects
+        
     def execute(self, context):
-        if ZENV_ViewportUtils.update_viewport_settings(context):
-            self.report({'INFO'}, "Updated viewport settings")
+        # Store current screen and area
+        current_screen = context.window.screen
+        current_area = context.area
+        
+        # Update all viewports
+        processed_count = ZENV_ViewportUtils.update_viewport_settings(context)
+        
+        if processed_count:
+            self.report({'INFO'}, f"Updated {processed_count} viewports to fit scene bounds")
+            return {'FINISHED'}
         else:
-            self.report({'WARNING'}, "No valid objects found")
-            
-        return {'FINISHED'}
+            self.report({'WARNING'}, "No objects found to calculate bounds")
+            return {'CANCELLED'}
 
 class ZENV_PT_ViewportPanel(Panel):
     """Panel for viewport settings"""
-    bl_label = "View Scale"
+    bl_label = "VIEW Bounds Scale"
     bl_idname = "ZENV_PT_viewport"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
