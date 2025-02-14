@@ -89,7 +89,7 @@ class ZENV_OT_RemoveAffix(Operator, ZENV_MaterialRename_Mixin):
         self.report({'INFO'}, f"Removed {self.type} from {processed} materials")
         return {'FINISHED'}
 
-class ZENV_PG_RenameProps(PropertyGroup):
+class ZENV_PG_RenameByMaterialProps(PropertyGroup):
     """Properties for material renaming"""
     prefix: StringProperty(
         name="Prefix",
@@ -109,7 +109,7 @@ class ZENV_PG_RenameProps(PropertyGroup):
 
 class ZENV_PT_MaterialRenameSuffix(Panel):
     """Panel for material name prefix/suffix operations"""
-    bl_label = "Material Name Affix"
+    bl_label = "MAT Rename Affix"
     bl_idname = "ZENV_PT_material_rename_suffix"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -148,12 +148,12 @@ class ZENV_PT_MaterialRenameSuffix(Panel):
 
 def register():
     # Register classes in the correct order
-    bpy.utils.register_class(ZENV_PG_RenameProps)
+    bpy.utils.register_class(ZENV_PG_RenameByMaterialProps)
     bpy.utils.register_class(ZENV_OT_AddAffix)
     bpy.utils.register_class(ZENV_OT_RemoveAffix)
     bpy.utils.register_class(ZENV_PT_MaterialRenameSuffix)
     # Create the scene property
-    bpy.types.Scene.zenv_rename_props = bpy.props.PointerProperty(type=ZENV_PG_RenameProps)
+    bpy.types.Scene.zenv_rename_props = bpy.props.PointerProperty(type=ZENV_PG_RenameByMaterialProps)
 
 def unregister():
     # Remove the scene property first
@@ -163,7 +163,7 @@ def unregister():
     bpy.utils.unregister_class(ZENV_PT_MaterialRenameSuffix)
     bpy.utils.unregister_class(ZENV_OT_RemoveAffix)
     bpy.utils.unregister_class(ZENV_OT_AddAffix)
-    bpy.utils.unregister_class(ZENV_PG_RenameProps)
+    bpy.utils.unregister_class(ZENV_PG_RenameByMaterialProps)
 
 if __name__ == "__main__":
     register()

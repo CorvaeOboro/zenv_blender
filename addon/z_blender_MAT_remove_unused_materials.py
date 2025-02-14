@@ -118,7 +118,7 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
 
 class ZENV_PT_RemoveUnusedMaterialsPanel(Panel):
     """Panel for removing unused materials."""
-    bl_label = "Remove Unused Materials"
+    bl_label = "MAT Remove Unused Materials"
     bl_idname = "ZENV_PT_remove_unused_materials"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

@@ -159,7 +159,7 @@ class ZENV_OT_RemapTextures(Operator):
 
 class ZENV_PT_RemapTexturesPanel(Panel):
     """Panel for texture remapping tools."""
-    bl_label = "Remap Textures"
+    bl_label = "MAT Remap Textures"
     bl_idname = "ZENV_PT_remap_textures"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -172,15 +172,11 @@ class ZENV_PT_RemapTexturesPanel(Panel):
 
         # Path inputs
         box = layout.box()
-        box.label(text="Path Settings:", icon='FILE_FOLDER')
-        col = box.column(align=True)
-        col.prop(props, "old_path")
-        col.prop(props, "new_path")
-        col.prop(props, "image_ext")
 
-        # Remap button
-        box = layout.box()
-        box.label(text="Remap:", icon='FILE_REFRESH')
+        box.prop(props, "old_path")
+        box.prop(props, "new_path")
+        box.prop(props, "image_ext")
+
         box.operator(ZENV_OT_RemapTextures.bl_idname)
 
 # ------------------------------------------------------------------------

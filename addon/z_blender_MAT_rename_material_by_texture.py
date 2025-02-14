@@ -210,7 +210,7 @@ class ZENV_PG_MaterialRenameProps(PropertyGroup):
 
 class ZENV_PT_MaterialRenameByTexture(Panel):
     """Panel for material renaming operations"""
-    bl_label = "Material Rename by Texture"
+    bl_label = "MAT Rename by Texture"
     bl_idname = "ZENV_PT_material_rename_texture"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
