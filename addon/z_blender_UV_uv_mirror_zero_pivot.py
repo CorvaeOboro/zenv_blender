@@ -26,17 +26,12 @@ class ZENV_UVMirror_Utils:
     """Utility functions for UV mirroring"""
     
     @staticmethod
-    def flip_uvs(bm, horizontal=False, vertical=False, selected_only=False):
-        """Mirror UVs around zero pivot point
-        
-        Args:
-            bm: BMesh object
-            horizontal: Mirror horizontally if True
-            vertical: Mirror vertically if True
-            selected_only: Only mirror selected faces if True
-        """
+    def flip_uvs_edit_mode(bm, horizontal=False, vertical=False, selected_only=False):
+        """Mirror UVs in Edit Mode"""
         try:
-            uv_layer = bm.loops.layers.uv.verify()
+            uv_layer = bm.loops.layers.uv.active
+            if not uv_layer:
+                uv_layer = bm.loops.layers.uv.new()
             for face in bm.faces:
                 if not selected_only or face.select:
                     for loop in face.loops:
@@ -46,7 +41,25 @@ class ZENV_UVMirror_Utils:
                         if vertical:
                             uv.y = -uv.y
         except Exception as e:
-            print(f"Error flipping UVs: {str(e)}")
+            print(f"Error flipping UVs in Edit Mode: {str(e)}")
+
+    @staticmethod
+    def flip_uvs_object_mode(obj, horizontal=False, vertical=False):
+        """Mirror UVs in Object Mode"""
+        try:
+            if not obj.data.uv_layers.active:
+                obj.data.uv_layers.new()
+            
+            for uv_layer in obj.data.uv_layers:
+                for polygon in obj.data.polygons:
+                    for loop_index in polygon.loop_indices:
+                        uv = uv_layer.data[loop_index].uv
+                        if horizontal:
+                            uv.x = -uv.x
+                        if vertical:
+                            uv.y = -uv.y
+        except Exception as e:
+            print(f"Error flipping UVs in Object Mode: {str(e)}")
 
 # ------------------------------------------------------------------------
 #    Operators
@@ -59,72 +72,79 @@ class ZENV_OT_UVMirror_Base:
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj and obj.type == 'MESH' and obj.mode == 'EDIT'
+        return obj and obj.type == 'MESH'
 
-class ZENV_OT_UVMirror_Horizontal_Selected(ZENV_OT_UVMirror_Base, Operator):
+    def execute_edit_mode(self, context, horizontal=False, vertical=False, selected_only=False):
+        obj = context.active_object
+        me = obj.data
+        bm = bmesh.from_edit_mesh(me)
+        ZENV_UVMirror_Utils.flip_uvs_edit_mode(bm, horizontal, vertical, selected_only)
+        bmesh.update_edit_mesh(me)
+        return {'FINISHED'}
+
+    def execute_object_mode(self, context, horizontal=False, vertical=False):
+        obj = context.active_object
+        ZENV_UVMirror_Utils.flip_uvs_object_mode(obj, horizontal, vertical)
+        return {'FINISHED'}
+
+class ZENV_OT_UVMirror_X_Selected(ZENV_OT_UVMirror_Base, Operator):
     """Mirror selected face UVs horizontally around zero pivot point"""
-    bl_idname = "zenv.uvmirror_horizontal_selected"
-    bl_label = "Mirror Selected Horizontal"
+    bl_idname = "zenv.uvmirror_x_selected"
+    bl_label = "Mirror X Selected"
     
     def execute(self, context):
         try:
-            obj = context.active_object
-            bm = bmesh.from_edit_mesh(obj.data)
-            ZENV_UVMirror_Utils.flip_uvs(bm, horizontal=True, selected_only=True)
-            bmesh.update_edit_mesh(obj.data)
-            self.report({'INFO'}, "Selected UVs mirrored horizontally")
-            return {'FINISHED'}
+            if context.object.mode == 'EDIT':
+                return self.execute_edit_mode(context, horizontal=True, selected_only=True)
+            else:
+                self.report({'WARNING'}, "Select faces in Edit Mode to mirror selected UVs")
+                return {'CANCELLED'}
         except Exception as e:
             self.report({'ERROR'}, f"Failed to mirror UVs: {str(e)}")
             return {'CANCELLED'}
 
-class ZENV_OT_UVMirror_Vertical_Selected(ZENV_OT_UVMirror_Base, Operator):
+class ZENV_OT_UVMirror_Y_Selected(ZENV_OT_UVMirror_Base, Operator):
     """Mirror selected face UVs vertically around zero pivot point"""
-    bl_idname = "zenv.uvmirror_vertical_selected"
-    bl_label = "Mirror Selected Vertical"
+    bl_idname = "zenv.uvmirror_y_selected"
+    bl_label = "Mirror Y Selected"
     
     def execute(self, context):
         try:
-            obj = context.active_object
-            bm = bmesh.from_edit_mesh(obj.data)
-            ZENV_UVMirror_Utils.flip_uvs(bm, vertical=True, selected_only=True)
-            bmesh.update_edit_mesh(obj.data)
-            self.report({'INFO'}, "Selected UVs mirrored vertically")
-            return {'FINISHED'}
+            if context.object.mode == 'EDIT':
+                return self.execute_edit_mode(context, vertical=True, selected_only=True)
+            else:
+                self.report({'WARNING'}, "Select faces in Edit Mode to mirror selected UVs")
+                return {'CANCELLED'}
         except Exception as e:
             self.report({'ERROR'}, f"Failed to mirror UVs: {str(e)}")
             return {'CANCELLED'}
 
-class ZENV_OT_UVMirror_Horizontal_All(ZENV_OT_UVMirror_Base, Operator):
+class ZENV_OT_UVMirror_X_All(ZENV_OT_UVMirror_Base, Operator):
     """Mirror all UVs horizontally around zero pivot point"""
-    bl_idname = "zenv.uvmirror_horizontal_all"
-    bl_label = "Mirror All Horizontal"
+    bl_idname = "zenv.uvmirror_x_all"
+    bl_label = "Mirror X All"
     
     def execute(self, context):
         try:
-            obj = context.active_object
-            bm = bmesh.from_edit_mesh(obj.data)
-            ZENV_UVMirror_Utils.flip_uvs(bm, horizontal=True, selected_only=False)
-            bmesh.update_edit_mesh(obj.data)
-            self.report({'INFO'}, "All UVs mirrored horizontally")
-            return {'FINISHED'}
+            if context.object.mode == 'EDIT':
+                return self.execute_edit_mode(context, horizontal=True, selected_only=False)
+            else:
+                return self.execute_object_mode(context, horizontal=True)
         except Exception as e:
             self.report({'ERROR'}, f"Failed to mirror UVs: {str(e)}")
             return {'CANCELLED'}
 
-class ZENV_OT_UVMirror_Vertical_All(ZENV_OT_UVMirror_Base, Operator):
+class ZENV_OT_UVMirror_Y_All(ZENV_OT_UVMirror_Base, Operator):
     """Mirror all UVs vertically around zero pivot point"""
-    bl_idname = "zenv.uvmirror_vertical_all"
-    bl_label = "Mirror All Vertical"
+    bl_idname = "zenv.uvmirror_y_all"
+    bl_label = "Mirror Y All"
     
     def execute(self, context):
         try:
-            obj = context.active_object
-            bm = bmesh.from_edit_mesh(obj.data)
-            ZENV_UVMirror_Utils.flip_uvs(bm, vertical=True, selected_only=False)
-            bmesh.update_edit_mesh(obj.data)
-            self.report({'INFO'}, "All UVs mirrored vertically")
-            return {'FINISHED'}
+            if context.object.mode == 'EDIT':
+                return self.execute_edit_mode(context, vertical=True, selected_only=False)
+            else:
+                return self.execute_object_mode(context, vertical=True)
         except Exception as e:
             self.report({'ERROR'}, f"Failed to mirror UVs: {str(e)}")
             return {'CANCELLED'}
@@ -148,35 +168,35 @@ class ZENV_PT_UVMirror_Panel(Panel):
         box = layout.box()
         box.label(text="Mirror Selected:", icon='UV_SYNC_SELECT')
         col = box.column(align=True)
-        col.operator("zenv.uvmirror_horizontal_selected", icon='ORIENTATION_LOCAL')
-        col.operator("zenv.uvmirror_vertical_selected", icon='ORIENTATION_GLOBAL')
+        col.operator("zenv.uvmirror_x_selected", icon='ORIENTATION_LOCAL')
+        col.operator("zenv.uvmirror_y_selected", icon='ORIENTATION_GLOBAL')
         
         # All faces section
         box = layout.box()
         box.label(text="Mirror All:", icon='UV')
         col = box.column(align=True)
-        col.operator("zenv.uvmirror_horizontal_all", icon='ORIENTATION_LOCAL')
-        col.operator("zenv.uvmirror_vertical_all", icon='ORIENTATION_GLOBAL')
+        col.operator("zenv.uvmirror_x_all", icon='ORIENTATION_LOCAL')
+        col.operator("zenv.uvmirror_y_all", icon='ORIENTATION_GLOBAL')
 
 # ------------------------------------------------------------------------
 #    Registration
 # ------------------------------------------------------------------------
 
 classes = (
-    ZENV_OT_UVMirror_Horizontal_Selected,
-    ZENV_OT_UVMirror_Vertical_Selected,
-    ZENV_OT_UVMirror_Horizontal_All,
-    ZENV_OT_UVMirror_Vertical_All,
+    ZENV_OT_UVMirror_X_Selected,
+    ZENV_OT_UVMirror_Y_Selected,
+    ZENV_OT_UVMirror_X_All,
+    ZENV_OT_UVMirror_Y_All,
     ZENV_PT_UVMirror_Panel,
 )
 
 def register():
-    for current_class in classes:
-        bpy.utils.register_class(current_class)
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
 
 def unregister():
-    for current_class in reversed(classes):
-        bpy.utils.unregister_class(current_class)
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
 
 if __name__ == "__main__":
     register()
