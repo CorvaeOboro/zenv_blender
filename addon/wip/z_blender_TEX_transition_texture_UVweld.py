@@ -59,18 +59,30 @@ class ZENV_TransitionTextureWeld_Properties:
         )
         
         bpy.types.Scene.zenv_weld_cleanup = bpy.props.BoolProperty(
-            name="Cleanup",
-            description="Remove temporary objects after welding",
+            name="Cleanup After Baking",
+            description="Remove temporary objects and materials after baking",
             default=True
         )
 
         # Baking properties
         bpy.types.Scene.zenv_weld_resolution = bpy.props.IntProperty(
-            name="Resolution",
+            name="Bake Resolution",
             description="Resolution of the baked texture",
             default=1024,
             min=64,
             max=8192
+        )
+        
+        bpy.types.Scene.zenv_weld_flip_x = bpy.props.BoolProperty(
+            name="Flip X",
+            description="Mirror the texture horizontally before baking",
+            default=False
+        )
+        
+        bpy.types.Scene.zenv_weld_flip_y = bpy.props.BoolProperty(
+            name="Flip Y",
+            description="Mirror the texture vertically before baking",
+            default=False
         )
 
     @classmethod
@@ -79,6 +91,8 @@ class ZENV_TransitionTextureWeld_Properties:
         del bpy.types.Scene.zenv_weld_steps
         del bpy.types.Scene.zenv_weld_cleanup
         del bpy.types.Scene.zenv_weld_resolution
+        del bpy.types.Scene.zenv_weld_flip_x
+        del bpy.types.Scene.zenv_weld_flip_y
 
 # ------------------------------------------------------------------------
 #    Utilities
@@ -275,6 +289,9 @@ class ZENV_TransitionTextureWeld_Utils:
         old_source_seam_verts = set()
         old_target_seam_verts = set()
 
+        # Distance threshold for welding (adjust if needed)
+        WELD_DISTANCE_THRESHOLD = 0.001
+
         for i, edge_info in enumerate(shared_edges):
             s_vs = edge_info[2]['source_verts']  # [v1, v2]
             t_vs = edge_info[2]['target_verts']  # [v3, v4]
@@ -292,13 +309,21 @@ class ZENV_TransitionTextureWeld_Utils:
             new_t0 = target_map[t0]
             new_t1 = target_map[t1]
 
-            # Weld target side into source side
-            weld_map[new_t0] = new_s0
-            weld_map[new_t1] = new_s1
+            # Only weld if vertices are close enough
+            if (new_s0.co - new_t0.co).length <= WELD_DISTANCE_THRESHOLD:
+                weld_map[new_t0] = new_s0
+            if (new_s1.co - new_t1.co).length <= WELD_DISTANCE_THRESHOLD:
+                weld_map[new_t1] = new_s1
         
         logger.log_info(f"Will weld {len(weld_map)} target verts into source verts", "WELD")
 
-        bmesh.ops.weld_verts(bm, targetmap=weld_map)
+        # Only perform weld if we have vertices to weld
+        if weld_map:
+            bmesh.ops.weld_verts(bm, targetmap=weld_map)
+
+        bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=WELD_DISTANCE_THRESHOLD)
+        bm.normal_update()
+
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
         bm.faces.ensure_lookup_table()
@@ -325,7 +350,7 @@ class ZENV_TransitionTextureWeld_Utils:
 
         bm.normal_update()
 
-        # (E) Build face‐index sets so 'weld_uvs' can identify boundary edges
+        # (E) Build face‐index sets so 'stitch_uvs' can identify boundary edges
         bm.faces.ensure_lookup_table()
         source_face_indices = set()
         target_face_indices = set()
@@ -409,147 +434,341 @@ class ZENV_TransitionTextureWeld_Utils:
         logger.log_info("===== CREATE_MERGED_MESH: END =====")
         return merged_obj
 
-
     @staticmethod
-    def weld_uvs(obj, shared_edges):
+    def stitch_uvs(obj, shared_edges):
         """
-        Additional pass to 'stitch' only the target-side UV edges along the seam.
+        Additional pass to 'stitch' only the target-side UV edges along the seam,
+        while keeping UV Sync selection ON and using face selection mode.
+
+        This version avoids bpy.ops.uv.select_all (which can fail in a context override)
+        by manually deselecting/selecting loops in BMesh.
         """
         logger = ZENV_TransitionTextureWeld_Logger
-        logger.log_info("===== weld_uvs: START (stitch target side) =====")
+        logger.log_info("===== stitch_uvs: START (stitch target side) =====")
 
-        # Store original mode and active object
-        original_mode = bpy.context.active_object.mode if bpy.context.active_object else 'OBJECT'
-        original_active = bpy.context.active_object
-        original_area = bpy.context.area.type if bpy.context.area else None
-        original_sync = bpy.context.scene.tool_settings.use_uv_select_sync
-        original_select_mode = tuple(bpy.context.tool_settings.mesh_select_mode)
+        # --- Store original states for proper restoration ---
+        original_mode = obj.mode
+        original_active = bpy.context.view_layer.objects.active
+        original_area_type = None
+        original_select_mode = bpy.context.tool_settings.mesh_select_mode[:]
+        original_uv_select_sync = bpy.context.scene.tool_settings.use_uv_select_sync
+        original_uv_select_mode = bpy.context.tool_settings.uv_select_mode
 
         try:
-            # Ensure we're in object mode first
-            bpy.ops.object.mode_set(mode='OBJECT')
-            
-            # Set the object as active and selected
+            # Make 'obj' active, ensure EDIT mode
             bpy.context.view_layer.objects.active = obj
-            obj.select_set(True)
-            
-            # Enter edit mode
-            bpy.ops.object.mode_set(mode='EDIT')
+            if bpy.context.object.mode != 'EDIT':
+                bpy.ops.object.mode_set(mode='EDIT')
 
-            # Get BMesh and ensure UV layer exists
-            bm = bmesh.from_edit_mesh(obj.data)
-            bm.faces.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            uv_layer = bm.loops.layers.uv.active
-
-            if uv_layer is None:
-                logger.log_error("No active UV layer found; cannot stitch.")
-                return obj
-
-            # Get face sets
-            source_faces = set(obj.get("source_faces", []))
-            target_faces = set(obj.get("target_faces", []))
-            logger.log_info(f"Stitch: source_faces={len(source_faces)}, target_faces={len(target_faces)}")
-
-            # First deselect all
-            bpy.ops.mesh.select_all(action='DESELECT')
-            
-            # Find a suitable area to convert to UV editor
+            # Find or create an Image Editor area
             area = None
             for a in bpy.context.screen.areas:
-                if a.type == 'VIEW_3D':
+                if a.type == 'IMAGE_EDITOR':
                     area = a
                     break
-            
             if not area:
-                logger.log_error("Could not find suitable 3D View area")
-                return obj
-            
-            # Store original area type
-            original_area_type = area.type
-            
-            try:
-                # Convert area to IMAGE_EDITOR
+                # If no Image Editor exists, temporarily convert current area
+                area = bpy.context.area
+                original_area_type = area.type
                 area.type = 'IMAGE_EDITOR'
-                
-                # Set up UV editing mode
-                for space in area.spaces:
-                    if space.type == 'IMAGE_EDITOR':
-                        space.mode = 'UV'
-                
-                # Get the region for the UV editor
-                region = None
-                for r in area.regions:
-                    if r.type == 'WINDOW':
-                        region = r
-                        break
-                
-                if region:
-                    with bpy.context.temp_override(area=area, region=region):
-                        # Enable sync and face selection mode
-                        bpy.context.scene.tool_settings.use_uv_select_sync = True
-                        bpy.context.tool_settings.mesh_select_mode = (False, False, True)  # Face mode
-                        
-                        # Ensure we're in face select mode for UVs
-                        bpy.context.tool_settings.uv_select_mode = 'FACE'
-                        
-                        # Select source vertex group
-                        if "source_verts" in obj.vertex_groups:
-                            # Switch to vertex mode temporarily to select vertex group
-                            bpy.context.tool_settings.mesh_select_mode = (True, False, False)
-                            bpy.ops.object.vertex_group_set_active(group='source_verts')
-                            bpy.ops.object.vertex_group_select()
-                            
-                            # Switch back to face mode
-                            bpy.context.tool_settings.mesh_select_mode = (False, False, True)
-                            
-                            # Update the mesh to ensure selection is reflected
-                            bmesh.update_edit_mesh(obj.data)
-                            
-                            # Make sure sync is still on and we're in face mode
-                            bpy.context.scene.tool_settings.use_uv_select_sync = True
-                            bpy.context.tool_settings.mesh_select_mode = (False, False, True)
-                            bpy.context.tool_settings.uv_select_mode = 'FACE'
-                            
-                            # Perform the stitch
-                            bpy.ops.uv.stitch(use_limit=False, snap_islands=True, limit=0.01)
-                        else:
-                            logger.log_error("source_verts vertex group not found")
+
+            # Find a WINDOW region in that area
+            region = None
+            for r in area.regions:
+                if r.type == 'WINDOW':
+                    region = r
+                    break
+
+            if not region:
+                logger.log_error("Could not find a WINDOW region in IMAGE_EDITOR; aborting stitch.")
+                return obj
+
+            # Prepare a context override so uv.stitch sees an IMAGE_EDITOR context
+            space_data = area.spaces.active
+            screen = area.id_data
+            window = bpy.context.window_manager.windows[0]
+
+            with bpy.context.temp_override(
+                window=window,
+                area=area,
+                region=region,
+                space_data=space_data,
+                screen=screen
+            ):
+                # Log basic context info
+                logger.log_info(f"Context area type: {area.type}", "CONTEXT")
+                logger.log_info(f"Context mode: {obj.mode}", "CONTEXT")
+                logger.log_info(f"Context active object: {bpy.context.active_object.name}", "CONTEXT")
+
+                # Keep sync selection ON
+                bpy.context.scene.tool_settings.use_uv_select_sync = True
+
+                # Use face selection in 3D + face selection in UV
+                bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+                bpy.context.tool_settings.uv_select_mode = 'FACE'
+
+                logger.log_info(f"mesh_select_mode: {bpy.context.tool_settings.mesh_select_mode}", "DEBUG")
+                logger.log_info(f"uv_select_mode: {bpy.context.tool_settings.uv_select_mode}", "DEBUG")
+                logger.log_info(f"use_uv_select_sync: {bpy.context.scene.tool_settings.use_uv_select_sync}", "DEBUG")
+
+                # 1) Select "source_verts" group in 3D
+                if "source_verts" in obj.vertex_groups:
+                    bpy.ops.object.vertex_group_set_active(group='source_verts')
+                    bpy.ops.object.vertex_group_select()
+
+                    bm = bmesh.from_edit_mesh(obj.data)
+                    bm.verts.ensure_lookup_table()
+                    bm.faces.ensure_lookup_table()
+
+                    selected_verts_3d = [v for v in bm.verts if v.select]
+                    selected_faces_3d = [f for f in bm.faces if f.select]
+                    logger.log_info(f"3D Selection: {len(selected_verts_3d)} verts, {len(selected_faces_3d)} faces", "DEBUG")
+
+                    # 2) Manually clear UV selection, then set loops selected
+                    uv_layer = bm.loops.layers.uv.active
+                    if uv_layer:
+                        # Deselect all loops in UV
+                        for f in bm.faces:
+                            for loop in f.loops:
+                                loop[uv_layer].select = False
+
+                        # Now select all loops for each face that is selected in 3D
+                        for f in selected_faces_3d:
+                            for loop in f.loops:
+                                loop[uv_layer].select = True
+
+                        bmesh.update_edit_mesh(obj.data)
+
+                        # Check how many faces are now "UV selected"
+                        uv_selected_faces = 0
+                        for f in bm.faces:
+                            if all(l[uv_layer].select for l in f.loops):
+                                uv_selected_faces += 1
+                        logger.log_info(f"UV Editor Selection: {uv_selected_faces} faces selected", "DEBUG")
+                    else:
+                        logger.log_info("No active UV layer found on the mesh!", "DEBUG")
+
                 else:
-                    logger.log_error("Could not find suitable region in IMAGE_EDITOR")
-                
-            except Exception as e:
-                logger.log_error(f"UV stitch failed: {str(e)}")
-            
-            finally:
-                # Restore area type
-                area.type = original_area_type
+                    logger.log_error("source_verts vertex group not found; skipping stitch.")
+                    return obj
+
+                # 3) Attempt the uv.stitch operator
+                try:
+                    logger.log_info("Calling bpy.ops.uv.stitch() ...", "DEBUG")
+                    bpy.ops.uv.stitch(use_limit=False, snap_islands=True, limit=0.01)
+                    logger.log_info("UV stitch completed successfully", "STITCH")
+                except Exception as e:
+                    logger.log_error(f"UV stitch failed with error: {str(e)}")
+                    logger.log_info(f"Failed stitch context - Area: {area.type}", "ERROR")
+                    logger.log_info(f"Failed stitch context - Mode: {obj.mode}", "ERROR")
+                    logger.log_info(f"Failed stitch context - Active: {bpy.context.active_object.name}", "ERROR")
+                    logger.log_info(f"Failed stitch context - Region: {region.type}", "ERROR")
+
+                # 4) Optional: Flip target UVs if requested
+                if bpy.context.scene.zenv_weld_flip_x or bpy.context.scene.zenv_weld_flip_y:
+                    bm = bmesh.from_edit_mesh(obj.data)
+                    bm.faces.ensure_lookup_table()
+                    bm.verts.ensure_lookup_table()
+                    uv_layer = bm.loops.layers.uv.verify()
+
+                    # Gather target_verts from group
+                    target_group = obj.vertex_groups.get("target_verts")
+                    target_verts = set()
+                    if target_group:
+                        for v in bm.verts:
+                            for g in v.groups:
+                                if g.group == target_group.index:
+                                    target_verts.add(v.index)
+
+                    # Gather seam verts from shared_edges
+                    seam_verts = set()
+                    for edge_info in shared_edges:
+                        seam_verts.update(edge_info[2]['target_verts'])
+
+                    # Calculate seam center
+                    seam_uv_coords = []
+                    for f in bm.faces:
+                        for loop in f.loops:
+                            if loop.vert.index in seam_verts:
+                                seam_uv_coords.append(Vector(loop[uv_layer].uv))
+                    if seam_uv_coords:
+                        seam_uv_center = sum(seam_uv_coords, Vector((0.0, 0.0))) / len(seam_uv_coords)
+
+                        # Flip only target UVs not on the seam
+                        for f in bm.faces:
+                            for loop in f.loops:
+                                if loop.vert.index in target_verts and loop.vert.index not in seam_verts:
+                                    old_uv = Vector(loop[uv_layer].uv)
+                                    rel_uv = old_uv - seam_uv_center
+                                    if bpy.context.scene.zenv_weld_flip_x:
+                                        rel_uv.x = -rel_uv.x
+                                    if bpy.context.scene.zenv_weld_flip_y:
+                                        rel_uv.y = -rel_uv.y
+                                    loop[uv_layer].uv = seam_uv_center + rel_uv
+
+                    bmesh.update_edit_mesh(obj.data)
 
         except Exception as e:
-            logger.log_error(f"Error during UV stitching: {str(e)}")
-        
+            logger.log_error(f"Error during UV operations: {str(e)}")
+
         finally:
-            # Restore original context
-            if original_area:
-                bpy.context.area.type = original_area
-            
-            # Restore selection mode
+            # Restore any area changes
+            if original_area_type:
+                area.type = original_area_type
+
+            # Restore original tool settings
             bpy.context.tool_settings.mesh_select_mode = original_select_mode
-            
-            # Restore UV sync mode
-            bpy.context.scene.tool_settings.use_uv_select_sync = original_sync
-                
-            # Return to object mode first
+            bpy.context.scene.tool_settings.use_uv_select_sync = original_uv_select_sync
+            bpy.context.tool_settings.uv_select_mode = original_uv_select_mode
+
+            # Return to Object Mode
             bpy.ops.object.mode_set(mode='OBJECT')
-            
-            # Restore original active object and its mode
+
+            # Restore original active object (and mode if needed)
             if original_active:
                 bpy.context.view_layer.objects.active = original_active
                 if original_mode != 'OBJECT':
                     bpy.ops.object.mode_set(mode=original_mode)
-        
-        logger.log_info("===== weld_uvs: END (stitch target side) =====")
+
+        logger.log_info("===== stitch_uvs: END (stitch target side) =====")
         return obj
+
+
+    @staticmethod
+    def setup_material_nodes(material, image_texture):
+        """Setup material nodes with optional texture flipping"""
+        material.use_nodes = True
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        
+        # Clear existing nodes
+        nodes.clear()
+        
+        # Create texture coordinate node
+        tex_coord = nodes.new('ShaderNodeTexCoord')
+        tex_coord.location = (-600, 0)
+        
+        # Create mapping node for flipping
+        mapping = nodes.new('ShaderNodeMapping')
+        mapping.location = (-400, 0)
+        
+        # Create texture node
+        texture = nodes.new('ShaderNodeTexImage')
+        texture.image = image_texture
+        texture.location = (-200, 0)
+        
+        # Create output node
+        output = nodes.new('ShaderNodeOutputMaterial')
+        output.location = (200, 0)
+        
+        # Create shader node
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        bsdf.location = (0, 0)
+        
+        # Link nodes
+        links.new(tex_coord.outputs['UV'], mapping.inputs['Vector'])
+        links.new(mapping.outputs['Vector'], texture.inputs['Vector'])
+        links.new(texture.outputs['Color'], bsdf.inputs['Base Color'])
+        links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+        
+        return mapping, texture
+
+    @staticmethod
+    def create_bake_material(context, image, obj):
+        """Create material for baking with optional texture flipping"""
+        # Create new material
+        material = bpy.data.materials.new(name=f"{obj.name}_bake_material")
+        material.use_nodes = True
+        
+        # Setup nodes
+        mapping, texture = ZENV_TransitionTextureWeld_Utils.setup_material_nodes(material, image)
+        
+        # Apply flipping if enabled
+        if context.scene.zenv_weld_flip_x or context.scene.zenv_weld_flip_y:
+            mapping.inputs['Scale'].default_value[0] = -1 if context.scene.zenv_weld_flip_x else 1
+            mapping.inputs['Scale'].default_value[1] = -1 if context.scene.zenv_weld_flip_y else 1
+        
+        return material, texture
+
+    @staticmethod
+    def setup_bake_materials(merged_obj, source_obj, context):
+        """Setup materials for baking with texture flipping support"""
+        logger = ZENV_TransitionTextureWeld_Logger
+        logger.log_info("Setting up bake materials...")
+        
+        # Create new material for merged object
+        bake_material = bpy.data.materials.new(name=f"{merged_obj.name}_bake")
+        bake_material.use_nodes = True
+        nodes = bake_material.node_tree.nodes
+        links = bake_material.node_tree.links
+        nodes.clear()
+
+        # Create nodes with texture flipping support
+        tex_coord = nodes.new('ShaderNodeTexCoord')
+        tex_coord.location = (-600, 0)
+
+        mapping = nodes.new('ShaderNodeMapping')
+        mapping.location = (-400, 0)
+
+        # Apply flipping if enabled
+        if context.scene.zenv_weld_flip_x or context.scene.zenv_weld_flip_y:
+            mapping.inputs['Scale'].default_value[0] = -1 if context.scene.zenv_weld_flip_x else 1
+            mapping.inputs['Scale'].default_value[1] = -1 if context.scene.zenv_weld_flip_y else 1
+
+        # Create Principled BSDF
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        bsdf.location = (0, 0)
+
+        # Create output
+        output = nodes.new('ShaderNodeOutputMaterial')
+        output.location = (200, 0)
+
+        # Link nodes
+        links.new(tex_coord.outputs['UV'], mapping.inputs['Vector'])
+
+        # Get source material and its image texture if available
+        if source_obj.data.materials:
+            source_mat = source_obj.data.materials[0]
+            if source_mat and source_mat.use_nodes:
+                for node in source_mat.node_tree.nodes:
+                    if node.type == 'TEX_IMAGE' and node.image:
+                        # Create texture node
+                        texture = nodes.new('ShaderNodeTexImage')
+                        texture.image = node.image
+                        texture.location = (-200, 0)
+                        
+                        # Link texture
+                        links.new(mapping.outputs['Vector'], texture.inputs['Vector'])
+                        links.new(texture.outputs['Color'], bsdf.inputs['Base Color'])
+                        break
+
+        # Link BSDF to output
+        links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+
+        # Assign material to merged object
+        merged_obj.data.materials.clear()
+        merged_obj.data.materials.append(bake_material)
+
+        # Push vertices slightly along their normals to prevent z-fighting
+        bm = bmesh.new()
+        bm.from_mesh(merged_obj.data)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)  # Ensure normals are correct
+        
+        # Push each vertex along its normal
+        for v in bm.verts:
+            v.co += v.normal * 0.0001
+        
+        bm.to_mesh(merged_obj.data)
+        bm.free()
+        merged_obj.data.update()
+
+        return bake_material
+
+    @staticmethod
+    def restore_materials(obj, materials):
+        obj.data.materials.clear()
+        for mat in materials:
+            obj.data.materials.append(mat)
 
     @staticmethod
     def cleanup_temp_objects(obj):
@@ -590,58 +809,6 @@ class ZENV_TransitionTextureWeld_Utils:
             context.scene.cycles.use_high_quality_normals = True
         
         return original_engine
-
-    @staticmethod
-    def setup_bake_materials(merged_obj, source_obj, context):
-        logger = ZENV_TransitionTextureWeld_Logger
-        logger.log_info("Setting up bake materials...")
-        
-        # Find the dominant material from source object
-        if not source_obj.data.materials:
-            logger.log_error("Source object has no materials")
-            return None
-            
-        # Count face area per material to find dominant material
-        material_areas = {}
-        source_mesh = source_obj.data
-        for poly in source_mesh.polygons:
-            mat_index = poly.material_index
-            if mat_index < len(source_mesh.materials):
-                mat = source_mesh.materials[mat_index]
-                if mat:
-                    area = poly.area
-                    material_areas[mat] = material_areas.get(mat, 0) + area
-        
-        # Get material with largest area
-        dominant_material = max(material_areas.items(), key=lambda x: x[1])[0] if material_areas else source_mesh.materials[0]
-        logger.log_info(f"Using dominant material: {dominant_material.name}")
-
-        # Clear any existing materials from merged object
-        merged_obj.data.materials.clear()
-        
-        # Create a copy of the dominant material to avoid modifying original
-        bake_material = dominant_material.copy()
-        bake_material.name = f"{dominant_material.name}_bake"
-        
-        # Assign the bake material to the merged object
-        merged_obj.data.materials.append(bake_material)
-        
-        # Ensure all faces use this material
-        for poly in merged_obj.data.polygons:
-            poly.material_index = 0
-            
-        # Update mesh to ensure material assignment is reflected
-        merged_obj.data.update()
-        
-        logger.log_info(f"Assigned bake material to merged mesh: {bake_material.name}")
-        return bake_material
-
-    @staticmethod
-    def restore_materials(obj, materials):
-        obj.data.materials.clear()
-        for mat in materials:
-            obj.data.materials.append(mat)
-
 
 # ------------------------------------------------------------------------
 #    Operators
@@ -730,22 +897,14 @@ class ZENV_OT_TransitionTextureWeld_Bake(bpy.types.Operator):
                 
                 # Create a temporary material for the target object
                 target_bake_mat = bpy.data.materials.new(name=f"{target_obj.name}_bake_target")
-                target_bake_mat.use_nodes = True
-                target_nodes = target_bake_mat.node_tree.nodes
-                target_nodes.clear()
-                
-                # Add image texture node for baking target
-                target_tex_image = target_nodes.new('ShaderNodeTexImage')
-                target_tex_image.image = bake_image
-                target_tex_image.select = True
-                target_nodes.active = target_tex_image
+                target_bake_mat, target_tex_image = ZENV_TransitionTextureWeld_Utils.create_bake_material(context, bake_image, target_obj)
                 
                 # Assign bake target material to target object
                 target_obj.data.materials.clear()
                 target_obj.data.materials.append(target_bake_mat)
                 
                 # 5) Perform UV weld
-                ZENV_TransitionTextureWeld_Utils.weld_uvs(merged_obj, shared_edges)
+                ZENV_TransitionTextureWeld_Utils.stitch_uvs(merged_obj, shared_edges)
                 
                 # 6) Setup objects for baking
                 # Deselect all objects first
@@ -818,26 +977,30 @@ class ZENV_OT_TransitionTextureWeld_Bake(bpy.types.Operator):
 # ------------------------------------------------------------------------
 
 class ZENV_PT_TransitionTextureWeld_Panel(bpy.types.Panel):
-    """Panel for UV welding tools"""
-    bl_label = "Texture Transition UV Stitch"
-    bl_idname = "ZENV_PT_transition_weld"
+    """Panel for UV stitching tools"""
+    bl_label = "TEX Transition by UV Weld"
+    bl_idname = "ZENV_PT_transition_texture_weld"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
-    
+
     def draw(self, context):
         layout = self.layout
         scene = context.scene
         
         box = layout.box()
         box.label(text="Options:")
-        box.prop(scene, "zenv_weld_debug")
-        box.prop(scene, "zenv_weld_steps")
         box.prop(scene, "zenv_weld_cleanup")
         
         box = layout.box()
         box.label(text="Bake Settings:")
         box.prop(scene, "zenv_weld_resolution")
+        
+        box = layout.box()
+        box.label(text="Texture Variations:")
+        col = box.column(align=True)
+        col.prop(scene, "zenv_weld_flip_x", text="Flip X")
+        col.prop(scene, "zenv_weld_flip_y", text="Flip Y")
         
         layout.operator("zenv.transition_weld")
 
