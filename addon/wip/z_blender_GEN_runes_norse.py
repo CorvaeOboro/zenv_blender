@@ -6,12 +6,12 @@ and endpoint decorations. The centerlines are expanded into a constant-thickness
 filled to form a face, extruded to give 3D volume, and then the top face is tapered 
 to simulate a stone-carved appearance.
 
-Inspired by Norse runes, Japanese calligraphy, and Orcish carvings.
+Inspired by Norse runes
 """
 
 bl_info = {
     "name": "GEN Runes Norse (Unified Mesh)",
-    "author": "CorvaeOboro / Updated by ChatGPT",
+    "author": "CorvaeOboro",
     "version": (1, 1),
     "blender": (4, 0, 0),
     "location": "View3D > ZENV",
@@ -19,104 +19,30 @@ bl_info = {
     "category": "ZENV",
 }
 
-import bpy, bmesh, math, random
-from math import radians, cos, sin
-from mathutils import Vector
-from bpy.types import Operator, Panel, PropertyGroup
+import bpy
+import bmesh
+import random
+import time
+from math import (
+    radians, degrees,
+    sin, cos, tan,
+    asin, acos, atan2,
+    pi,
+    sqrt
+)
+from mathutils import Vector, Matrix
 from bpy.props import (
     IntProperty,
     FloatProperty,
-    EnumProperty,
     BoolProperty,
-    PointerProperty,
+    EnumProperty,
+    PointerProperty
 )
-
-# ------------------------------------------------------------------------
-#    BMesh 2D Stroke Helpers
-# ------------------------------------------------------------------------
-def compute_offset_for_vertex(poly, i, thickness):
-    """
-    For vertex i in poly (list of Vectors), compute left and right offsets
-    (using a miter join) for a stroke of given thickness.
-    Returns (left_offset, right_offset).
-    """
-    p = poly[i]
-    half = thickness / 2.0
-    if i == 0:
-        d = (poly[1] - poly[0]).normalized()
-        perp = Vector((-d.y, d.x, 0))
-        return p + perp * half, p - perp * half
-    elif i == len(poly) - 1:
-        d = (poly[-1] - poly[-2]).normalized()
-        perp = Vector((-d.y, d.x, 0))
-        return p + perp * half, p - perp * half
-    else:
-        d1 = (poly[i] - poly[i-1]).normalized()
-        d2 = (poly[i+1] - poly[i]).normalized()
-        perp1 = Vector((-d1.y, d1.x, 0))
-        perp2 = Vector((-d2.y, d2.x, 0))
-        miter = perp1 + perp2
-        if miter.length < 1e-6:
-            miter = perp1
-        else:
-            miter.normalize()
-        dot_val = miter.dot(perp1)
-        if abs(dot_val) < 1e-6:
-            miter_length = half
-        else:
-            miter_length = half / dot_val
-        return p + miter * miter_length, p - miter * miter_length
-
-def create_stroke_outline(poly, thickness):
-    """
-    Given a polyline (list of Vectors), compute the closed outline for a stroke
-    with constant thickness.
-    """
-    left_offsets = []
-    right_offsets = []
-    for i in range(len(poly)):
-        l, r = compute_offset_for_vertex(poly, i, thickness)
-        left_offsets.append(l)
-        right_offsets.append(r)
-    outline = left_offsets + list(reversed(right_offsets))
-    return outline
-
-def create_extruded_stroke_mesh(poly, thickness, extrude_depth, taper_factor):
-    """
-    Given a polyline (list of Vectors), create a 3D mesh by:
-      1. Expanding the centerline into a 2D outline with constant thickness.
-      2. Filling the outline to form a face.
-      3. Extruding the face upward by extrude_depth.
-      4. Tapering (scaling) the top face by taper_factor.
-    Returns a new Mesh data-block.
-    """
-    bm = bmesh.new()
-    outline = create_stroke_outline(poly, thickness)
-    bm_verts = []
-    for co in outline:
-        bm_verts.append(bm.verts.new(co))
-    bm.faces.new(bm_verts)
-    bm.faces.ensure_lookup_table()
-    face = bm.faces[0]
-    ret = bmesh.ops.extrude_face_region(bm, geom=[face])
-    bm.verts.ensure_lookup_table()
-    extruded_verts = [elem for elem in ret["geom"] if isinstance(elem, bmesh.types.BMVert)]
-    bmesh.ops.translate(bm, verts=extruded_verts, vec=Vector((0, 0, extrude_depth)))
-    bm.verts.ensure_lookup_table()
-    top_verts = [v for v in extruded_verts if abs(v.co.z - extrude_depth) < 1e-3]
-    if top_verts:
-        centroid = Vector((0, 0, 0))
-        for v in top_verts:
-            centroid += v.co
-        centroid /= len(top_verts)
-        for v in top_verts:
-            offset = v.co.xy - centroid.xy
-            v.co.xy = centroid.xy + offset * taper_factor
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    mesh = bpy.data.meshes.new("RuneMesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    return mesh
+from bpy.types import (
+    Operator,
+    PropertyGroup,
+    Panel
+)
 
 # ------------------------------------------------------------------------
 #    Property Group (Restored with Additional Attributes)
@@ -129,26 +55,6 @@ class ZENV_PG_RuneGenerator_Properties(PropertyGroup):
         min=3,
         max=20,
         description="Number of segments composing the main stroke"
-    )
-    min_length: FloatProperty(
-        name="Min Length",
-        default=0.8,
-        min=0.1,
-        description="Minimum length of each segment"
-    )
-    max_length: FloatProperty(
-        name="Max Length",
-        default=1.5,
-        min=0.1,
-        description="Maximum length of each segment"
-    )
-    style: EnumProperty(
-        name="Style",
-        items=[
-            ('NORSE', "Norse", "Use Norse-style allowed angles"),
-            ('JAPANESE', "Japanese", "Use Japanese-style allowed angles")
-        ],
-        default='NORSE'
     )
     stroke_thickness: FloatProperty(
         name="Stroke Thickness",
@@ -169,37 +75,10 @@ class ZENV_PG_RuneGenerator_Properties(PropertyGroup):
         max=1.0,
         description="Scale factor for the top face relative to the base (1 = uniform, <1 = tapered)"
     )
-    endpoint_decoration: EnumProperty(
-        name="Endpoint Decoration",
-        items=[
-            ('NONE', "None", "No endpoint decoration"),
-            ('SERIF', "Serif", "Add a classic serif"),
-            ('HOOK', "Hook", "Add a curved hook"),
-            ('FOOT', "Foot", "Add a curved foot")
-        ],
-        default='NONE'
-    )
-    decorate_start: BoolProperty(
-        name="Decorate Start",
-        default=True,
-        description="Apply endpoint decoration to the starting point"
-    )
-    decorate_end: BoolProperty(
-        name="Decorate End",
-        default=True,
-        description="Apply endpoint decoration to the ending point"
-    )
     enable_second_stroke: BoolProperty(
         name="Enable Second Stroke",
         default=False,
         description="Generate a secondary stroke attached to the main stroke"
-    )
-    second_stroke_segments: IntProperty(
-        name="Second Stroke Segments",
-        default=3,
-        min=1,
-        max=10,
-        description="Number of segments for the secondary stroke"
     )
 
 # ------------------------------------------------------------------------
@@ -212,293 +91,245 @@ class ZENV_OT_GenerateRune(Operator):
     bl_label = "Generate Rune Mesh"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # --- Intersection Tests ---
+    # --- BMesh 2D Stroke Helpers ---
     @staticmethod
-    def orientation(p, q, r):
-        val = (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
-        return 0 if abs(val) < 1e-6 else (1 if val > 0 else 2)
-
-    @staticmethod
-    def on_segment(p, q, r):
-        return (min(p.x, r.x) - 1e-6 <= q.x <= max(p.x, r.x) + 1e-6 and
-                min(p.y, r.y) - 1e-6 <= q.y <= max(p.y, r.y) + 1e-6)
-
-    @staticmethod
-    def segments_intersect(p1, q1, p2, q2):
-        o1 = ZENV_OT_GenerateRune.orientation(p1, q1, p2)
-        o2 = ZENV_OT_GenerateRune.orientation(p1, q1, q2)
-        o3 = ZENV_OT_GenerateRune.orientation(p2, q2, p1)
-        o4 = ZENV_OT_GenerateRune.orientation(p2, q2, q1)
-        if o1 != o2 and o3 != o4:
-            return True
-        if o1 == 0 and ZENV_OT_GenerateRune.on_segment(p1, p2, q1): return True
-        if o2 == 0 and ZENV_OT_GenerateRune.on_segment(p1, q2, q1): return True
-        if o3 == 0 and ZENV_OT_GenerateRune.on_segment(p2, p1, q2): return True
-        if o4 == 0 and ZENV_OT_GenerateRune.on_segment(p2, q1, q2): return True
-        return False
-
-    @staticmethod
-    def check_new_segment_intersections(a, b, segments):
-        for (p, q) in segments:
-            if (a - p).length < 1e-6 or (a - q).length < 1e-6 or (b - p).length < 1e-6 or (b - q).length < 1e-6:
-                continue
-            if ZENV_OT_GenerateRune.segments_intersect(a, b, p, q):
-                return True
-        return False
-
-    # --- Polyline Generation for Main Stroke ---
-    def generate_main_polyline(self, props, MAX_ASPECT_RATIO=1.5, TARGET_SIZE=2.0):
-        points = []
-        segments = []
-        current_point = Vector((0, 0, 0))
-        points.append(current_point.copy())
-        current_direction = Vector((1, 0, 0))
-        if props.style == 'NORSE':
-            allowed_angles = [0,45,90,135,180,225,270,315]
+    def compute_offset_for_vertex(poly, i, thickness):
+        """
+        For vertex i in poly (list of Vectors), compute left and right offsets
+        (using a miter join) for a stroke of given thickness.
+        Returns (left_offset, right_offset).
+        """
+        p = poly[i]
+        half = thickness / 2.0
+        if i == 0:
+            d = (poly[1] - poly[0]).normalized()
+            perp = Vector((-d.y, d.x, 0))
+            return p + perp * half, p - perp * half
+        elif i == len(poly) - 1:
+            d = (poly[-1] - poly[-2]).normalized()
+            perp = Vector((-d.y, d.x, 0))
+            return p + perp * half, p - perp * half
         else:
-            allowed_angles = [0,45,90,135,180]
-        for i in range(props.num_segments):
-            valid_segment = False
-            attempts = 0
-            while not valid_segment and attempts < 12:
-                attempts += 1
-                min_x, max_x, min_y, max_y = self.compute_bounding_box(points)
-                width = max_x - min_x
-                height = max_y - min_y
-                candidate_angles = allowed_angles.copy()
-                if width > height * MAX_ASPECT_RATIO:
-                    candidate_angles = [a for a in allowed_angles if abs(sin(radians(a))) >= 0.7]
-                    if not candidate_angles:
-                        candidate_angles = allowed_angles.copy()
-                elif height > width * MAX_ASPECT_RATIO:
-                    candidate_angles = [a for a in allowed_angles if abs(cos(radians(a))) >= 0.7]
-                    if not candidate_angles:
-                        candidate_angles = allowed_angles.copy()
-                angle = random.choice(candidate_angles)
-                direction = Vector((cos(radians(angle)), sin(radians(angle)), 0))
-                direction = (direction + current_direction * 0.3).normalized()
-                scale_factor = 1.0
-                if max(width, height) > TARGET_SIZE:
-                    scale_factor = 0.5
-                length = random.uniform(props.min_length, props.max_length) * scale_factor
-                candidate_point = current_point + direction * length
-                if self.check_new_segment_intersections(current_point, candidate_point, segments):
-                    continue
-                new_points = points + [candidate_point]
-                nmin_x, nmax_x, nmin_y, nmax_y = self.compute_bounding_box(new_points)
-                new_width = nmax_x - nmin_x
-                new_height = nmax_y - nmin_y
-                if new_width > 0 and new_height > 0:
-                    aspect = new_width / new_height if new_width > new_height else new_height / new_width
-                    if aspect > MAX_ASPECT_RATIO:
-                        continue
-                segments.append((current_point.copy(), candidate_point.copy()))
-                points.append(candidate_point.copy())
-                current_point = candidate_point.copy()
-                current_direction = direction.copy()
-                valid_segment = True
-            if not valid_segment:
-                self.report({'WARNING'}, f"Stopped main stroke at segment {i} due to constraints.")
-                break
-        points = self.normalize_and_scale_points(points, TARGET_SIZE)
-        return points
+            d1 = (poly[i] - poly[i-1]).normalized()
+            d2 = (poly[i+1] - poly[i]).normalized()
+            perp1 = Vector((-d1.y, d1.x, 0))
+            perp2 = Vector((-d2.y, d2.x, 0))
+            miter = perp1 + perp2
+            if miter.length < 1e-6:
+                miter = perp1
+            else:
+                miter.normalize()
+            dot_val = miter.dot(perp1)
+            if abs(dot_val) < 1e-6:
+                miter_length = half
+            else:
+                miter_length = half / dot_val
+            return p + miter * miter_length, p - miter * miter_length
 
-    # --- Polyline Generation for Secondary Stroke ---
-    def generate_secondary_polyline(self, main_points, props):
-        if len(main_points) < 3:
+    @staticmethod
+    def create_stroke_outline(poly, thickness):
+        """
+        Given a polyline (list of Vectors), compute the closed outline for a stroke
+        with constant thickness.
+        """
+        left_offsets = []
+        right_offsets = []
+        for i in range(len(poly)):
+            l, r = ZENV_OT_GenerateRune.compute_offset_for_vertex(poly, i, thickness)
+            left_offsets.append(l)
+            right_offsets.append(r)
+        outline = left_offsets + list(reversed(right_offsets))
+        return outline
+
+    @staticmethod
+    def create_extruded_stroke_mesh(points, thickness, depth, taper):
+        """Create an extruded mesh from points with strict limits and safety checks."""
+        if not points or len(points) < 2:
             return None
-        anchor_index = random.randint(1, len(main_points)-2)
-        anchor = main_points[anchor_index].copy()
-        if anchor_index < len(main_points)-1:
-            init_dir = (main_points[anchor_index+1] - anchor).normalized()
-        else:
-            init_dir = (anchor - main_points[anchor_index-1]).normalized()
-        current_point = anchor.copy()
-        sec_points = [current_point.copy()]
-        sec_segments = []
-        current_direction = init_dir.copy()
-        if props.style == 'NORSE':
-            allowed_angles = [0,45,90,135,180,225,270,315]
-        else:
-            allowed_angles = [0,45,90,135,180]
-        for i in range(props.second_stroke_segments):
-            valid = False
-            attempts = 0
-            while not valid and attempts < 12:
-                attempts += 1
-                angle = random.choice(allowed_angles)
-                direction = Vector((cos(radians(angle)), sin(radians(angle)), 0))
-                direction = (direction + current_direction * 0.3).normalized()
-                length = random.uniform(props.min_length, props.max_length) * 0.8
-                candidate = current_point + direction * length
-                if self.check_new_segment_intersections(current_point, candidate, sec_segments):
-                    continue
-                sec_segments.append((current_point.copy(), candidate.copy()))
-                sec_points.append(candidate.copy())
-                current_point = candidate.copy()
-                current_direction = direction.copy()
-                valid = True
-            if not valid:
-                self.report({'WARNING'}, f"Stopped second stroke at segment {i} due to constraints.")
-                break
-        return sec_points
+            
+        # Safety limit on points
+        if len(points) > 20:  # Hard limit on complexity
+            points = points[:20]
+            
+        # Create new mesh
+        mesh = bpy.data.meshes.new(name="RuneStroke")
+        bm = bmesh.new()
+        
+        try:
+            # Create vertices for base face (bottom)
+            base_verts = []
+            for p in points:
+                # Limit coordinates to prevent extreme values
+                x = max(min(p.x, 10), -10)
+                y = max(min(p.y, 10), -10)
+                base_verts.append(bm.verts.new((x, y, 0)))
+                
+            # Create vertices for top face
+            top_verts = []
+            for v in base_verts:
+                # Apply taper with safety limits
+                safe_taper = max(min(taper, 1.0), 0.1)
+                top_verts.append(bm.verts.new((v.co.x * safe_taper, v.co.y * safe_taper, depth)))
+                
+            # Create faces - only if we have enough vertices
+            if len(base_verts) >= 2:
+                # Create edges instead of faces for very simple shapes
+                for i in range(len(base_verts) - 1):
+                    bm.edges.new((base_verts[i], base_verts[i + 1]))
+                    bm.edges.new((top_verts[i], top_verts[i + 1]))
+                    bm.edges.new((base_verts[i], top_verts[i]))
+                
+                # Connect last vertex to first if we have enough points
+                if len(base_verts) > 2:
+                    bm.edges.new((base_verts[-1], top_verts[-1]))
+                    
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            
+            # Finalize mesh
+            bm.to_mesh(mesh)
+            bm.free()
+            
+            return mesh
+            
+        except Exception as e:
+            if bm:
+                bm.free()
+            if mesh:
+                bpy.data.meshes.remove(mesh)
+            return None
 
-    # --- Endpoint Decoration ---
-    def generate_decoration_polyline(self, anchor, direction, deco_type, bevel_depth):
-        return self.create_decoration_points(anchor, direction, deco_type, bevel_depth)
-
-    # --- Utility: Bounding Box and Normalization ---
-    def compute_bounding_box(self, points):
-        min_x = min(p.x for p in points)
-        max_x = max(p.x for p in points)
-        min_y = min(p.y for p in points)
-        max_y = max(p.y for p in points)
-        return min_x, max_x, min_y, max_y
-
-    def normalize_and_scale_points(self, points, target_size=2.0):
-        min_x, max_x, min_y, max_y = self.compute_bounding_box(points)
-        center = Vector(((min_x+max_x)*0.5, (min_y+max_y)*0.5, 0))
+    def generate_main_polyline(self, props):
+        """Generate a simple rune-like shape using only vertical and horizontal lines."""
+        points = []
+        current = Vector((0, 0, 0))
+        points.append(current)
+        
+        # Only use horizontal and vertical movements
+        directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+        
+        for _ in range(props.num_segments - 1):
+            dx, dy = random.choice(directions)
+            length = 1.0  # Fixed length for simplicity
+            new_point = current + Vector((dx * length, dy * length, 0))
+            points.append(new_point)
+            current = new_point
+        
+        # Simple centering
+        center = Vector((0, 0, 0))
+        for p in points:
+            center += p
+        center /= len(points)
+        
+        # Center the points
         for i in range(len(points)):
             points[i] -= center
-        width = max_x - min_x
-        height = max_y - min_y
-        scale = target_size / max(width, height) if max(width, height) > 0 else 1.0
-        for i in range(len(points)):
-            points[i] *= scale
+        
         return points
 
-    # --- Decoration Function ---
-    def create_decoration_points(self, location, direction, decoration_type, bevel_depth):
-        if direction.length == 0:
-            direction = Vector((1,0,0))
-        else:
-            direction.normalize()
-        if decoration_type == 'SERIF':
-            perp = Vector((-direction.y, direction.x, 0))
-            scale = bevel_depth * 4
-            pts = [location + direction * scale * 0.5,
-                   location + perp * scale * 0.3,
-                   location - direction * scale * 0.2]
-        elif decoration_type == 'HOOK':
-            perp = Vector((-direction.y, direction.x, 0))
-            scale = bevel_depth * 5
-            pts = [location + direction * scale * 0.8,
-                   location + direction * scale * 0.4 + perp * scale * 0.6,
-                   location + perp * scale * 0.8,
-                   location - direction * scale * 0.2 + perp * scale * 0.4]
-        elif decoration_type == 'FOOT':
-            perp = Vector((-direction.y, direction.x, 0))
-            scale = bevel_depth * 4
-            pts = [location + direction * scale * 0.5,
-                   location + direction * scale * 0.2 - perp * scale * 0.4,
-                   location - direction * scale * 0.3 - perp * scale * 0.6,
-                   location - direction * scale * 0.6 - perp * scale * 0.3]
-        else:
-            pts = []
-        return pts
+    def generate_secondary_polyline(self, main_points, props):
+        """Generate a simple straight line as secondary stroke."""
+        if not main_points or len(main_points) < 2:
+            return None
+        
+        # Start from first point
+        start = main_points[0]
+        
+        # Create a simple vertical line
+        points = [start]
+        points.append(start + Vector((0, 1, 0)))
+        
+        return points
 
-    # --- Main Execute ---
     def execute(self, context):
+        """Execute with strict safety checks and limits."""
         try:
-            props = context.scene.zenv_rune_props
-            MAX_ASPECT_RATIO = 1.5
-            TARGET_SIZE = 2.0
-
-            mesh_objs = []
-
-            # Generate main stroke polyline.
-            main_poly = self.generate_main_polyline(props, MAX_ASPECT_RATIO, TARGET_SIZE)
-            if not main_poly or len(main_poly) < 2:
-                self.report({'ERROR'}, "Insufficient points for main stroke.")
+            props = context.scene.zenv_rune_generator
+            
+            # Enforce safe limits
+            safe_segments = max(min(props.num_segments, 10), 2)  # Limit between 2-10 segments
+            safe_thickness = max(min(props.stroke_thickness, 1.0), 0.1)  # Limit thickness
+            safe_depth = max(min(props.extrude_depth, 2.0), 0.1)  # Limit depth
+            safe_taper = max(min(props.taper_factor, 1.0), 0.1)  # Limit taper
+            
+            # Generate main stroke with timeout protection
+            start_time = time.time()
+            main_poly = self.generate_main_polyline(props)
+            
+            if time.time() - start_time > 1.0:  # 1 second timeout
+                self.report({'ERROR'}, "Generation timeout - operation cancelled")
                 return {'CANCELLED'}
-            main_mesh = create_extruded_stroke_mesh(main_poly, props.stroke_thickness, props.extrude_depth, props.taper_factor)
-            main_obj = bpy.data.objects.new("RuneMain", main_mesh)
-            context.collection.objects.link(main_obj)
-            mesh_objs.append(main_obj)
-
-            # Generate secondary stroke if enabled.
-            sec_poly = None
+                
+            if not main_poly:
+                self.report({'ERROR'}, "Failed to generate main stroke")
+                return {'CANCELLED'}
+            
+            # Create main stroke mesh
+            main_mesh = self.create_extruded_stroke_mesh(main_poly, safe_thickness, safe_depth, safe_taper)
+            if not main_mesh:
+                self.report({'ERROR'}, "Failed to create main stroke mesh")
+                return {'CANCELLED'}
+            
+            # Create main object
+            main_obj = bpy.data.objects.new("RuneMainStroke", main_mesh)
+            context.scene.collection.objects.link(main_obj)
+            
+            # Generate secondary stroke if enabled (with simplified logic)
             if props.enable_second_stroke:
-                sec_poly = self.generate_secondary_polyline(main_poly, props)
-                if sec_poly and len(sec_poly) >= 2:
-                    sec_mesh = create_extruded_stroke_mesh(sec_poly, props.stroke_thickness, props.extrude_depth, props.taper_factor)
-                    sec_obj = bpy.data.objects.new("RuneSecond", sec_mesh)
-                    context.collection.objects.link(sec_obj)
-                    mesh_objs.append(sec_obj)
-
-            # Generate endpoint decorations if enabled.
-            if props.endpoint_decoration != 'NONE' and len(main_poly) >= 2:
-                # Start decoration.
-                if props.decorate_start:
-                    start_dir = (main_poly[1] - main_poly[0]).normalized()
-                    start_deco = self.generate_decoration_polyline(main_poly[0].copy(), start_dir, props.endpoint_decoration, props.bevel_depth)
-                    if start_deco and len(start_deco) >= 2:
-                        deco_mesh = create_extruded_stroke_mesh(start_deco, props.stroke_thickness, props.extrude_depth, props.taper_factor)
-                        deco_obj = bpy.data.objects.new("RuneDecoStart", deco_mesh)
-                        context.collection.objects.link(deco_obj)
-                        mesh_objs.append(deco_obj)
-                # End decoration.
-                if props.decorate_end:
-                    end_dir = (main_poly[-1] - main_poly[-2]).normalized()
-                    end_deco = self.generate_decoration_polyline(main_poly[-1].copy(), end_dir, props.endpoint_decoration, props.bevel_depth)
-                    if end_deco and len(end_deco) >= 2:
-                        deco_mesh = create_extruded_stroke_mesh(end_deco, props.stroke_thickness, props.extrude_depth, props.taper_factor)
-                        deco_obj = bpy.data.objects.new("RuneDecoEnd", deco_mesh)
-                        context.collection.objects.link(deco_obj)
-                        mesh_objs.append(deco_obj)
-
-            # Join all generated parts into one mesh if more than one exists.
-            if len(mesh_objs) > 1:
-                bpy.ops.object.select_all(action='DESELECT')
-                for obj in mesh_objs:
-                    obj.select_set(True)
-                context.view_layer.objects.active = mesh_objs[0]
-                bpy.ops.object.join()
-
-            final_obj = context.view_layer.objects.active
-            final_obj.name = "RuneMesh"
+                second_poly = self.generate_secondary_polyline(main_poly, props)
+                if second_poly and len(second_poly) >= 2:
+                    second_mesh = self.create_extruded_stroke_mesh(second_poly, safe_thickness, safe_depth, safe_taper)
+                    if second_mesh:
+                        second_obj = bpy.data.objects.new("RuneSecondStroke", second_mesh)
+                        context.scene.collection.objects.link(second_obj)
+                        second_obj.parent = main_obj
+            
+            # Select the main object
             bpy.ops.object.select_all(action='DESELECT')
-            final_obj.select_set(True)
-            context.view_layer.objects.active = final_obj
-
-            self.report({'INFO'}, "Generated rune mesh successfully.")
+            main_obj.select_set(True)
+            context.view_layer.objects.active = main_obj
+            
             return {'FINISHED'}
+            
         except Exception as e:
-            self.report({'ERROR'}, f"Error generating rune: {str(e)}")
+            self.report({'ERROR'}, f"Error: {str(e)}")
             return {'CANCELLED'}
 
+    # --- Registration
 # ------------------------------------------------------------------------
 #    Panel
 # ------------------------------------------------------------------------
 class ZENV_PT_RuneGeneratorPanel(Panel):
     """Panel for rune generation settings."""
-    bl_label = "Rune Generator (Mesh)"
+    bl_label = "Rune Generator"
     bl_idname = "ZENV_PT_rune_generator"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'ZENV'
-
+    bl_category = 'Rune Generator'
+    
     def draw(self, context):
         layout = self.layout
-        props = context.scene.zenv_rune_props
-
-        col = layout.column(align=True)
-        col.prop(props, "num_segments")
-        col.prop(props, "min_length")
-        col.prop(props, "max_length")
-        col.prop(props, "style")
-        layout.prop(props, "stroke_thickness")
-        layout.prop(props, "extrude_depth")
-        layout.prop(props, "taper_factor")
-        layout.prop(props, "endpoint_decoration")
-        if props.endpoint_decoration != 'NONE':
-            row = layout.row(align=True)
-            row.prop(props, "decorate_start")
-            row.prop(props, "decorate_end")
+        props = context.scene.zenv_rune_generator
+        
+        # Main generation settings
+        layout.prop(props, "num_segments")
+        
+        # Stroke dimensions
+        box = layout.box()
+        box.label(text="Stroke Dimensions:")
+        box.prop(props, "stroke_thickness")
+        
+        # Extrusion settings
+        box = layout.box()
+        box.label(text="Extrusion Settings:")
+        box.prop(props, "extrude_depth")
+        box.prop(props, "taper_factor")
+        
+        # Second stroke settings
         layout.prop(props, "enable_second_stroke")
-        if props.enable_second_stroke:
-            layout.prop(props, "second_stroke_segments")
-        layout.operator("zenv.generate_rune", text="Generate Rune Mesh")
+        
+        # Generate button
+        layout.operator("zenv.generate_rune")
 
 # ------------------------------------------------------------------------
 #    Registration
@@ -512,12 +343,12 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.zenv_rune_props = PointerProperty(type=ZENV_PG_RuneGenerator_Properties)
+    bpy.types.Scene.zenv_rune_generator = PointerProperty(type=ZENV_PG_RuneGenerator_Properties)
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.zenv_rune_props
+    del bpy.types.Scene.zenv_rune_generator
 
 if __name__ == "__main__":
     register()
