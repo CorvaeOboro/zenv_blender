@@ -10,6 +10,24 @@ It performs various checks including:
 """
 
 PROJECT_PREFIX = "ZENV"
+ADDON_PREFIX = "z_blender"
+
+# Class type prefixes
+OPERATOR_PREFIX = "_OT_"  # For operator classes
+PANEL_PREFIX = "_PT_"     # For panel classes
+PROP_GROUP_PREFIX = "_PG_"  # For property group classes
+
+# Menu function prefixes
+MENU_FUNC_PREFIXES = {'menu_func_export', 'menu_func_import', 'menu_func'}
+
+# Required operator options
+REQUIRED_BL_OPTIONS = {'REGISTER', 'UNDO'}
+
+# Required bl_info keys
+REQUIRED_BL_INFO_KEYS = {'name', 'author', 'version', 'blender', 'location', 'description', 'category'}
+
+# Allowed global functions
+ALLOWED_GLOBAL_FUNCTIONS = {'register', 'unregister'} | MENU_FUNC_PREFIXES
 
 import os
 import ast
@@ -37,8 +55,8 @@ class BlenderAddonChecker:
         self.issues: List[ComplianceIssue] = []
         self.tree = None
         self.global_functions: Set[str] = set()
-        self.allowed_global_functions = {'register', 'unregister'}
-        self.required_bl_options = {'REGISTER', 'UNDO'}
+        self.allowed_global_functions = ALLOWED_GLOBAL_FUNCTIONS
+        self.required_bl_options = REQUIRED_BL_OPTIONS
         # Track class and node names
         self.class_names: List[Tuple[str, str]] = []  # (class_name, bl_idname)
         self.node_names: List[Tuple[str, str]] = []  # (class_name, bl_label)
@@ -85,13 +103,12 @@ class BlenderAddonChecker:
                             ))
                         else:
                             # Check required bl_info keys
-                            required_keys = {'name', 'author', 'version', 'blender', 'location', 'description', 'category'}
                             found_keys = set()
                             for key in node.value.keys:
                                 if isinstance(key, ast.Str):
                                     found_keys.add(key.s)
                             
-                            missing_keys = required_keys - found_keys
+                            missing_keys = REQUIRED_BL_INFO_KEYS - found_keys
                             if missing_keys:
                                 self.issues.append(ComplianceIssue(
                                     IssueLevel.WARNING,
@@ -119,7 +136,7 @@ class BlenderAddonChecker:
                 if node.name in ['register', 'unregister']:
                     continue
                 # Skip menu registration functions
-                if node.name in ['menu_func_export', 'menu_func_import', 'menu_func']:
+                if node.name in MENU_FUNC_PREFIXES:
                     continue
                 # All other global functions are flagged
                 self.issues.append(ComplianceIssue(
@@ -160,11 +177,34 @@ class BlenderAddonChecker:
 
     def check_class_naming(self):
         """Check if classes follow Blender naming conventions and collect naming info."""
+        # Get addon type from filename (e.g., 'TEX' from z_blender_TEX_remap.py)
+        filename = os.path.basename(self.file_path)
+        addon_type = None
+        if filename.startswith(f"{ADDON_PREFIX}_"):
+            parts = filename.split('_')
+            if len(parts) >= 3:
+                addon_type = parts[2]  # Get the type part (e.g., 'TEX', 'GEN', etc.)
+
         for node in ast.walk(self.tree):
             if isinstance(node, ast.ClassDef):
                 # Store class name for later analysis
                 class_info = [node.name, None, None]  # [class_name, bl_idname, bl_label]
                 
+                # Check if this is a Panel class
+                is_panel = False
+                for base in node.bases:
+                    if isinstance(base, ast.Name) and base.id.endswith('Panel'):
+                        is_panel = True
+                        break
+
+                # Check class prefix
+                if not node.name.startswith(PROJECT_PREFIX):
+                    self.add_issue(
+                        IssueLevel.WARNING,
+                        node.lineno,
+                        f"Class '{node.name}' should start with {PROJECT_PREFIX}_ prefix for project consistency"
+                    )
+
                 # Check class attributes
                 for child in node.body:
                     if isinstance(child, ast.Assign):
@@ -176,7 +216,7 @@ class BlenderAddonChecker:
                                         class_info[1] = bl_idname
                                         
                                         # Check bl_idname prefix for operators
-                                        if '_OT_' in node.name and not bl_idname.startswith(f'{PROJECT_PREFIX.lower()}.'):
+                                        if OPERATOR_PREFIX in node.name and not bl_idname.startswith(f'{PROJECT_PREFIX.lower()}.'):
                                             self.add_issue(
                                                 IssueLevel.ERROR,
                                                 child.lineno,
@@ -184,8 +224,28 @@ class BlenderAddonChecker:
                                             )
                                 elif target.id == 'bl_label':
                                     if isinstance(child.value, ast.Constant):
-                                        class_info[2] = child.value.value
-                
+                                        bl_label = child.value.value
+                                        class_info[2] = bl_label
+                                        
+                                        # For panels, check if bl_label starts with addon type
+                                        if is_panel and addon_type:
+                                            if not bl_label.startswith(f"{addon_type} "):
+                                                self.add_issue(
+                                                    IssueLevel.ERROR,
+                                                    child.lineno,
+                                                    f"Panel bl_label '{bl_label}' must start with '{addon_type} ' prefix"
+                                                )
+                                elif target.id == 'bl_category':
+                                    if isinstance(child.value, ast.Constant):
+                                        bl_category = child.value.value
+                                        
+                                        # For panels, check if bl_category matches PROJECT_PREFIX
+                                        if is_panel and bl_category != PROJECT_PREFIX:
+                                            self.add_issue(
+                                                IssueLevel.ERROR,
+                                                child.lineno,
+                                                f"Panel bl_category must be '{PROJECT_PREFIX}', found '{bl_category}'"
+                                            )
                 # Store the class info
                 self.class_names.append(tuple(class_info))
                 
@@ -232,7 +292,7 @@ class BlenderAddonChecker:
                                         # Check if REGISTER and UNDO are in bl_options
                                         if isinstance(child.value, ast.Set):
                                             options = {elt.s for elt in child.value.elts if isinstance(elt, ast.Str)}
-                                            missing_options = self.required_bl_options - options
+                                            missing_options = REQUIRED_BL_OPTIONS - options
                                             if missing_options:
                                                 self.issues.append(ComplianceIssue(
                                                     IssueLevel.WARNING,
@@ -488,11 +548,11 @@ def check_directory(directory: str) -> List[str]:
     }
     
     for class_name, bl_idname, bl_label, file_path in all_class_names:
-        if '_OT_' in class_name:
+        if OPERATOR_PREFIX in class_name:
             class_types['Operator'].append((class_name, bl_idname, bl_label, file_path))
-        elif '_PT_' in class_name:
+        elif PANEL_PREFIX in class_name:
             class_types['Panel'].append((class_name, bl_idname, bl_label, file_path))
-        elif '_PG_' in class_name:
+        elif PROP_GROUP_PREFIX in class_name:
             class_types['PropertyGroup'].append((class_name, bl_idname, bl_label, file_path))
         else:
             class_types['Other'].append((class_name, bl_idname, bl_label, file_path))

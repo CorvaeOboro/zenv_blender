@@ -299,13 +299,13 @@ class ZENV_OT_GenerateRune(Operator):
 # ------------------------------------------------------------------------
 #    Panel
 # ------------------------------------------------------------------------
-class ZENV_PT_RuneGeneratorPanel(Panel):
-    """Panel for rune generation settings."""
-    bl_label = "Rune Generator"
+class ZENV_PT_RuneGenerator(Panel):
+    """Panel for rune generation settings"""
+    bl_label = "GEN Rune Generator"
     bl_idname = "ZENV_PT_rune_generator"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Rune Generator'
+    bl_category = "ZENV"
     
     def draw(self, context):
         layout = self.layout
@@ -337,7 +337,7 @@ class ZENV_PT_RuneGeneratorPanel(Panel):
 classes = (
     ZENV_PG_RuneGenerator_Properties,
     ZENV_OT_GenerateRune,
-    ZENV_PT_RuneGeneratorPanel,
+    ZENV_PT_RuneGenerator,
 )
 
 def register():
