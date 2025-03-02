@@ -141,9 +141,9 @@ class ZENV_OT_MeshBricker_Cut(bpy.types.Operator):
 # ------------------------------------------------------------------------
 
 class ZENV_PT_MeshBricker_Panel(bpy.types.Panel):
-    """Panel for mesh bricking controls"""
-    bl_label = "Cut World Bricker"
-    bl_idname = "ZENV_PT_MeshBricker"
+    """Panel for world bricker mesh cutting tools"""
+    bl_label = "MESH Cut World Bricker"
+    bl_idname = "ZENV_PT_cut_world_bricker"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'

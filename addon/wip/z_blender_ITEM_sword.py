@@ -32,7 +32,8 @@ bl_info = {
 # ------------------------------------------------------------------------
 # Sword Options (CheckBoxes)
 # ------------------------------------------------------------------------
-class SwordOptionsProperties(bpy.types.PropertyGroup):
+class ZENV_PG_sword_options(bpy.types.PropertyGroup):
+    """Property group for basic sword generation options"""
     enable_blade: BoolProperty(
         name="Generate Blade",
         default=True,
@@ -67,7 +68,8 @@ class SwordOptionsProperties(bpy.types.PropertyGroup):
 # ------------------------------------------------------------------------
 # Sword Blade Properties
 # ------------------------------------------------------------------------
-class SwordBladeProperties(bpy.types.PropertyGroup):
+class ZENV_PG_sword_blade(bpy.types.PropertyGroup):
+    """Property group for blade-specific properties and customization"""
     blade_type: EnumProperty(
         name="Blade Type",
         description="Historical blade classification",
@@ -109,7 +111,8 @@ class SwordBladeProperties(bpy.types.PropertyGroup):
 # ------------------------------------------------------------------------
 # Sword Hilt Properties
 # ------------------------------------------------------------------------
-class SwordHiltProperties(bpy.types.PropertyGroup):
+class ZENV_PG_sword_hilt(bpy.types.PropertyGroup):
+    """Property group for hilt-specific properties including grip, pommel, and crossguard"""
     grip_style: EnumProperty(
         name="Grip Style",
         items=[
@@ -152,7 +155,8 @@ class SwordHiltProperties(bpy.types.PropertyGroup):
 # ------------------------------------------------------------------------
 # Sword Decoration Properties
 # ------------------------------------------------------------------------
-class SwordDecorationProperties(bpy.types.PropertyGroup):
+class ZENV_PG_sword_decoration(bpy.types.PropertyGroup):
+    """Property group for decorative elements and surface treatments"""
     pattern_welding: BoolProperty(
         name="Pattern Welding",
         description="Add Damascus-style patterns (if enabled)",
@@ -179,8 +183,11 @@ class SwordDecorationProperties(bpy.types.PropertyGroup):
 # ------------------------------------------------------------------------
 # Sword Generator Operator
 # ------------------------------------------------------------------------
-class SwordGenerator(bpy.types.Operator):
-    bl_idname = "object.generate_sword"
+class ZENV_OT_generate_sword(bpy.types.Operator):
+    """Generate a historically accurate sword with customizable blade, hilt, and decorative properties.
+    Creates a complete sword mesh with proper geometry, including bevels and optional pattern welding."""
+    
+    bl_idname = "zenv.generate_sword"
     bl_label = "Generate Sword"
     bl_options = {'REGISTER', 'UNDO'}
     
@@ -553,8 +560,8 @@ class SwordGenerator(bpy.types.Operator):
             cap_ends=True,
             cap_tris=False,
             segments=segs,
-            radius1=rad,
-            radius2=rad,  # same radius => cylinder
+            radius1=radius,
+            radius2=radius,  # same radius => cylinder
             depth=length
         )
 
@@ -626,9 +633,9 @@ class SwordGenerator(bpy.types.Operator):
                 cap_ends=True,
                 cap_tris=False,
                 segments=segs,
-                radius1=rad,
-                radius2=rad,  # same radius => cylinder
-                depth=length
+                radius1=radius,
+                radius2=radius,  # same radius => cylinder
+                depth=thickness
             )
 
             
@@ -931,7 +938,9 @@ class SwordGenerator(bpy.types.Operator):
 # UI Panel
 # ------------------------------------------------------------------------
 class ZENV_PT_SwordPanel(bpy.types.Panel):
-    bl_label = "Sword Generator"
+    """UI panel for the sword generator, providing controls for all sword customization options"""
+    
+    bl_label = "ITEM Sword Generator"
     bl_idname = "ZENV_PT_sword"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -972,27 +981,27 @@ class ZENV_PT_SwordPanel(bpy.types.Panel):
         box.prop(context.scene.sword_decoration, "surface_decoration")
         box.prop(context.scene.sword_decoration, "decoration_density")
         
-        layout.operator("object.generate_sword", text="Generate Sword")
+        layout.operator("zenv.generate_sword", text="Generate Sword")
 
 # ------------------------------------------------------------------------
 # Registration
 # ------------------------------------------------------------------------
 classes = (
-    SwordOptionsProperties,
-    SwordBladeProperties,
-    SwordHiltProperties,
-    SwordDecorationProperties,
-    SwordGenerator,
+    ZENV_PG_sword_options,
+    ZENV_PG_sword_blade,
+    ZENV_PG_sword_hilt,
+    ZENV_PG_sword_decoration,
+    ZENV_OT_generate_sword,
     ZENV_PT_SwordPanel,
 )
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.sword_options = PointerProperty(type=SwordOptionsProperties)
-    bpy.types.Scene.sword_blade = PointerProperty(type=SwordBladeProperties)
-    bpy.types.Scene.sword_hilt = PointerProperty(type=SwordHiltProperties)
-    bpy.types.Scene.sword_decoration = PointerProperty(type=SwordDecorationProperties)
+    bpy.types.Scene.sword_options = PointerProperty(type=ZENV_PG_sword_options)
+    bpy.types.Scene.sword_blade = PointerProperty(type=ZENV_PG_sword_blade)
+    bpy.types.Scene.sword_hilt = PointerProperty(type=ZENV_PG_sword_hilt)
+    bpy.types.Scene.sword_decoration = PointerProperty(type=ZENV_PG_sword_decoration)
 
 def unregister():
     del bpy.types.Scene.sword_options

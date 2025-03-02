@@ -132,7 +132,7 @@ class ZENV_OT_TextureVariantViewRank_CopyPath(Operator):
     """Copy current texture path to clipboard"""
     bl_idname = "zenv.texturevariant_copy_path"
     bl_label = "Copy Path"
-    bl_options = {'REGISTER'}
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -260,7 +260,7 @@ class ZENV_OT_TextureVariantViewRank_MoveToFolder(Operator):
 
 class ZENV_PT_TextureVariantViewRank_Panel(Panel):
     """Panel for texture variant viewing tools"""
-    bl_label = "Texture Variants"
+    bl_label = "TEX Texture Variants"
     bl_idname = "ZENV_PT_texturevariant"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

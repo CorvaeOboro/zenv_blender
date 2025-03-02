@@ -43,6 +43,14 @@ class ZENV_PG_MeshToUVSpace(PropertyGroup):
     )
 
 class ZENV_OT_MeshToUVSpace(Operator):
+    """Transform mesh between 3D and UV space with vertex separation and merging.
+    
+    This operator performs a series of transformations:
+    1. Prepares mesh by triangulating and separating vertices
+    2. Transforms mesh to UV space coordinates
+    3. Optionally transforms back to 3D space
+    4. Optionally merges vertices to reconstruct the mesh
+    """
     bl_idname = "zenv.mesh_to_uv_space"
     bl_label = "Apply UV Transform"
     bl_options = {'REGISTER', 'UNDO'}
@@ -396,7 +404,15 @@ class ZENV_OT_MeshToUVSpace(Operator):
 
 
 class ZENV_PT_MeshToUVSpace(Panel):
-    bl_label = "Mesh to UV Space"
+    """Panel for controlling mesh to UV space transformations.
+    
+    Provides controls for:
+    - Mesh preparation and vertex separation
+    - UV space transformation
+    - 3D space transformation
+    - Vertex merging and mesh reconstruction
+    """
+    bl_label = "MESH to UV Space"
     bl_idname = "ZENV_PT_MeshToUVSpace"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

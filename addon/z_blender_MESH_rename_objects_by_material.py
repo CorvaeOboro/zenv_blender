@@ -128,7 +128,7 @@ class ZENV_OT_RenameObjectsByMaterial(Operator):
 
 class ZENV_PT_RenameByMaterialPanel(Panel):
     """Panel for material-based object renaming."""
-    bl_label = "Rename By Material"
+    bl_label = "MESH Rename By Material"
     bl_idname = "ZENV_PT_rename_by_material"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

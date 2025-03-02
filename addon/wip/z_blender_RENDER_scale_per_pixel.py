@@ -216,7 +216,7 @@ class ZENV_OT_RenderScale_UpdateResolution(bpy.types.Operator):
 
 class ZENV_PT_RenderScale_Panel(bpy.types.Panel):
     """Panel for render scale tools"""
-    bl_label = "Render Scale"
+    bl_label = "RENDER Scale Per Pixel"
     bl_idname = "ZENV_PT_renderscale"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

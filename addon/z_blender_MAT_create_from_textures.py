@@ -166,7 +166,7 @@ class ZENV_OT_CreateFromTextures(Operator):
 
 class ZENV_PT_CreateFromTexturesPanel(Panel):
     """Panel for creating materials from textures."""
-    bl_label = "Create From Textures"
+    bl_label = "MAT Create From Textures"
     bl_idname = "ZENV_PT_create_from_textures"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

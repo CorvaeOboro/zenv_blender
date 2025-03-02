@@ -31,7 +31,7 @@ class ZENV_PT_SceneOptimizerPanel(bpy.types.Panel):
     - Material cleanup (unused and duplicate materials)
     - Mesh cleanup (mesh data optimization and vertex groups)
     """
-    bl_label = "Scene Optimizer"
+    bl_label = "CLEAN Scene Optimizer"
     bl_idname = "ZENV_PT_SceneOptimizer"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -247,6 +247,12 @@ class ZENV_OT_CleanMeshData(bpy.types.Operator):
         """Execute the operator.
         
         Cleans up mesh data for all mesh objects in the scene.
+        
+        This includes:
+        - Removing duplicate vertices
+        - Dissolving loose vertices
+        - Removing loose geometry
+        - Recalculating normals
         
         Returns:
             set: {'FINISHED'} if the operation was successful.

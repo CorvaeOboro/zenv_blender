@@ -19,7 +19,8 @@ bl_info = {
     "description": "Add adaptive bevels to sharp edges with dynamic overlap prevention",
 }
 
-class ZENV_BevelSharpAdaptiveClamp_Properties(bpy.types.PropertyGroup):
+class ZENV_PG_bevel_sharp_adaptive_clamp(bpy.types.PropertyGroup):
+    """Property group for adaptive bevel settings with angle-based clamping"""
     sharp_angle: FloatProperty(
         name="Sharp Angle",
         description="Angle threshold for sharp edges (degrees)",
@@ -219,8 +220,9 @@ class ZENV_OT_BevelSharpAdaptiveClamp_Apply(bpy.types.Operator):
             return {'CANCELLED'}
 
 class ZENV_PT_BevelSharpAdaptiveClamp_Panel(bpy.types.Panel):
-    bl_label = "MESH Bevel Sharp Adaptive Clamp"
-    bl_idname = "ZENV_PT_BevelSharpAdaptiveClamp"
+    """Panel for controlling adaptive bevel settings with angle-based clamping for sharp edges"""
+    bl_label = "MESH Bevel Sharp Adaptive"
+    bl_idname = "ZENV_PT_bevel_sharp_adaptive_clamp"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -238,7 +240,7 @@ class ZENV_PT_BevelSharpAdaptiveClamp_Panel(bpy.types.Panel):
         layout.operator("zenv.bevel_sharp_adaptive_clamp")
 
 classes = (
-    ZENV_BevelSharpAdaptiveClamp_Properties,
+    ZENV_PG_bevel_sharp_adaptive_clamp,
     ZENV_OT_BevelSharpAdaptiveClamp_Apply,
     ZENV_PT_BevelSharpAdaptiveClamp_Panel
 )
@@ -246,7 +248,7 @@ classes = (
 def register():
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.properties = PointerProperty(type=ZENV_BevelSharpAdaptiveClamp_Properties)
+    bpy.types.Scene.properties = PointerProperty(type=ZENV_PG_bevel_sharp_adaptive_clamp)
 
 def unregister():
     for current_class_to_unregister in reversed(classes):

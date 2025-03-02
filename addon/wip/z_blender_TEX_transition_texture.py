@@ -894,10 +894,10 @@ class ZENV_OT_TransitionTextureExtend_Bake(bpy.types.Operator):
 #    Panel
 # ------------------------------------------------------------------------
 
-class ZENV_PT_TransitionTextureExtend_Panel(bpy.types.Panel):
-    """Panel for texture transition tools"""
-    bl_label = "Texture Transition"
-    bl_idname = "ZENV_PT_transition"
+class ZENV_PT_TextureTransition_Panel(bpy.types.Panel):
+    """Panel for texture transition generation and settings"""
+    bl_label = "TEX Texture Transition"
+    bl_idname = "ZENV_PT_texture_transition"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -933,7 +933,7 @@ class ZENV_PT_TransitionTextureExtend_Panel(bpy.types.Panel):
 
 classes = (
     ZENV_OT_TransitionTextureExtend_Bake,
-    ZENV_PT_TransitionTextureExtend_Panel,
+    ZENV_PT_TextureTransition_Panel,
 )
 
 def register():

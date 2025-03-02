@@ -274,7 +274,7 @@ class ZENV_OT_VFXSlashAdd(Operator):
 
 class ZENV_PT_VFXSlashPanel(Panel):
     """Panel for VFX Slash Generator"""
-    bl_label = "VFX Slash Generator"
+    bl_label = "GEN VFX Slash Generator"
     bl_idname = "ZENV_PT_vfx_slash"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

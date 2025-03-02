@@ -21,9 +21,11 @@ bl_info = {
     "description": "Generate biologically accurate leaf meshes"
 }
 
-# Biological process simulation properties
-class LeafBiologicalProperties(bpy.types.PropertyGroup):
-    """Properties that control biological growth simulation"""
+# ------------------------------------------------------------------------
+# Leaf Biological Properties
+# ------------------------------------------------------------------------
+class ZENV_PG_leaf_biological(bpy.types.PropertyGroup):
+    """Property group for biological characteristics of the leaf"""
     
     # Growth Pattern Controls
     auxin_concentration: FloatProperty(
@@ -49,9 +51,11 @@ class LeafBiologicalProperties(bpy.types.PropertyGroup):
         default=4, min=1, max=8
     )
 
-# Main leaf properties
-class LeafProperties(bpy.types.PropertyGroup):
-    """Core leaf generation properties"""
+# ------------------------------------------------------------------------
+# Leaf Properties
+# ------------------------------------------------------------------------
+class ZENV_PG_leaf_properties(bpy.types.PropertyGroup):
+    """Property group for general leaf properties and customization"""
     
     # Basic Parameters
     leaf_type: EnumProperty(
@@ -107,15 +111,18 @@ class LeafProperties(bpy.types.PropertyGroup):
         default=False
     )
 
-class LeafGenerator(bpy.types.Operator):
-    """Generate biologically accurate leaf mesh"""
-    bl_idname = "object.generate_leaf"
+# ------------------------------------------------------------------------
+# Leaf Generator Operator
+# ------------------------------------------------------------------------
+class ZENV_OT_generate_leaf(bpy.types.Operator):
+    """Generate a procedural leaf mesh with customizable biological and physical properties"""
+    bl_idname = "zenv.generate_leaf"
     bl_label = "Generate Leaf"
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        props = context.scene.leaf_properties
-        bio_props = context.scene.leaf_biological
+        props = context.scene.leaf_props
+        bio_props = context.scene.leaf_bio
         
         # Create base mesh
         mesh = bpy.data.meshes.new(name="Leaf")
@@ -305,18 +312,21 @@ class LeafGenerator(bpy.types.Operator):
         self.differentiate_tissues(bm, props, bio_props)
         self.generate_surface_features(bm, props, bio_props)
 
-class ZENV_PT_GenLeafPanel(bpy.types.Panel):
-    """UI Panel for leaf generation"""
-    bl_label = "Generate Leaf"
-    bl_idname = "ZENV_PT_genleaf"
+# ------------------------------------------------------------------------
+# UI Panel
+# ------------------------------------------------------------------------
+class ZENV_PT_LeafPanel(bpy.types.Panel):
+    """UI panel for the leaf generator with biological and physical property controls"""
+    bl_label = "PLANT Generate Leaf"
+    bl_idname = "ZENV_PT_leaf"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
     
     def draw(self, context):
         layout = self.layout
-        props = context.scene.leaf_properties
-        bio_props = context.scene.leaf_biological
+        props = context.scene.leaf_props
+        bio_props = context.scene.leaf_bio
         
         # Basic Parameters
         box = layout.box()
@@ -347,26 +357,29 @@ class ZENV_PT_GenLeafPanel(bpy.types.Panel):
         box.prop(props, "debug_vein_generation")
         
         # Generate Button
-        layout.operator("object.generate_leaf", text="Generate Leaf")
+        layout.operator("zenv.generate_leaf", text="Generate Leaf")
 
+# ------------------------------------------------------------------------
+# Registration
+# ------------------------------------------------------------------------
 classes = (
-    LeafBiologicalProperties,
-    LeafProperties,
-    LeafGenerator,
-    ZENV_PT_GenLeafPanel,
+    ZENV_PG_leaf_biological,
+    ZENV_PG_leaf_properties,
+    ZENV_OT_generate_leaf,
+    ZENV_PT_LeafPanel
 )
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.leaf_properties = PointerProperty(type=LeafProperties)
-    bpy.types.Scene.leaf_biological = PointerProperty(type=LeafBiologicalProperties)
+    bpy.types.Scene.leaf_bio = PointerProperty(type=ZENV_PG_leaf_biological)
+    bpy.types.Scene.leaf_props = PointerProperty(type=ZENV_PG_leaf_properties)
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.leaf_properties
-    del bpy.types.Scene.leaf_biological
+    del bpy.types.Scene.leaf_bio
+    del bpy.types.Scene.leaf_props
 
 if __name__ == "__main__":
     register()

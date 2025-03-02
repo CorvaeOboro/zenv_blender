@@ -106,6 +106,11 @@ class ZENV_PG_RenameByMaterialProps(PropertyGroup):
         description="Apply changes to all materials in the scene instead of just selected object",
         default=False
     )
+    remove_mi: BoolProperty(
+        name="Remove _MI",
+        description="Remove _MI suffix from material names",
+        default=False
+    )
 
 class ZENV_PT_MaterialRenameSuffix(Panel):
     """Panel for material name prefix/suffix operations"""
@@ -145,6 +150,7 @@ class ZENV_PT_MaterialRenameSuffix(Panel):
         box = layout.box()
         box.label(text="Settings")
         box.prop(props, "apply_to_all")
+        box.prop(props, "remove_mi")
 
 def register():
     # Register classes in the correct order

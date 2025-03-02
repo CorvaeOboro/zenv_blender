@@ -53,12 +53,12 @@ class ZENV_PG_export_properties(bpy.types.PropertyGroup):
     )
 
 
-class ZENV_OT_save_to_separate_blends(bpy.types.Operator):
+class ZENV_OT_SaveToSeparateBlends(bpy.types.Operator):
     """Export each object in the scene to a separate .blend file.
     Skips any existing files without overwriting."""
-    bl_idname = "export.zenv_save_to_separate_blends"
+    bl_idname = "zenv.save_to_separate_blends"
     bl_label = "Save Objects to Separate Blend Files"
-    bl_options = {'REGISTER'}
+    bl_options = {'REGISTER', 'UNDO'}
 
     directory: bpy.props.StringProperty(
         name="Export Directory",
@@ -171,12 +171,12 @@ class ZENV_OT_save_to_separate_blends(bpy.types.Operator):
 
 
 def menu_func_export(self, context):
-    self.layout.operator(ZENV_OT_save_to_separate_blends.bl_idname, text="All Objects to separate Blend Files")
+    self.layout.operator(ZENV_OT_SaveToSeparateBlends.bl_idname, text="All Objects to separate Blend Files")
 
 
 classes = (
     ZENV_PG_export_properties,
-    ZENV_OT_save_to_separate_blends,
+    ZENV_OT_SaveToSeparateBlends,
 )
 
 def register():

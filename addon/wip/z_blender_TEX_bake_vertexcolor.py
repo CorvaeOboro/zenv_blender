@@ -360,7 +360,7 @@ class ZENV_OT_VertexBake_SetFromTexture(bpy.types.Operator):
 
 class ZENV_PT_VertexBake_Panel(bpy.types.Panel):
     """Panel for vertex color baking tools"""
-    bl_label = "Vertex Color Baker"
+    bl_label = "TEX Vertex Color Baker"
     bl_idname = "ZENV_PT_vertexbake"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

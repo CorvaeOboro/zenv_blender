@@ -81,8 +81,8 @@ class ZENV_PotionGenerator_Materials:
 
         return mat
 
-class ZENV_PotionGenerator_Properties(bpy.types.PropertyGroup):
-    """Properties for potion generation"""
+class ZENV_PG_potion_generator(bpy.types.PropertyGroup):
+    """Property group for potion generator settings"""
     # Main component toggles
     use_bottle: bpy.props.BoolProperty(
         name="Generate Bottle",
@@ -754,9 +754,9 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         return mat
 
 class ZENV_PT_PotionGenerator_Panel(bpy.types.Panel):
-    """Panel for potion generation"""
-    bl_label = "Potion Generator"
-    bl_idname = "ZENV_PT_potiongenerator"
+    """Panel for procedural potion generation"""
+    bl_label = "ITEM Potion Generator"
+    bl_idname = "ZENV_PT_potion_generator"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -818,7 +818,7 @@ class ZENV_PT_PotionGenerator_Panel(bpy.types.Panel):
             box.prop(props, "base_type")
 
 classes = (
-    ZENV_PotionGenerator_Properties,
+    ZENV_PG_potion_generator,
     ZENV_OT_Generate_Potion,
     ZENV_PT_PotionGenerator_Panel,
 )
@@ -826,7 +826,7 @@ classes = (
 def register():
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.zenv_potion_props = bpy.props.PointerProperty(type=ZENV_PotionGenerator_Properties)
+    bpy.types.Scene.zenv_potion_props = bpy.props.PointerProperty(type=ZENV_PG_potion_generator)
 
 def unregister():
     for current_class_to_unregister in reversed(classes):

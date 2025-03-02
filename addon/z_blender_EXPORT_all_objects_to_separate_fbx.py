@@ -35,7 +35,7 @@ class ZENV_OT_save_to_separate_fbx_ue4(bpy.types.Operator):
     Warning:
         Existing files with the same names will be overwritten.
     """
-    bl_idname = "export.zenv_save_to_separate_fbx_ue4"
+    bl_idname = "zenv.save_to_separate_fbx_ue4"
     bl_label = "Save Objects to FBX Files for UE4 (.fbx)"
     bl_options = {'REGISTER', 'UNDO'}
 

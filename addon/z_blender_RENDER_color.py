@@ -25,6 +25,7 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
     """Operator for rendering unlit color images"""
     bl_idname = "zenv.render_color_datetime"
     bl_label = "Render Unlit Color"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
         if not context.scene.camera:
@@ -165,10 +166,10 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
 #    Panel
 # ------------------------------------------------------------------------
 
-class ZENV_PT_RenderColorOnly(bpy.types.Panel):
+class ZENV_PT_RenderColor_Panel(bpy.types.Panel):
     """Creates a Panel in the 3D Viewport for unlit color rendering"""
-    bl_label = "Render Unlit Color"
-    bl_idname = "ZENV_PT_RenderColor"
+    bl_label = "RENDER Unlit Color"
+    bl_idname = "ZENV_PT_render_color"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -182,7 +183,7 @@ class ZENV_PT_RenderColorOnly(bpy.types.Panel):
 # ------------------------------------------------------------------------
 
 classes = (
-    ZENV_PT_RenderColorOnly,
+    ZENV_PT_RenderColor_Panel,
     ZENV_OT_RenderColorOnly,
 )
 

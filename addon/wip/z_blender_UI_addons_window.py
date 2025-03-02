@@ -1,3 +1,6 @@
+# UI ADDONS WINDOW
+# Customizable UI panel with dynamic operator buttons
+
 bl_info = {
     "name": "UI Addon Window",
     "category": "ZENV",
@@ -11,8 +14,20 @@ bl_info = {
 import bpy
 import json
 import os
-from bpy.props import StringProperty, BoolProperty, EnumProperty, CollectionProperty
+import logging
+from bpy.props import StringProperty, BoolProperty, EnumProperty, CollectionProperty, IntProperty
 from bpy.types import Panel, Operator, PropertyGroup, UIList
+
+# ------------------------------------------------------------------------
+#    Setup Logging
+# ------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# ------------------------------------------------------------------------
+#    Utilities
+# ------------------------------------------------------------------------
 
 class UIUtils:
     """Utility functions for UI management"""
@@ -33,9 +48,13 @@ class UIUtils:
         if os.path.isfile(settings_path):
             try:
                 with open(settings_path, 'r') as f:
-                    return json.load(f)
-            except:
+                    data = json.load(f)
+                    logger.info(f"Settings loaded from {settings_path}")
+                    return data
+            except Exception as e:
+                logger.error(f"Error loading settings: {str(e)}")
                 return []
+        logger.info("No settings file found, using defaults")
         return []
     
     @staticmethod
@@ -45,9 +64,11 @@ class UIUtils:
         os.makedirs(os.path.dirname(settings_path), exist_ok=True)
         try:
             with open(settings_path, 'w') as f:
-                json.dump(buttons, f)
+                json.dump(buttons, f, indent=4)
+            logger.info(f"Settings saved to {settings_path}")
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Error saving settings: {str(e)}")
             return False
     
     @staticmethod
@@ -71,8 +92,21 @@ class UIUtils:
                     op.__doc__ if op.__doc__ else ""
                 ))
         return sorted(operators)
+    
+    @staticmethod
+    def validate_operator(operator_id):
+        """Validate if operator exists"""
+        try:
+            op = operator_id.split('.')
+            return hasattr(getattr(bpy.ops, op[0]), op[1])
+        except:
+            return False
 
-class ZENV_PG_ButtonItem(PropertyGroup):
+# ------------------------------------------------------------------------
+#    Properties
+# ------------------------------------------------------------------------
+
+class ZENV_PG_UIAddonButtonItem(PropertyGroup):
     """Properties for a UI button"""
     operator: StringProperty(
         name="Operator",
@@ -97,8 +131,24 @@ class ZENV_PG_ButtonItem(PropertyGroup):
         description="Custom label for the button",
         default=""
     )
+    
+    icon: StringProperty(
+        name="Icon",
+        description="Icon to display with the button",
+        default="NONE"
+    )
+    
+    tooltip: StringProperty(
+        name="Tooltip",
+        description="Custom tooltip for the button",
+        default=""
+    )
 
-class ZENV_UL_ButtonList(UIList):
+# ------------------------------------------------------------------------
+#    UI List
+# ------------------------------------------------------------------------
+
+class ZENV_UL_UIAddonButtonList(UIList):
     """List of UI buttons"""
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
@@ -108,11 +158,16 @@ class ZENV_UL_ButtonList(UIList):
             row.prop(item, "show_label", text="", icon='SHORTDISPLAY')
             if item.show_label:
                 row.prop(item, "custom_label", text="")
+            row.prop(item, "icon", text="", icon=item.icon)
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.label(text=item.operator)
 
-class ZENV_OT_AddButton(Operator):
+# ------------------------------------------------------------------------
+#    Operators
+# ------------------------------------------------------------------------
+
+class ZENV_OT_UIAddonAddButton(Operator):
     """Add a new UI button"""
     bl_idname = "zenv.add_button"
     bl_label = "Add Button"
@@ -132,12 +187,24 @@ class ZENV_OT_AddButton(Operator):
     )
     
     def execute(self, context):
+        if not UIUtils.validate_operator(self.operator):
+            self.report({'ERROR'}, f"Invalid operator: {self.operator}")
+            return {'CANCELLED'}
+            
         item = context.scene.zenv_ui_buttons.add()
         item.operator = self.operator
         item.category = self.category
+        UIUtils.save_settings([{
+            'operator': btn.operator,
+            'category': btn.category,
+            'show_label': btn.show_label,
+            'custom_label': btn.custom_label,
+            'icon': btn.icon,
+            'tooltip': btn.tooltip
+        } for btn in context.scene.zenv_ui_buttons])
         return {'FINISHED'}
 
-class ZENV_OT_RemoveButton(Operator):
+class ZENV_OT_UIAddonRemoveButton(Operator):
     """Remove a UI button"""
     bl_idname = "zenv.remove_button"
     bl_label = "Remove Button"
@@ -158,10 +225,18 @@ class ZENV_OT_RemoveButton(Operator):
                 max(0, index - 1),
                 len(buttons) - 1
             )
+            UIUtils.save_settings([{
+                'operator': btn.operator,
+                'category': btn.category,
+                'show_label': btn.show_label,
+                'custom_label': btn.custom_label,
+                'icon': btn.icon,
+                'tooltip': btn.tooltip
+            } for btn in buttons])
             
         return {'FINISHED'}
 
-class ZENV_OT_MoveButton(Operator):
+class ZENV_OT_UIAddonMoveButton(Operator):
     """Move a UI button up or down"""
     bl_idname = "zenv.move_button"
     bl_label = "Move Button"
@@ -192,13 +267,26 @@ class ZENV_OT_MoveButton(Operator):
             elif self.direction == 'DOWN' and index < len(buttons) - 1:
                 buttons.move(index, index + 1)
                 context.scene.zenv_ui_active_button += 1
+            
+            UIUtils.save_settings([{
+                'operator': btn.operator,
+                'category': btn.category,
+                'show_label': btn.show_label,
+                'custom_label': btn.custom_label,
+                'icon': btn.icon,
+                'tooltip': btn.tooltip
+            } for btn in buttons])
                 
         return {'FINISHED'}
 
-class ZENV_PT_ButtonEditor(Panel):
+# ------------------------------------------------------------------------
+#    Panels
+# ------------------------------------------------------------------------
+
+class ZENV_PT_UIAddonButtonEditor(Panel):
     """Panel for editing UI buttons"""
-    bl_label = "Button Editor"
     bl_idname = "ZENV_PT_button_editor"
+    bl_label = "UI Button Editor"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -210,7 +298,7 @@ class ZENV_PT_ButtonEditor(Panel):
         # Button list
         row = layout.row()
         row.template_list(
-            "ZENV_UL_ButtonList",
+            "ZENV_UL_UIAddonButtonList",
             "buttons",
             scene,
             "zenv_ui_buttons",
@@ -237,11 +325,13 @@ class ZENV_PT_ButtonEditor(Panel):
             col.prop(item, "show_label")
             if item.show_label:
                 col.prop(item, "custom_label")
+            col.prop(item, "icon")
+            col.prop(item, "tooltip")
 
-class ZENV_PT_DynamicUI(Panel):
+class ZENV_PT_UIAddonDynamicUI(Panel):
     """Dynamic UI panel with custom buttons"""
-    bl_label = "Dynamic UI"
     bl_idname = "ZENV_PT_dynamic_ui"
+    bl_label = "UI Dynamic Interface"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -249,6 +339,11 @@ class ZENV_PT_DynamicUI(Panel):
     def draw(self, context):
         layout = self.layout
         buttons = context.scene.zenv_ui_buttons
+        
+        if not buttons:
+            layout.label(text="No buttons configured")
+            layout.operator("zenv.add_button", text="Add Button", icon='ADD')
+            return
         
         # Group buttons by category
         categories = {}
@@ -260,52 +355,67 @@ class ZENV_PT_DynamicUI(Panel):
         # Draw buttons by category
         for category in sorted(categories.keys()):
             box = layout.box()
-            box.label(text=category)
+            box.label(text=category if category else "Uncategorized")
             for item in categories[category]:
-                op = box.operator(
-                    item.operator,
-                    text=item.custom_label if item.show_label and item.custom_label else ""
-                )
+                if UIUtils.validate_operator(item.operator):
+                    op = box.operator(
+                        item.operator,
+                        text=item.custom_label if item.show_label and item.custom_label else "",
+                        icon=item.icon if item.icon != "NONE" else 'NONE'
+                    )
+                    if item.tooltip:
+                        op.description = item.tooltip
+                else:
+                    row = box.row()
+                    row.alert = True
+                    row.label(text=f"Invalid: {item.operator}", icon='ERROR')
+
+# ------------------------------------------------------------------------
+#    Registration
+# ------------------------------------------------------------------------
+
+classes = (
+    ZENV_PG_UIAddonButtonItem,
+    ZENV_UL_UIAddonButtonList,
+    ZENV_OT_UIAddonAddButton,
+    ZENV_OT_UIAddonRemoveButton,
+    ZENV_OT_UIAddonMoveButton,
+    ZENV_PT_UIAddonButtonEditor,
+    ZENV_PT_UIAddonDynamicUI,
+)
 
 def register():
-    bpy.utils.register_class(ZENV_PG_ButtonItem)
-    bpy.utils.register_class(ZENV_UL_ButtonList)
-    bpy.utils.register_class(ZENV_OT_AddButton)
-    bpy.utils.register_class(ZENV_OT_RemoveButton)
-    bpy.utils.register_class(ZENV_OT_MoveButton)
-    bpy.utils.register_class(ZENV_PT_ButtonEditor)
-    bpy.utils.register_class(ZENV_PT_DynamicUI)
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
     
-    bpy.types.Scene.zenv_ui_buttons = CollectionProperty(type=ZENV_PG_ButtonItem)
-    bpy.types.Scene.zenv_ui_active_button = bpy.props.IntProperty()
+    bpy.types.Scene.zenv_ui_buttons = CollectionProperty(type=ZENV_PG_UIAddonButtonItem)
+    bpy.types.Scene.zenv_ui_active_button = IntProperty(default=0)
     
-    # Load saved buttons
+    # Load saved settings
     buttons = UIUtils.load_settings()
-    for button in buttons:
-        item = bpy.context.scene.zenv_ui_buttons.add()
-        for key, value in button.items():
-            setattr(item, key, value)
+    if buttons:
+        for button_data in buttons:
+            item = bpy.context.scene.zenv_ui_buttons.add()
+            for key, value in button_data.items():
+                setattr(item, key, value)
 
 def unregister():
-    # Save buttons before unregistering
-    buttons = [{
-        "operator": item.operator,
-        "category": item.category,
-        "show_label": item.show_label,
-        "custom_label": item.custom_label
-    } for item in bpy.context.scene.zenv_ui_buttons]
-    UIUtils.save_settings(buttons)
+    # Save current settings
+    if hasattr(bpy.context.scene, "zenv_ui_buttons"):
+        UIUtils.save_settings([{
+            'operator': btn.operator,
+            'category': btn.category,
+            'show_label': btn.show_label,
+            'custom_label': btn.custom_label,
+            'icon': btn.icon,
+            'tooltip': btn.tooltip
+        } for btn in bpy.context.scene.zenv_ui_buttons])
     
-    del bpy.types.Scene.zenv_ui_active_button
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
+    
     del bpy.types.Scene.zenv_ui_buttons
-    
-    bpy.utils.unregister_class(ZENV_PT_DynamicUI)
-    bpy.utils.unregister_class(ZENV_PT_ButtonEditor)
-    bpy.utils.unregister_class(ZENV_OT_MoveButton)
-    bpy.utils.unregister_class(ZENV_OT_RemoveButton)
-    bpy.utils.unregister_class(ZENV_OT_AddButton)
-    bpy.utils.unregister_class(ZENV_UL_ButtonList)
-    bpy.utils.unregister_class(ZENV_PG_ButtonItem)
+    del bpy.types.Scene.zenv_ui_active_button
 
 if __name__ == "__main__":
     register()

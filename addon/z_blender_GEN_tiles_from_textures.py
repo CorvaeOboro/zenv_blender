@@ -180,14 +180,13 @@ class ZENV_OT_CreateRandomTiles(Operator, ImportHelper):
             self.report({'ERROR'}, f"Error creating tiles: {str(e)}")
             return {'CANCELLED'}
 
-
 # ------------------------------------------------------------------------
 #    Panel
 # ------------------------------------------------------------------------
 
 class ZENV_PT_RandomTilesPanel(Panel):
     """Panel for creating random texture tiles."""
-    bl_label = "Random Texture Tiles"
+    bl_label = "GEN Random Texture Tiles"
     bl_idname = "ZENV_PT_random_tiles"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

@@ -200,9 +200,9 @@ class ZENV_OT_PlaneProjection_ClearDebug(bpy.types.Operator):
 # ------------------------------------------------------------------------
 
 class ZENV_PT_PlaneProjection_Panel(bpy.types.Panel):
-    """Panel for plane projection rendering tools"""
-    bl_label = "Plane Projection"
-    bl_idname = "ZENV_PT_planeprojection"
+    """Panel for configuring plane projection rendering settings"""
+    bl_label = "RENDER Plane Projection"
+    bl_idname = "ZENV_PT_plane_projection"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'

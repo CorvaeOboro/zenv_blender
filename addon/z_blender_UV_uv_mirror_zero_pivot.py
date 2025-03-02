@@ -91,6 +91,7 @@ class ZENV_OT_UVMirror_X_Selected(ZENV_OT_UVMirror_Base, Operator):
     """Mirror selected face UVs horizontally around zero pivot point"""
     bl_idname = "zenv.uvmirror_x_selected"
     bl_label = "Mirror X Selected"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
         try:
@@ -107,6 +108,7 @@ class ZENV_OT_UVMirror_Y_Selected(ZENV_OT_UVMirror_Base, Operator):
     """Mirror selected face UVs vertically around zero pivot point"""
     bl_idname = "zenv.uvmirror_y_selected"
     bl_label = "Mirror Y Selected"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
         try:
@@ -123,6 +125,7 @@ class ZENV_OT_UVMirror_X_All(ZENV_OT_UVMirror_Base, Operator):
     """Mirror all UVs horizontally around zero pivot point"""
     bl_idname = "zenv.uvmirror_x_all"
     bl_label = "Mirror X All"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
         try:
@@ -138,6 +141,7 @@ class ZENV_OT_UVMirror_Y_All(ZENV_OT_UVMirror_Base, Operator):
     """Mirror all UVs vertically around zero pivot point"""
     bl_idname = "zenv.uvmirror_y_all"
     bl_label = "Mirror Y All"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
         try:

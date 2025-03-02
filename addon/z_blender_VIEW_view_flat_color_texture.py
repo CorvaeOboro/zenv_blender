@@ -47,9 +47,10 @@ class ZENV_OT_flat_texture_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class ZENV_PT_panel(bpy.types.Panel):
-    bl_label = "VIEW flat color"
-    bl_idname = "ZENV_VIEW_PT_panel"
+class ZENV_PT_FlatColorView_Panel(bpy.types.Panel):
+    """Panel for flat color viewport display settings"""
+    bl_label = "VIEW Flat Color"
+    bl_idname = "ZENV_PT_flat_color_view"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -61,12 +62,12 @@ class ZENV_PT_panel(bpy.types.Panel):
 
 def register():
     bpy.utils.register_class(ZENV_OT_flat_texture_view)
-    bpy.utils.register_class(ZENV_PT_panel)
+    bpy.utils.register_class(ZENV_PT_FlatColorView_Panel)
 
 
 def unregister():
     bpy.utils.unregister_class(ZENV_OT_flat_texture_view)
-    bpy.utils.unregister_class(ZENV_PT_panel)
+    bpy.utils.unregister_class(ZENV_PT_FlatColorView_Panel)
 
 
 if __name__ == "__main__":

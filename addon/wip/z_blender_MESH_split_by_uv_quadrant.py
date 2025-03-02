@@ -57,6 +57,15 @@ class ZENV_PG_SplitUVQuadrant(PropertyGroup):
     )
 
 class ZENV_OT_SplitUVQuadrant(Operator):
+    """Split mesh into separate objects based on UV quadrants.
+    
+    This operator performs a multi-phase process:
+    1. Prepares mesh by triangulating and separating vertices
+    2. Transforms mesh to UV space coordinates
+    3. Splits mesh into separate objects based on UV quadrants
+    4. Transforms split meshes back to original 3D space
+    5. Merges vertices and UVs to reconstruct the meshes
+    """
     bl_idname = "zenv.split_uv_quadrant"
     bl_label = "Split UV Quadrants"
     bl_options = {'REGISTER', 'UNDO'}
@@ -507,7 +516,7 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         return {'FINISHED'}
 
     def execute(self, context):
-        """Main execution function"""
+        """Execute the UV quadrant splitting operation"""
         try:
             # Get the active object
             obj = context.active_object
@@ -551,7 +560,16 @@ class ZENV_OT_SplitUVQuadrant(Operator):
             return {'CANCELLED'}
 
 class ZENV_PT_SplitUVQuadrant(Panel):
-    bl_label = "Split UV Quadrants"
+    """Panel for controlling UV quadrant splitting operations.
+    
+    Provides controls for:
+    - Mesh preparation and vertex separation
+    - UV space transformation
+    - Quadrant splitting
+    - 3D space transformation
+    - Vertex merging and mesh reconstruction
+    """
+    bl_label = "MESH Split UV Quadrants"
     bl_idname = "ZENV_PT_SplitUVQuadrant"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

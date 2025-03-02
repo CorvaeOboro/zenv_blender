@@ -258,7 +258,7 @@ class ZENV_OT_RenderDepthOnly(bpy.types.Operator):
 
 class ZENV_PT_RenderDepthOnly(bpy.types.Panel):
     """Creates a Panel in the 3D Viewport for depth map rendering"""
-    bl_label = "Render Depth Map"
+    bl_label = "RENDER Depth Map"
     bl_idname = "ZENV_PT_RenderDepthOnly_Panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

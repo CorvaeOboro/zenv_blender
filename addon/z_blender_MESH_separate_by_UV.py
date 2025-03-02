@@ -197,9 +197,9 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
             return {'CANCELLED'}
 
 class ZENV_PT_SeparateByUV_Panel(bpy.types.Panel):
-    """Panel for UV separation tools"""
-    bl_label = "Separate by UV"
-    bl_idname = "ZENV_PT_separatebyuv"
+    """Panel for UV island separation tools"""
+    bl_label = "MESH Separate by UV"
+    bl_idname = "ZENV_PT_separate_by_uv"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'

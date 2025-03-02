@@ -377,8 +377,8 @@ class ZENV_OT_PlanetProcedural_Generate(bpy.types.Operator):
 
 class ZENV_PT_PlanetProcedural_Panel(bpy.types.Panel):
     """Panel for procedural planet generator"""
-    bl_label = "Planet Generator"
-    bl_idname = "ZENV_PT_planetprocedural"
+    bl_label = "GEN Planet Generator"
+    bl_idname = "ZENV_PT_planet_procedural"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'

@@ -84,9 +84,9 @@ class ZENV_OT_ConsolidateMaterials_Operator(bpy.types.Operator):
 # ------------------------------------------------------------------------
 
 class ZENV_PT_ConsolidateMaterials_Panel(bpy.types.Panel):
-    """Panel for consolidating materials by texture"""
-    bl_label = "Consolidate Materials"
-    bl_idname = "ZENV_PT_consolidatematerials"
+    """Panel for material consolidation tools"""
+    bl_label = "MAT Consolidate Materials"
+    bl_idname = "ZENV_PT_consolidate_materials"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'

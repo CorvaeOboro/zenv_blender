@@ -86,7 +86,7 @@ class ZENV_PG_WoodGrainProps(PropertyGroup):
     )
     grain_direction: FloatVectorProperty(
         name="Grain Direction",
-        description="Custom direction if auto_direction is off (e.g. 0,0,1)",
+        description="Custom direction if auto_direction is off ",
         default=(0.0, 0.0, 1.0),
         subtype='DIRECTION'
     )
@@ -114,7 +114,7 @@ class ZENV_PG_WoodGrainProps(PropertyGroup):
     # Crevice-specific properties
     crevice_scale: FloatProperty(
         name="Crevice Pattern Scale",
-        description="Pattern size for elongated lines in X/Y (default 5.0). Larger => fewer lines, smaller => more lines",
+        description="Pattern size for elongated lines in X/Y Larger => fewer lines, smaller => more lines",
         default=0.02,
         min=0.001,
         max=50.0
@@ -128,7 +128,7 @@ class ZENV_PG_WoodGrainProps(PropertyGroup):
     )
     crevice_strength: FloatProperty(
         name="Crevice Strength",
-        description="Amplitude of the carved lines effect (they push inward)",
+        description="Amplitude of the carved lines effect ",
         default=-0.1,
         min=-5.0,
         max=5.0
@@ -580,7 +580,7 @@ class ZENV_OT_WoodGrain(Operator):
 
 class ZENV_PT_WoodGrainPanel(Panel):
     """Panel for wood grain settings"""
-    bl_label = "Wood Grain Generator"
+    bl_label = "MESH Wood Grain Generator"
     bl_idname = "ZENV_PT_wood_grain_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

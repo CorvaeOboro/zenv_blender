@@ -143,7 +143,7 @@ class ZENV_OT_SeparateByAxis_Slice(Operator):
 
 class ZENV_PT_SeparateByAxis_Panel(Panel):
     """Panel for axis separation tools"""
-    bl_label = "Separate by Axis"
+    bl_label = "MESH Separate by Axis"
     bl_idname = "ZENV_PT_separatebyaxis"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

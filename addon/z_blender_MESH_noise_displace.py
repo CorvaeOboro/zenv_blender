@@ -230,7 +230,7 @@ class ZENV_OT_NoiseDisplace(Operator):
 
 class ZENV_PT_NoiseDisplacePanel(Panel):
     """Panel for surface effect settings"""
-    bl_label = "Surface Effects"
+    bl_label = "MESH Surface Effects"
     bl_idname = "ZENV_PT_noise_displace"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

@@ -194,7 +194,7 @@ class ZENV_OT_SeparateByMaterial(Operator):
 
 class ZENV_PT_SeparateByMaterialPanel(Panel):
     """Panel for material separation."""
-    bl_label = "Separate By Material"
+    bl_label = "MESH Separate By Material"
     bl_idname = "ZENV_PT_separate_by_material"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'

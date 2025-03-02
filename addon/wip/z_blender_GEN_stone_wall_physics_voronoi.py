@@ -532,11 +532,11 @@ class ZENV_OT_GenerateStoneWall(Operator):
 
 class ZENV_PT_StoneWallPanel(Panel):
     """Panel for stone wall generation settings."""
-    bl_label = "Stone Wall Generator"
-    bl_idname = "ZENV_PT_stone_wall"
+    bl_label = "GEN Stone Wall Generator"
+    bl_idname = "ZENV_PT_StoneWallPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'ZENV'
+    bl_category = "ZENV"
 
     def draw(self, context):
         layout = self.layout

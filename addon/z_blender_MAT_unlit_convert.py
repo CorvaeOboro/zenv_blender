@@ -139,7 +139,7 @@ class ZENV_OT_UnlitConvert(Operator):
 
 class ZENV_PT_UnlitConvertPanel(Panel):
     """Panel for unlit material conversion."""
-    bl_label = "Convert to Unlit"
+    bl_label = "MAT Convert to Unlit"
     bl_idname = "ZENV_PT_unlit_convert"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
