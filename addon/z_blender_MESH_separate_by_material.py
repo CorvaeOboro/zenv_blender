@@ -1,7 +1,6 @@
 """
-MESH Separate By Material - A Blender addon for efficient mesh separation.
-
-Separates mesh objects by material assignments while preserving hierarchies.
+MESH Separate By Material - A Blender addon for mesh separation
+Separates mesh objects by material assignment while preserving hierarchies.
 """
 
 bl_info = {
@@ -9,8 +8,8 @@ bl_info = {
     "author": "CorvaeOboro",
     "version": (1, 2),
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Separate mesh by material assignments",
+    "location": "View3D > Sidebar > ZENV > MESH Separate By Material",
+    "description": "Separate mesh by material assignment",
     "category": "ZENV",
 }
 
@@ -203,9 +202,7 @@ class ZENV_PT_SeparateByMaterialPanel(Panel):
     def draw(self, context):
         """Draw the panel layout."""
         layout = self.layout
-        box = layout.box()
-        box.label(text="Separate:", icon='MESH_DATA')
-        box.operator(ZENV_OT_SeparateByMaterial.bl_idname)
+        layout.operator(ZENV_OT_SeparateByMaterial.bl_idname)
 
 # ------------------------------------------------------------------------
 #    Registration

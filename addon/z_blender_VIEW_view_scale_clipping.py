@@ -5,9 +5,9 @@ bl_info = {
     "name": "VIEW Scale Clipping",
     "category": "ZENV",
     "author": "CorvaeOboro",
-    "version": (1, 0),
+    "version": (1, 1),
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
+    "location": "View3D > Sidebar > ZENV > VIEW Scale Clipping",
     "description": "Adjust viewport clipping based on object size"
 }  
 
@@ -16,11 +16,18 @@ import bmesh
 import mathutils
 from bpy.types import Panel, Operator
 
-class ZENV_ViewportUtils:
-    """Utility functions for viewport management"""
+class ZENV_OT_ViewAutoClippingBounds(Operator):
+    """Update viewport settings based on object size across all viewports"""
+    bl_idname = "zenv.update_viewport"
+    bl_label = "View Fit Bounds"
+    bl_description = "Adjust viewport clipping to fit scene bounds in all viewports"
+    bl_options = {'REGISTER', 'UNDO'}
     
-    @staticmethod
-    def get_object_size(obj):
+    @classmethod
+    def poll(cls, context):
+        return context.scene.objects
+
+    def get_object_size(self, obj):
         """Get object size considering all geometry"""
         if not obj:
             return 0.0
@@ -68,14 +75,13 @@ class ZENV_ViewportUtils:
         if bounds:
             return max(p.length for p in bounds)
         return 0.0
-    
-    @staticmethod
-    def update_viewport_settings(context):
+
+    def update_viewport_settings(self, context):
         """Update viewport settings based on object size"""
         # Default settings
         settings = {
             'scope': 'ALL',  # Use all objects by default
-            'clip_start_factor': 0.01,  # Start clipping at 1% of max size
+            'clip_start_factor': 0.001,  # Start clipping at 0.1% of max size
             'clip_end_factor': 5.0,     # End clipping at 5x max size (reduced from 10x)
             'view_lens': 50.0,          # Standard lens
             'zoom_factor': 0.5          # Zoom factor to get closer to objects
@@ -90,7 +96,7 @@ class ZENV_ViewportUtils:
         objects = context.scene.objects  # Always use all objects
             
         for obj in objects:
-            size = ZENV_ViewportUtils.get_object_size(obj)
+            size = self.get_object_size(obj)
             if size > max_size:
                 max_size = size
                 active_obj = obj
@@ -133,17 +139,6 @@ class ZENV_ViewportUtils:
                                 processed_count += 1
         
         return processed_count
-
-class ZENV_OT_UpdateViewport(Operator):
-    """Update viewport settings based on object size across all viewports"""
-    bl_idname = "zenv.update_viewport"
-    bl_label = "View Fit Bounds"
-    bl_description = "Adjust viewport clipping to fit scene bounds in all viewports"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    @classmethod
-    def poll(cls, context):
-        return context.scene.objects
         
     def execute(self, context):
         # Store current screen and area
@@ -151,7 +146,7 @@ class ZENV_OT_UpdateViewport(Operator):
         current_area = context.area
         
         # Update all viewports
-        processed_count = ZENV_ViewportUtils.update_viewport_settings(context)
+        processed_count = self.update_viewport_settings(context)
         
         if processed_count:
             self.report({'INFO'}, f"Updated {processed_count} viewports to fit scene bounds")
@@ -160,7 +155,7 @@ class ZENV_OT_UpdateViewport(Operator):
             self.report({'WARNING'}, "No objects found to calculate bounds")
             return {'CANCELLED'}
 
-class ZENV_PT_ViewportPanel(Panel):
+class ZENV_PT_ViewAutoClippingBounds_Panel(Panel):
     """Panel for viewport settings"""
     bl_label = "VIEW Bounds Scale"
     bl_idname = "ZENV_PT_viewport"
@@ -170,11 +165,11 @@ class ZENV_PT_ViewportPanel(Panel):
     
     def draw(self, context):
         layout = self.layout
-        layout.operator(ZENV_OT_UpdateViewport.bl_idname)
+        layout.operator(ZENV_OT_ViewAutoClippingBounds.bl_idname)
 
 classes = (
-    ZENV_OT_UpdateViewport,
-    ZENV_PT_ViewportPanel,
+    ZENV_OT_ViewAutoClippingBounds,
+    ZENV_PT_ViewAutoClippingBounds_Panel,
 )
 
 def register():

@@ -164,9 +164,7 @@ class ZENV_PT_RemoveUnusedMaterials_Panel(Panel):
     def draw(self, context):
         """Draw the panel layout."""
         layout = self.layout
-        box = layout.box()
-        box.label(text="Clean Up:", icon='MATERIAL')
-        box.operator(ZENV_OT_RemoveUnusedMaterials.bl_idname)
+        layout.operator(ZENV_OT_RemoveUnusedMaterials.bl_idname)
 
 # ------------------------------------------------------------------------
 #    Registration
