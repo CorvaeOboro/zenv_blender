@@ -453,18 +453,11 @@ def create_procedural_fantasy_metal(material):
     # Create bump
     bump_node = nodes.new(type='ShaderNodeBump')
     bump_node.location = (500, -200)
-    bump_node.inputs['Strength'].default_value = 0.05
-    bump_node.inputs['Distance'].default_value = 0.02
+    bump_node.inputs['Strength'].default_value = 0.2  # Updated to 0.2 strength
+    bump_node.inputs['Distance'].default_value = 0.01  # Adjusted for better results
     
-    # Mix base noise and micro noise for bump
-    bump_mix = nodes.new(type='ShaderNodeMixRGB')
-    bump_mix.location = (300, -200)
-    bump_mix.blend_type = 'MULTIPLY'
-    bump_mix.inputs['Fac'].default_value = 0.3
-    
-    links.new(noise_tex.outputs['Fac'], bump_mix.inputs[1])
-    links.new(micro_ramp.outputs['Color'], bump_mix.inputs[2])
-    links.new(bump_mix.outputs['Color'], bump_node.inputs['Height'])
+    # Connect micro_ramp directly to bump height input instead of multiplying with noise texture
+    links.new(micro_ramp.outputs['Color'], bump_node.inputs['Height'])
     links.new(bump_node.outputs['Normal'], principled_node.inputs['Normal'])
     
     # Create roughness variation
@@ -928,18 +921,11 @@ def apply_enhanced_material_with_texture(material, texture_path):
         # Create bump node
         bump_node = nodes.new(type='ShaderNodeBump')
         bump_node.location = (600, -300)
-        bump_node.inputs['Strength'].default_value = 0.02  # Very subtle bump
+        bump_node.inputs['Strength'].default_value = 0.2  # Very subtle bump
         bump_node.inputs['Distance'].default_value = 0.01
         
-        # Mix noise with bump (very subtle)
-        bump_mix = nodes.new(type='ShaderNodeMixRGB')
-        bump_mix.location = (400, -300)
-        bump_mix.blend_type = 'MULTIPLY'
-        bump_mix.inputs['Fac'].default_value = 0.08  # Very subtle noise influence
-        
-        links.new(bump_scale.outputs['Value'], bump_mix.inputs[1])
-        links.new(noise_detail_mix.outputs['Color'], bump_mix.inputs[2])
-        links.new(bump_mix.outputs['Color'], bump_node.inputs['Height'])
+        # Connect noise directly to bump height input instead of multiplying with bump scale
+        links.new(noise_detail_mix.outputs['Color'], bump_node.inputs['Height'])
         links.new(bump_node.outputs['Normal'], principled_node.inputs['Normal'])
         
         # Add very subtle micro displacement
