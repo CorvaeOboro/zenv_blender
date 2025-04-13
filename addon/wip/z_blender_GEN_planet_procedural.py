@@ -47,34 +47,49 @@ class ZENV_PlanetProcedural_Properties:
         bpy.types.Scene.zenv_resolution = IntProperty(
             name="Resolution",
             description="Resolution of the planet mesh",
-            default=32,
-            min=4,
-            max=256
+            default=128,
+            min=32,
+            max=512
         )
         
         # Terrain Properties
         bpy.types.Scene.zenv_terrain_scale = FloatProperty(
             name="Terrain Scale",
             description="Scale of terrain features",
-            default=1.0,
+            default=2.0,
             min=0.0,
-            max=10.0
+            max=20.0
         )
         
         bpy.types.Scene.zenv_terrain_roughness = FloatProperty(
             name="Roughness",
             description="Roughness of terrain features",
-            default=0.5,
+            default=0.7,
             min=0.0,
-            max=1.0
+            max=2.0
         )
         
         bpy.types.Scene.zenv_terrain_layers = IntProperty(
             name="Terrain Layers",
             description="Number of terrain detail layers",
-            default=3,
+            default=5,
             min=1,
-            max=8
+            max=12
+        )
+        
+        # Ocean Properties
+        bpy.types.Scene.zenv_ocean_level = FloatProperty(
+            name="Ocean Level",
+            description="Height of ocean relative to terrain",
+            default=0.2,
+            min=0.0,
+            max=1.0
+        )
+        
+        bpy.types.Scene.zenv_generate_ocean = BoolProperty(
+            name="Generate Ocean",
+            description="Generate ocean layer",
+            default=True
         )
         
         # Atmosphere Properties
@@ -144,6 +159,8 @@ class ZENV_PlanetProcedural_Properties:
         del bpy.types.Scene.zenv_terrain_scale
         del bpy.types.Scene.zenv_terrain_roughness
         del bpy.types.Scene.zenv_terrain_layers
+        del bpy.types.Scene.zenv_ocean_level
+        del bpy.types.Scene.zenv_generate_ocean
         del bpy.types.Scene.zenv_atmosphere_height
         del bpy.types.Scene.zenv_atmosphere_density
         del bpy.types.Scene.zenv_surface_color
@@ -174,9 +191,8 @@ class ZENV_PlanetProcedural_Utils:
     def create_base_sphere(radius, resolution):
         """Create base sphere mesh"""
         bm = bmesh.new()
-        bmesh.ops.create_uvsphere(bm, u_segments=resolution, v_segments=resolution, radius=radius)
+        bmesh.ops.create_icosphere(bm, subdivisions=int(math.log2(resolution/12)), radius=radius)
         
-        # Create mesh and object
         mesh = bpy.data.meshes.new("Planet")
         bm.to_mesh(mesh)
         bm.free()
@@ -190,95 +206,105 @@ class ZENV_PlanetProcedural_Utils:
         """Apply terrain displacement to planet surface"""
         bm = bmesh.new()
         bm.from_mesh(obj.data)
+        bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1)
         
         for vert in bm.verts:
             displacement = 0
             current_scale = scale
-            current_intensity = 1.0
+            current_intensity = roughness
             
-            for _ in range(layers):
+            # Multi-layered noise
+            for i in range(layers):
                 point = vert.co.normalized() * current_scale
-                value = noise.noise(point) * current_intensity
-                displacement += value
-                current_scale *= 2
-                current_intensity *= roughness
+                
+                # Combine different noise types for varied terrain
+                base_noise = noise.noise(point) * 0.5
+                turb = noise.turbulence_vector(point * 2.0, 2).x * 0.3
+                detail = noise.noise(point * 4.0) * noise.noise(point * 8.0) * 0.2  # Fractal-like detail
+                
+                value = base_noise + turb + detail
+                
+                displacement += value * current_intensity
+                current_scale *= 2.0
+                current_intensity *= 0.5
             
-            vert.co = vert.co.normalized() * (obj.data.vertices[vert.index].co.length + displacement)
+            vert.co += vert.co.normalized() * displacement * scale * 0.5
         
         bm.to_mesh(obj.data)
         bm.free()
     
     @staticmethod
-    def create_atmosphere(obj, height, density, color):
-        """Create atmosphere around planet"""
-        # Create atmosphere mesh
-        atmos = obj.copy()
-        atmos.data = obj.data.copy()
-        atmos.name = "Atmosphere"
-        bpy.context.scene.collection.objects.link(atmos)
+    def create_ocean_sphere(planet_obj, ocean_level):
+        """Create ocean sphere around planet"""
+        radius = planet_obj.dimensions.x * 0.5 * (1.0 + ocean_level * 0.1)
         
-        # Scale atmosphere
-        atmos.scale = Vector((1 + height,) * 3)
+        bm = bmesh.new()
+        bmesh.ops.create_icosphere(bm, subdivisions=4, radius=radius)
         
-        # Create atmosphere material
-        mat = bpy.data.materials.new(name="Atmosphere")
+        mesh = bpy.data.meshes.new("Ocean")
+        bm.to_mesh(mesh)
+        bm.free()
+        
+        ocean_obj = bpy.data.objects.new("Ocean", mesh)
+        bpy.context.scene.collection.objects.link(ocean_obj)
+        
+        mat = bpy.data.materials.new(name="Ocean_Material")
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
         
-        # Clear default nodes
         nodes.clear()
         
-        # Create nodes
         output = nodes.new('ShaderNodeOutputMaterial')
+        glass = nodes.new('ShaderNodeBsdfGlass')
         volume = nodes.new('ShaderNodeVolumePrincipled')
+        mix = nodes.new('ShaderNodeMixShader')
         
-        # Set up volume shader
-        volume.inputs['Density'].default_value = density
-        volume.inputs['Color'].default_value = (*color, 1)
+        glass.inputs['Color'].default_value = (0.2, 0.4, 0.8, 1.0)
+        glass.inputs['Roughness'].default_value = 0.0
+        glass.inputs['IOR'].default_value = 1.33
         
-        # Connect nodes
-        links.new(volume.outputs[0], output.inputs[1])
+        volume.inputs['Color'].default_value = (0.2, 0.4, 0.8, 1.0)
+        volume.inputs['Density'].default_value = 0.1
         
-        # Assign material
-        atmos.data.materials.append(mat)
+        mix.inputs[0].default_value = 0.9
         
-        return atmos
+        links.new(glass.outputs['BSDF'], mix.inputs[1])
+        links.new(volume.outputs[0], mix.inputs[2])
+        links.new(mix.outputs[0], output.inputs[0])
+        
+        ocean_obj.data.materials.append(mat)
+        return ocean_obj
     
     @staticmethod
     def create_surface_material(obj, color, planet_type):
         """Create surface material for planet"""
-        mat = bpy.data.materials.new(name="PlanetSurface")
+        mat = bpy.data.materials.new(name="Planet_Material")
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
         
-        # Clear default nodes
         nodes.clear()
         
-        # Create basic shader setup
         output = nodes.new('ShaderNodeOutputMaterial')
         principled = nodes.new('ShaderNodeBsdfPrincipled')
+        bump = nodes.new('ShaderNodeBump')
+        noise = nodes.new('ShaderNodeTexNoise')
         
-        # Set base color
         principled.inputs['Base Color'].default_value = (*color, 1)
+        principled.inputs['Roughness'].default_value = 0.7
+        principled.inputs['Specular'].default_value = 0.2
         
-        # Adjust properties based on planet type
-        if planet_type == 'ROCKY':
-            principled.inputs['Roughness'].default_value = 0.8
-            principled.inputs['Metallic'].default_value = 0.1
-        elif planet_type == 'GAS':
-            principled.inputs['Roughness'].default_value = 0.3
-            principled.inputs['Transmission'].default_value = 0.2
-        else:  # ICE
-            principled.inputs['Roughness'].default_value = 0.2
-            principled.inputs['Metallic'].default_value = 0.0
-            principled.inputs['Transmission'].default_value = 0.3
+        noise.inputs['Scale'].default_value = 50
+        noise.inputs['Detail'].default_value = 16
+        noise.inputs['Roughness'].default_value = 0.7
         
-        # Connect nodes
-        links.new(principled.outputs[0], output.inputs[0])
+        bump.inputs['Strength'].default_value = 0.5
         
-        # Assign material
+        links.new(noise.outputs['Color'], bump.inputs['Height'])
+        links.new(bump.outputs['Normal'], principled.inputs['Normal'])
+        links.new(principled.outputs['BSDF'], output.inputs[0])
+        
         obj.data.materials.append(mat)
     
     @staticmethod
@@ -288,7 +314,6 @@ class ZENV_PlanetProcedural_Utils:
         bm.from_mesh(obj.data)
         
         for _ in range(count):
-            # Random point on sphere
             theta = random.uniform(0, 2 * math.pi)
             phi = random.uniform(0, math.pi)
             radius = random.uniform(0.1, 0.3)
@@ -299,7 +324,6 @@ class ZENV_PlanetProcedural_Utils:
                 math.cos(phi)
             ))
             
-            # Create crater depression
             for vert in bm.verts:
                 dist = (vert.co.normalized() - point).length
                 if dist < radius:
@@ -308,6 +332,35 @@ class ZENV_PlanetProcedural_Utils:
         
         bm.to_mesh(obj.data)
         bm.free()
+    
+    @staticmethod
+    def create_atmosphere(obj, height, density, color):
+        """Create atmosphere around planet"""
+        atmos = obj.copy()
+        atmos.data = obj.data.copy()
+        atmos.name = "Atmosphere"
+        bpy.context.scene.collection.objects.link(atmos)
+        
+        atmos.scale = Vector((1 + height,) * 3)
+        
+        mat = bpy.data.materials.new(name="Atmosphere")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+        
+        nodes.clear()
+        
+        output = nodes.new('ShaderNodeOutputMaterial')
+        volume = nodes.new('ShaderNodeVolumePrincipled')
+        
+        volume.inputs['Density'].default_value = density
+        volume.inputs['Color'].default_value = (*color, 1)
+        
+        links.new(volume.outputs[0], output.inputs[1])
+        
+        atmos.data.materials.append(mat)
+        
+        return atmos
 
 # ------------------------------------------------------------------------
 #    Operators
@@ -324,13 +377,11 @@ class ZENV_OT_PlanetProcedural_Generate(bpy.types.Operator):
         try:
             scene = context.scene
             
-            # Create base planet
             planet = ZENV_PlanetProcedural_Utils.create_base_sphere(
                 scene.zenv_planet_radius,
                 scene.zenv_resolution
             )
             
-            # Apply terrain
             ZENV_PlanetProcedural_Utils.apply_terrain_displacement(
                 planet,
                 scene.zenv_terrain_scale,
@@ -338,18 +389,22 @@ class ZENV_OT_PlanetProcedural_Generate(bpy.types.Operator):
                 scene.zenv_terrain_layers
             )
             
-            # Create surface material
             ZENV_PlanetProcedural_Utils.create_surface_material(
                 planet,
                 scene.zenv_surface_color,
                 scene.zenv_planet_type
             )
             
-            # Add craters if enabled
+            if scene.zenv_generate_ocean:
+                ocean = ZENV_PlanetProcedural_Utils.create_ocean_sphere(
+                    planet,
+                    scene.zenv_ocean_level
+                )
+                ocean.parent = planet
+            
             if scene.zenv_generate_craters and scene.zenv_planet_type == 'ROCKY':
                 ZENV_PlanetProcedural_Utils.add_craters(planet)
             
-            # Create atmosphere if needed
             if scene.zenv_atmosphere_height > 0:
                 ZENV_PlanetProcedural_Utils.create_atmosphere(
                     planet,
@@ -358,7 +413,6 @@ class ZENV_OT_PlanetProcedural_Generate(bpy.types.Operator):
                     scene.zenv_atmosphere_color
                 )
             
-            # Select the planet
             bpy.ops.object.select_all(action='DESELECT')
             planet.select_set(True)
             context.view_layer.objects.active = planet
@@ -387,39 +441,38 @@ class ZENV_PT_PlanetProcedural_Panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
         
-        # Base Settings
         box = layout.box()
         box.label(text="Base Settings:")
         box.prop(scene, "zenv_planet_type")
         box.prop(scene, "zenv_planet_radius")
         box.prop(scene, "zenv_resolution")
         
-        # Terrain Settings
         box = layout.box()
         box.label(text="Terrain Settings:")
         box.prop(scene, "zenv_terrain_scale")
         box.prop(scene, "zenv_terrain_roughness")
         box.prop(scene, "zenv_terrain_layers")
         
-        # Atmosphere Settings
+        box = layout.box()
+        box.label(text="Ocean Settings:")
+        box.prop(scene, "zenv_ocean_level")
+        box.prop(scene, "zenv_generate_ocean")
+        
         box = layout.box()
         box.label(text="Atmosphere Settings:")
         box.prop(scene, "zenv_atmosphere_height")
         box.prop(scene, "zenv_atmosphere_density")
         
-        # Color Settings
         box = layout.box()
         box.label(text="Color Settings:")
         box.prop(scene, "zenv_surface_color")
         box.prop(scene, "zenv_atmosphere_color")
         
-        # Features
         box = layout.box()
         box.label(text="Features:")
         box.prop(scene, "zenv_generate_clouds")
         box.prop(scene, "zenv_generate_craters")
         
-        # Generate Button
         layout.operator("zenv.planet_generate")
 
 # ------------------------------------------------------------------------
