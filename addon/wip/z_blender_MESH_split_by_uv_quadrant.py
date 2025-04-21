@@ -4,20 +4,19 @@ Splits mesh into separate objects based on UV space quadrants
 """
 
 bl_info = {
-    "name": "Split by UV Quadrants",
+    "name": "MESH Split by UV Quadrants",
     "author": "CorvaeOboro",
-    "version": (1, 0),
+    "version": (1, 1),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > ZENV",
     "description": "Split mesh into separate objects based on UV space quadrants",
-    "warning": "",
     "doc_url": "",
     "category": "ZENV",
 }
 
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Vector, Matrix
 from bpy.types import Panel, Operator, PropertyGroup
 import math
 
@@ -43,9 +42,9 @@ class ZENV_PG_SplitUVQuadrant(PropertyGroup):
         description="Transform split meshes back to original 3D space"
     )
     do_phase_4: bpy.props.BoolProperty(
-        name="Phase 4: Merge Vertices",
+        name="Phase 4: UVs to 0-1",
         default=True,
-        description="Merge vertices and UVs at very small distances to reconstruct the meshes"
+        description="Move all UVs of split meshes so their bounding box fits in 0-1 space, without scaling."
     )
     quadrant_size: bpy.props.FloatProperty(
         name="Quadrant Size",
@@ -64,7 +63,6 @@ class ZENV_OT_SplitUVQuadrant(Operator):
     2. Transforms mesh to UV space coordinates
     3. Splits mesh into separate objects based on UV quadrants
     4. Transforms split meshes back to original 3D space
-    5. Merges vertices and UVs to reconstruct the meshes
     """
     bl_idname = "zenv.split_uv_quadrant"
     bl_label = "Split UV Quadrants"
@@ -81,70 +79,68 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         1) Triangulate the mesh
         2) Create new mesh with completely separate triangles
         3) Store UV and original position data for each vertex
+        4) Apply all transforms and unparent the object, storing its original world matrix
+        5) Store original materials for later restoration
         """
         self.log_msg("=== PHASE 0: Prepare Mesh + Store Original Positions ===")
+
+        # Apply all transforms FIRST
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        # Unparent while keeping transform
+        if obj.parent:
+            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+
+        # Now store the object's original world matrix for later restoration (should now be identity)
+        obj["_zenv_original_world_matrix"] = [list(row) for row in obj.matrix_world]
+
+        # Store the object's materials for restoration
+        obj["_zenv_materials"] = [mat.name if mat else "" for mat in obj.data.materials]
+        # Also store material indices for each face
+        face_materials = [p.material_index for p in obj.data.polygons]
+        obj["_zenv_face_material_indices"] = face_materials
 
         if obj.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
 
-        # Get initial BMesh
+        # Get initial BMesh (after transforms applied)
         bm_orig = bmesh.new()
         bm_orig.from_mesh(obj.data)
-        
         # Ensure UV layers exist
         if not bm_orig.loops.layers.uv:
             self.log_msg("No UV layers found. Aborting.")
             bm_orig.free()
             return {'CANCELLED'}
-        
         uv_layer_orig = bm_orig.loops.layers.uv.verify()
-        
         # Triangulate
         bmesh.ops.triangulate(bm_orig, faces=bm_orig.faces[:])
-        
         # Create new BMesh for rebuilt mesh
         bm_new = bmesh.new()
         pos_layer = bm_new.verts.layers.float_vector.new("original_position")
         uv_layer_new = bm_new.loops.layers.uv.new("UVMap")
-        
         triangle_count = 0
-        
         # Process each triangle, creating completely new vertices for each
         for face in bm_orig.faces:
-            # Create three new vertices for this triangle
             new_verts = []
             uvs = []
-            
             for loop in face.loops:
-                # Create new vertex with original position
                 new_vert = bm_new.verts.new(loop.vert.co)
                 new_vert[pos_layer] = loop.vert.co.copy()
                 new_verts.append(new_vert)
-                # Store UV coordinates
                 uvs.append(loop[uv_layer_orig].uv.copy())
-            
             try:
-                # Create new face
                 new_face = bm_new.faces.new(new_verts)
-                # Assign UV coordinates
                 for loop, uv in zip(new_face.loops, uvs):
                     loop[uv_layer_new].uv = uv
                 triangle_count += 1
             except ValueError as e:
                 self.log_msg(f"Warning: Could not create face: {str(e)}")
-        
-        # Clean up original BMesh
         bm_orig.free()
-        
-        # Update indices
         bm_new.verts.index_update()
         bm_new.edges.index_update()
         bm_new.faces.index_update()
-        
-        # Update the mesh
         bm_new.to_mesh(obj.data)
         bm_new.free()
-        
         self.log_msg(f"Rebuilt mesh with {triangle_count} separate triangles")
         return {'FINISHED'}
 
@@ -348,21 +344,37 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         
         # Create new objects for each quadrant
         created_objects = []
+        # Retrieve original world matrix if present
+        orig_matrix = None
+        orig_materials = None
+        orig_face_material_indices = None
+        if "_zenv_original_world_matrix" in obj:
+            om = obj["_zenv_original_world_matrix"]
+            orig_matrix = Matrix([Vector(row) for row in om])
+        if "_zenv_materials" in obj:
+            orig_materials = obj["_zenv_materials"]
+        if "_zenv_face_material_indices" in obj:
+            orig_face_material_indices = obj["_zenv_face_material_indices"]
+        orig_name = obj.name
         for quadrant, faces in quadrant_faces.items():
-            # Create new mesh and BMesh
-            new_mesh = bpy.data.meshes.new(name=f"quadrant_{quadrant[0]}_{quadrant[1]}")
+            quad_x, quad_y = quadrant
+            # Build base name
+            base_name = f"{orig_name}_uv_split_{quad_x}_{quad_y}"
+            mesh_name = base_name
+            obj_name = base_name
+            # Ensure mesh name is unique
+            suffix = 1
+            while mesh_name in bpy.data.meshes or obj_name in bpy.data.objects:
+                mesh_name = f"{base_name}_{suffix}"
+                obj_name = f"{base_name}_{suffix}"
+                suffix += 1
+            new_mesh = bpy.data.meshes.new(name=mesh_name)
             new_bm = bmesh.new()
-            
-            # Create vertex layer for original positions
             new_pos_layer = new_bm.verts.layers.float_vector.new("original_position")
             new_uv_layer = new_bm.loops.layers.uv.verify()
-            
-            # Create vertex map for copying
             vert_map = {}
-            
-            # Copy faces and their vertices
+            face_map = []
             for face in faces:
-                # Create vertices if they don't exist
                 new_verts = []
                 for vert in face.verts:
                     if vert not in vert_map:
@@ -370,26 +382,35 @@ class ZENV_OT_SplitUVQuadrant(Operator):
                         new_vert[new_pos_layer] = vert[pos_layer]
                         vert_map[vert] = new_vert
                     new_verts.append(vert_map[vert])
-                
-                # Create face
                 new_face = new_bm.faces.new(new_verts)
-                
-                # Copy UV coordinates
                 for loop, new_loop in zip(face.loops, new_face.loops):
                     new_loop[new_uv_layer].uv = loop[uv_layer].uv
-            
-            # Finalize the new mesh
+                face_map.append((new_face, face.index))
             new_bm.to_mesh(new_mesh)
             new_bm.free()
-            
-            # Create new object
-            new_obj = bpy.data.objects.new(name=f"quadrant_{quadrant[0]}_{quadrant[1]}", object_data=new_mesh)
+            # Assign original materials to the new mesh
+            if orig_materials:
+                new_mesh.materials.clear()
+                for mat_name in orig_materials:
+                    if mat_name and mat_name in bpy.data.materials:
+                        new_mesh.materials.append(bpy.data.materials[mat_name])
+                    else:
+                        new_mesh.materials.append(None)
+            # Restore material indices for faces
+            if orig_face_material_indices:
+                for new_face, old_face_index in zip(new_mesh.polygons, range(len(faces))):
+                    if old_face_index < len(orig_face_material_indices):
+                        new_mesh.polygons[new_face.index].material_index = orig_face_material_indices[old_face_index]
+            new_obj = bpy.data.objects.new(name=obj_name, object_data=new_mesh)
             bpy.context.scene.collection.objects.link(new_obj)
+            # Restore original world matrix if available
+            if orig_matrix:
+                new_obj.matrix_world = orig_matrix.copy()
             new_obj.select_set(True)
             created_objects.append(new_obj)
-        
-        # Clean up original object
-        bpy.context.scene.collection.objects.unlink(obj)
+        # Remove the original object from all collections and Blender data
+        for coll in obj.users_collection:
+            coll.objects.unlink(obj)
         bpy.data.objects.remove(obj)
         bm.free()
         
@@ -425,9 +446,11 @@ class ZENV_OT_SplitUVQuadrant(Operator):
             
             # Transform vertices back to original positions
             for vert in bm.verts:
-                if pos_layer in vert:
+                try:
                     orig_pos = vert[pos_layer]
                     vert.co = Vector(orig_pos)
+                except (KeyError, IndexError, TypeError):
+                    continue
             
             # Update the mesh
             bm.to_mesh(obj.data)
@@ -438,81 +461,46 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         return {'FINISHED'}
 
     def phase_4_merge_by_distance(self, context):
-        """Merge vertices and UVs at very small distances to reconstruct the meshes"""
-        self.log_msg("=== PHASE 4: Merging Vertices and UVs ===")
-        
-        total_weld_count = 0
+        """(DISABLED) Merge vertices and UVs at very small distances to reconstruct the meshes (no-op as per user request)"""
+        self.log_msg("=== PHASE 4: Merging Vertices and UVs (DISABLED) ===")
+        # No operation performed to avoid collapsing meshes
+        return {'FINISHED'}
+
+    def phase_5_move_uvs_to_01(self, context):
+        """Offset each mesh's UVs so their original tile/quadrant is mapped to 0-1, preserving texture mapping."""
+        self.log_msg("=== PHASE 5: Move UVs to 0-1 Space (per tile offset)===" )
         for obj in context.selected_objects:
             if obj.type != 'MESH':
                 continue
-
+            mesh = obj.data
             bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            
+            bm.from_mesh(mesh)
             if not bm.loops.layers.uv:
-                self.log_msg(f"No UV layers found in {obj.name}. Skipping.")
                 bm.free()
                 continue
-
             uv_layer = bm.loops.layers.uv.verify()
-            
-            # Use very small merge distances
-            MERGE_DISTANCE = 0.00001  # For vertex positions
-            UV_GRID_SIZE = 0.000001   # For UV coordinate binning
-            
-            # First, create a map of vertices by their UV coordinates
-            uv_vert_map = {}
+            # Find min UV
+            min_uv = [float('inf'), float('inf')]
             for face in bm.faces:
                 for loop in face.loops:
                     uv = loop[uv_layer].uv
-                    vert = loop.vert
-                    key = (round(uv.x / UV_GRID_SIZE), round(uv.y / UV_GRID_SIZE))
-                    
-                    if key not in uv_vert_map:
-                        uv_vert_map[key] = []
-                    uv_vert_map[key].append((vert, uv.copy()))
-
-            # Merge vertices that share the same UV coordinates (within merge distance)
-            weld_count = 0
-            for verts_and_uvs in uv_vert_map.values():
-                if len(verts_and_uvs) > 1:
-                    # Keep the first vertex as target
-                    target_vert = verts_and_uvs[0][0]
-                    target_uv = verts_and_uvs[0][1]
-                    
-                    # Collect vertices to merge
-                    verts_to_merge = []
-                    for other_vert, other_uv in verts_and_uvs[1:]:
-                        if (target_vert.co - other_vert.co).length <= MERGE_DISTANCE:
-                            verts_to_merge.append(other_vert)
-                    
-                    if verts_to_merge:
-                        # Use BMesh weld operator to merge vertices
-                        bmesh.ops.weld_verts(bm, targetmap={v: target_vert for v in verts_to_merge})
-                        weld_count += len(verts_to_merge)
-                        
-                        # Update UV coordinates for the merged vertices' faces
-                        for face in target_vert.link_faces:
-                            for loop in face.loops:
-                                if loop.vert == target_vert:
-                                    loop[uv_layer].uv = target_uv
-
-            # Update mesh indices
-            bm.verts.index_update()
-            bm.edges.index_update()
-            bm.faces.index_update()
-            
-            # Remove doubles to clean up the mesh
-            bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=MERGE_DISTANCE)
-            
-            # Update the mesh
-            bm.to_mesh(obj.data)
-            obj.data.update()
+                    min_uv[0] = min(min_uv[0], uv.x)
+                    min_uv[1] = min(min_uv[1], uv.y)
+            # Only proceed if we found any valid UVs
+            if min_uv[0] == float('inf') or min_uv[1] == float('inf'):
+                self.log_msg(f"Skipping {obj.name}: no valid UVs found.")
+                bm.free()
+                continue
+            # Compute integer tile offset
+            tile_offset = (math.floor(min_uv[0]), math.floor(min_uv[1]))
+            # Offset all UVs by -tile_offset
+            for face in bm.faces:
+                for loop in face.loops:
+                    loop[uv_layer].uv -= Vector(tile_offset)
+            bm.to_mesh(mesh)
+            mesh.update()
             bm.free()
-            
-            total_weld_count += weld_count
-        
-        self.log_msg(f"Merged {total_weld_count} vertices across all objects")
+        self.log_msg("Offset all UVs by their tile, now in 0-1 space and texture mapping preserved")
         return {'FINISHED'}
 
     def execute(self, context):
@@ -546,7 +534,7 @@ class ZENV_OT_SplitUVQuadrant(Operator):
                     return result
 
             if props.do_phase_4:
-                result = self.phase_4_merge_by_distance(context)
+                result = self.phase_5_move_uvs_to_01(context)
                 if result != {'FINISHED'}:
                     return result
 
@@ -555,8 +543,11 @@ class ZENV_OT_SplitUVQuadrant(Operator):
             
         except Exception as e:
             self.report({'ERROR'}, f"Error processing mesh: {str(e)}")
-            if obj.mode != 'OBJECT':
-                bpy.ops.object.mode_set(mode='OBJECT')
+            try:
+                if obj and hasattr(obj, 'mode') and obj.mode != 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+            except Exception:
+                pass
             return {'CANCELLED'}
 
 class ZENV_PT_SplitUVQuadrant(Panel):
@@ -567,7 +558,7 @@ class ZENV_PT_SplitUVQuadrant(Panel):
     - UV space transformation
     - Quadrant splitting
     - 3D space transformation
-    - Vertex merging and mesh reconstruction
+    - Move UVs to 0-1 space
     """
     bl_label = "MESH Split UV Quadrants"
     bl_idname = "ZENV_PT_SplitUVQuadrant"
@@ -580,11 +571,11 @@ class ZENV_PT_SplitUVQuadrant(Panel):
         props = context.scene.zenv_split_uv_props
         
         col = layout.column(align=True)
-        col.prop(props, "do_phase_0")
-        col.prop(props, "do_phase_1")
-        col.prop(props, "do_phase_2")
-        col.prop(props, "do_phase_3")
-        col.prop(props, "do_phase_4")
+        col.prop(props, "do_phase_0", text="Phase 0: Prepare Mesh")
+        col.prop(props, "do_phase_1", text="Phase 1: To UV Space")
+        col.prop(props, "do_phase_2", text="Phase 2: Split Quadrants")
+        col.prop(props, "do_phase_3", text="Phase 3: To 3D Space")
+        col.prop(props, "do_phase_4", text="Phase 4: UVs to 0-1")
         
         box = layout.box()
         box.prop(props, "quadrant_size")
