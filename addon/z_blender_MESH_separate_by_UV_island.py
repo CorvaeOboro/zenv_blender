@@ -16,7 +16,7 @@ import bpy
 import bmesh
 from mathutils import Vector
 
-class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
+class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
     """Separate the mesh by UV islands - splits mesh into individual objects based on UV borders"""
     bl_idname = "zenv.separatebyuv_islands"
     bl_label = "Separate by UV Islands"
@@ -84,7 +84,7 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
         return islands
 
     def duplicate_island(self, context, obj, island_faces, uv_layer):
-        """Create a new object from the given UV island"""
+        """Create a new object from the given UV island, merging very close UVs first"""
         # Create new mesh and bmesh
         new_mesh = bpy.data.meshes.new(name=f"{obj.name}_island")
         new_bm = bmesh.new()
@@ -115,6 +115,25 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
                     new_face.loops[i][new_uv_layer].uv = loop[uv_layer].uv
             except ValueError as e:
                 continue  # Skip faces that can't be created (e.g., duplicate faces)
+        
+        # --- Merge very close UVs ---
+        # This step welds UVs that are nearly coincident (within a tiny threshold)
+        uv_merge_threshold = 1e-5
+        uv_verts = []
+        for v in new_bm.verts:
+            for loop in v.link_loops:
+                uv_verts.append(loop[new_uv_layer].uv)
+        # Simple O(N^2) merge for small islands
+        merged = set()
+        for i in range(len(uv_verts)):
+            if i in merged:
+                continue
+            for j in range(i+1, len(uv_verts)):
+                if j in merged:
+                    continue
+                if (uv_verts[i] - uv_verts[j]).length < uv_merge_threshold:
+                    uv_verts[j][:] = uv_verts[i][:]
+                    merged.add(j)
         
         # Create new object
         new_bm.to_mesh(new_mesh)
@@ -196,9 +215,9 @@ class ZENV_OT_SeparateByUV_Islands(bpy.types.Operator):
             self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
             return {'CANCELLED'}
 
-class ZENV_PT_SeparateByUV_Panel(bpy.types.Panel):
+class ZENV_PT_MeshSeparateByUVIsland_Panel(bpy.types.Panel):
     """Panel for UV island separation tools"""
-    bl_label = "MESH Separate by UV"
+    bl_label = "MESH Separate by UV Islands"
     bl_idname = "ZENV_PT_separate_by_uv"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -209,8 +228,8 @@ class ZENV_PT_SeparateByUV_Panel(bpy.types.Panel):
         layout.operator("zenv.separatebyuv_islands", icon='OUTLINER_OB_MESH')
 
 classes = (
-    ZENV_OT_SeparateByUV_Islands,
-    ZENV_PT_SeparateByUV_Panel,
+    ZENV_OT_MeshSeparateByUVIsland,
+    ZENV_PT_MeshSeparateByUVIsland_Panel,
 )
 
 def register():

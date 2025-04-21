@@ -1,15 +1,17 @@
 """
-Split Mesh by UV Quadrants
-Splits mesh into separate objects based on UV space quadrants
+Separate Mesh by UV Quadrants
+the selected mesh is sliced and separated into objects based on UV space quadrants
+stores original positions , transforms the mesh to UV space to slice
+then transforms back to original positions and localizes UV to zero to one space
 """
 
 bl_info = {
-    "name": "MESH Split by UV Quadrants",
+    "name": "MESH Separate by UV Quadrants",
     "author": "CorvaeOboro",
-    "version": (1, 1),
+    "version": (1, 3),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > ZENV",
-    "description": "Split mesh into separate objects based on UV space quadrants",
+    "description": "Separate mesh into sliced objects based on UV space quadrants",
     "doc_url": "",
     "category": "ZENV",
 }
@@ -20,7 +22,7 @@ from mathutils import Vector, Matrix
 from bpy.types import Panel, Operator, PropertyGroup
 import math
 
-class ZENV_PG_SplitUVQuadrant(PropertyGroup):
+class ZENV_PG_MeshSeparateByUVQuadrant_Properties(PropertyGroup):
     do_phase_0: bpy.props.BoolProperty(
         name="Phase 0: Prepare Mesh",
         default=True,
@@ -32,19 +34,19 @@ class ZENV_PG_SplitUVQuadrant(PropertyGroup):
         description="Transform mesh to UV space coordinates"
     )
     do_phase_2: bpy.props.BoolProperty(
-        name="Phase 2: Split Quadrants",
+        name="Phase 2: Separate Quadrants",
         default=True,
-        description="Split mesh into separate objects based on UV quadrants"
+        description="Separate mesh into separate objects based on UV quadrants"
     )
     do_phase_3: bpy.props.BoolProperty(
         name="Phase 3: To 3D Space",
         default=True,
-        description="Transform split meshes back to original 3D space"
+        description="Transform separated meshes back to original 3D space"
     )
     do_phase_4: bpy.props.BoolProperty(
         name="Phase 4: UVs to 0-1",
         default=True,
-        description="Move all UVs of split meshes so their bounding box fits in 0-1 space, without scaling."
+        description="Move all UVs of separated meshes so their bounding box fits in 0-1 space, without scaling."
     )
     quadrant_size: bpy.props.FloatProperty(
         name="Quadrant Size",
@@ -55,17 +57,17 @@ class ZENV_PG_SplitUVQuadrant(PropertyGroup):
         step=1
     )
 
-class ZENV_OT_SplitUVQuadrant(Operator):
-    """Split mesh into separate objects based on UV quadrants.
+class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
+    """Separate mesh into separate objects based on UV quadrants.
     
     This operator performs a multi-phase process:
     1. Prepares mesh by triangulating and separating vertices
     2. Transforms mesh to UV space coordinates
-    3. Splits mesh into separate objects based on UV quadrants
-    4. Transforms split meshes back to original 3D space
+    3. Separates mesh into separate objects based on UV quadrants
+    4. Transforms separated meshes back to original 3D space
     """
     bl_idname = "zenv.split_uv_quadrant"
-    bl_label = "Split UV Quadrants"
+    bl_label = "Separate UV Quadrants"
     bl_options = {'REGISTER', 'UNDO'}
     
     def log_msg(self, message):
@@ -211,9 +213,9 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         
         return result['geom_cut']
 
-    def phase_2_split_quadrants(self, obj):
-        """Split mesh into separate objects based on UV quadrants"""
-        self.log_msg("=== PHASE 2: Split UV Quadrants ===")
+    def phase_2_separate_quadrants(self, obj):
+        """Separate mesh into separate objects based on UV quadrants"""
+        self.log_msg("=== PHASE 2: Separate UV Quadrants ===")
         
         if obj.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
@@ -359,7 +361,7 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         for quadrant, faces in quadrant_faces.items():
             quad_x, quad_y = quadrant
             # Build base name
-            base_name = f"{orig_name}_uv_split_{quad_x}_{quad_y}"
+            base_name = f"{orig_name}_uv_{quad_x}_{quad_y}"
             mesh_name = base_name
             obj_name = base_name
             # Ensure mesh name is unique
@@ -418,11 +420,11 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         if created_objects:
             bpy.context.view_layer.objects.active = created_objects[0]
         
-        self.log_msg(f"Split into {len(created_objects)} quadrants")
+        self.log_msg(f"Separated into {len(created_objects)} quadrants")
         return {'FINISHED'}
 
     def phase_3_to_3d_space(self, context):
-        """Transform split objects back to 3D space using original positions"""
+        """Transform separated objects back to 3D space using original positions"""
         self.log_msg("=== PHASE 3: Transform to 3D Space ===")
         
         # Process all selected objects (the quadrants)
@@ -466,7 +468,7 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         # No operation performed to avoid collapsing meshes
         return {'FINISHED'}
 
-    def phase_5_move_uvs_to_01(self, context):
+    def phase_4_move_uvs_to_01(self, context):
         """Offset each mesh's UVs so their original tile/quadrant is mapped to 0-1, preserving texture mapping."""
         self.log_msg("=== PHASE 5: Move UVs to 0-1 Space (per tile offset)===" )
         for obj in context.selected_objects:
@@ -504,7 +506,7 @@ class ZENV_OT_SplitUVQuadrant(Operator):
         return {'FINISHED'}
 
     def execute(self, context):
-        """Execute the UV quadrant splitting operation"""
+        """Execute the UV quadrant separating operation"""
         try:
             # Get the active object
             obj = context.active_object
@@ -524,7 +526,7 @@ class ZENV_OT_SplitUVQuadrant(Operator):
                     return result
 
             if props.do_phase_2:
-                result = self.phase_2_split_quadrants(obj)
+                result = self.phase_2_separate_quadrants(obj)
                 if result != {'FINISHED'}:
                     return result
 
@@ -534,11 +536,11 @@ class ZENV_OT_SplitUVQuadrant(Operator):
                     return result
 
             if props.do_phase_4:
-                result = self.phase_5_move_uvs_to_01(context)
+                result = self.phase_4_move_uvs_to_01(context)
                 if result != {'FINISHED'}:
                     return result
 
-            self.report({'INFO'}, "Successfully split mesh by UV quadrants")
+            self.report({'INFO'}, "Successfully separated mesh by UV quadrants")
             return {'FINISHED'}
             
         except Exception as e:
@@ -550,18 +552,18 @@ class ZENV_OT_SplitUVQuadrant(Operator):
                 pass
             return {'CANCELLED'}
 
-class ZENV_PT_SplitUVQuadrant(Panel):
-    """Panel for controlling UV quadrant splitting operations.
+class ZENV_PT_MeshSeparateByUVQuadrant_Panel(Panel):
+    """Panel for controlling UV quadrant separating operations.
     
     Provides controls for:
     - Mesh preparation and vertex separation
     - UV space transformation
-    - Quadrant splitting
+    - Quadrant separation
     - 3D space transformation
     - Move UVs to 0-1 space
     """
-    bl_label = "MESH Split UV Quadrants"
-    bl_idname = "ZENV_PT_SplitUVQuadrant"
+    bl_label = "MESH Separate by UV Quadrants"
+    bl_idname = "ZENV_PT_MeshSeparateByUVQuadrant"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -571,11 +573,11 @@ class ZENV_PT_SplitUVQuadrant(Panel):
         props = context.scene.zenv_split_uv_props
         
         col = layout.column(align=True)
-        col.prop(props, "do_phase_0", text="Phase 0: Prepare Mesh")
-        col.prop(props, "do_phase_1", text="Phase 1: To UV Space")
-        col.prop(props, "do_phase_2", text="Phase 2: Split Quadrants")
-        col.prop(props, "do_phase_3", text="Phase 3: To 3D Space")
-        col.prop(props, "do_phase_4", text="Phase 4: UVs to 0-1")
+        col.prop(props, "do_phase_0", text="0: Prepare Mesh")
+        col.prop(props, "do_phase_1", text="1: To UV Space")
+        col.prop(props, "do_phase_2", text="2: Separate Quadrants")
+        col.prop(props, "do_phase_3", text="3: To 3D Space")
+        col.prop(props, "do_phase_4", text="4: UVs to 0-1")
         
         box = layout.box()
         box.prop(props, "quadrant_size")
@@ -584,15 +586,15 @@ class ZENV_PT_SplitUVQuadrant(Panel):
 
 # Registration
 classes = (
-    ZENV_PG_SplitUVQuadrant,
-    ZENV_OT_SplitUVQuadrant,
-    ZENV_PT_SplitUVQuadrant,
+    ZENV_PG_MeshSeparateByUVQuadrant_Properties,
+    ZENV_OT_MeshSeparateByUVQuadrant,
+    ZENV_PT_MeshSeparateByUVQuadrant_Panel,
 )
 
 def register():
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.zenv_split_uv_props = bpy.props.PointerProperty(type=ZENV_PG_SplitUVQuadrant)
+    bpy.types.Scene.zenv_split_uv_props = bpy.props.PointerProperty(type=ZENV_PG_MeshSeparateByUVQuadrant_Properties)
 
 def unregister():
     del bpy.types.Scene.zenv_split_uv_props

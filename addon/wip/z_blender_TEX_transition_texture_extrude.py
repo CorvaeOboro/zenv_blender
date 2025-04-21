@@ -3,7 +3,7 @@
 # baking onto the other as part of creating a seamless texture transition
 
 bl_info = {
-    "name": "TEX Transition Texture",
+    "name": "TEX Transition Texture Extrude",
     "category": "ZENV",
     "author": "CorvaeOboro",
     "version": (1, 1),
