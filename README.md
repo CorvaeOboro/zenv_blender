@@ -18,13 +18,14 @@ each addon is a self contained python file , to be installed and enabled individ
 
 ## MESH
 - [separate_by_material](addon/z_blender_MESH_separate_by_material.py) - for each material detach mesh into parts 
-- [separate_by_UV](addon/z_blender_MESH_separate_by_UV.py) - for each uv island detach mesh into parts
-- [split_by_uv_quadrant](addon/z_blender_MESH_split_by_uv_quadrant.py) - split mesh along UV seams and transform
+- [separate_by_UV_island](addon/z_blender_MESH_separate_by_UV_island.py) - for each uv island detach mesh into parts
+- [separate_by_uv_quadrant](addon/z_blender_MESH_separate_by_uv_quadrant.py) - split mesh along UV seams and transform
 - [separate_by_axis](addon/z_blender_MESH_separate_by_axis.py) - separate mesh parts by axis
 - [rename_objects_by_material](addon/z_blender_MESH_rename_objects_by_material.py) - rename objects by material name
 - [noise_displace](addon/z_blender_MESH_noise_displace.py) - 3D noise-based surface displacement with presets
 - [cut_world_bricker](addon/z_blender_MESH_cut_world_bricker.py) - Cut mesh into brick like segments
 - [to_UV_space](addon/z_blender_MESH_to_UV_space.py) - transform mesh to match UV layout in 3D space
+- [angular_planarize](addon/z_blender_MESH_angular_planarize.py) - planarize mesh faces by random k-means angle cluster , useful for rock like sharpening with flat areas 
 - [wood_grain](addon/z_blender_MESH_wood_grain.py) - generate wood grain patterns on mesh
 
 ## GENERATIVE
@@ -41,9 +42,14 @@ each addon is a self contained python file , to be installed and enabled individ
 - [create_from_textures](addon/z_blender_MAT_create_from_textures.py) - create materials from texture folder
 - [unlit_convert](addon/z_blender_MAT_unlit_convert.py) - convert all materials to emission for unlit render
 - [remap_textures](addon/z_blender_MAT_remap_textures.py) - remap texture paths in materials
+- [set_textures_by_material_name](addon/z_blender_MAT_set_textures_by_material_name.py) - assign textures based on material names
 
 ## EXPORT
-- [export_objects_blend](addon/z_blender_EXPORT_export_objects_blend.py) - batch export selected objects to separate blend files
+- [export_all_objects_to_separate_blend](addon/z_blender_EXPORT_all_objects_to_separate_blend.py) - batch export selected objects to separate blend files
+- [export_all_objects_to_separate_fbx](addon/z_blender_EXPORT_all_objects_to_separate_fbx.py) - batch export selected objects to separate FBX files
+
+## ITEM
+- [potion](addon/z_blender_ITEM_potion.py) - generate potion bottle mesh and material
 
 ## VIEW 
 - [view_flat_color_texture](addon/z_blender_VIEW_view_flat_color_texture.py) - quickview flat color texture , unlit viewmode
@@ -53,15 +59,15 @@ each addon is a self contained python file , to be installed and enabled individ
 - [uv_mirror_zero_pivot](addon/z_blender_UV_uv_mirror_zero_pivot.py) - U or V mirroring with pivot always at zero instead of the default of selected center
 
 ## RENDER
-- [color](addon/z_blender_RENDER_color.py) - render color and depth passes
-- [depth](addon/z_blender_RENDER_depth.py) - render depth passes
+- [color](addon/z_blender_RENDER_color.py) - quick renders color unlit image with datetime suffix
+- [depth](addon/z_blender_RENDER_depth.py) - renders depth with auto min max from selected object with datetime suffix
 
 ## CLEAN
-- [scene_optimizer](addon/z_blender_CLEAN_scene_optimizer.py) - optimize scene by removing unused data and cleaning up scene structure
+- [scene_optimizer](addon/z_blender_CLEAN_scene_optimizer.py) - optimize removing unused material , textures , and mesh data
 
 # EXAMPLE WORKFLOWS
 - DIFFUSION CAMERA PROJECTION TEXTURING = [texture_proj_cam](addon/z_blender_TEX_texture_proj_cam.py) creates a square camera from view > [render_color_and_depth](addon/z_blender_RENDER_color_and_depth.py) renders color and depth images > img2img diffusion ( stable diffuson ) > [texture_proj_cam](addon/z_blender_TEX_texture_proj_cam.py) bakes texture projection from camera
 - ZONE MESH SEPARATION = import mesh > consolidate materials > separate mesh by material > rename meshes by material name > rename materials with _MI suffix > export all to blends
 
 # LICENSE
-- free to all , [creative commons CC0](https://creativecommons.org/publicdomain/zero/1.0/) , free to re-distribute , attribution not required
+- free to all , [creative commons CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) , free to re-distribute , attribution not required

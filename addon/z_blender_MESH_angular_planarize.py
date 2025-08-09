@@ -35,7 +35,7 @@ logger.setLevel(logging.DEBUG)
 #    Property Group
 # ------------------------------------------------------------------------
 
-class ZENV_PG_AngularPlanarizeProps(PropertyGroup):
+class ZENV_PG_MeshAngularPlanarize_Props(PropertyGroup):
     """Properties for angular planarization"""
     
     cluster_count: IntProperty(
@@ -71,7 +71,7 @@ class ZENV_PG_AngularPlanarizeProps(PropertyGroup):
 #    Planarization Utility Functions
 # ------------------------------------------------------------------------
 
-class ZENV_AngularPlanarizeUtils:
+class ZENV_MeshAngularPlanarizeUtils:
     """Utility functions for mesh planarization and clustering"""
     
     @staticmethod
@@ -88,7 +88,7 @@ class ZENV_AngularPlanarizeUtils:
         for _ in range(k - 1):
             # Calculate distances from points to nearest centroid
             distances = np.array([
-                min([ZENV_AngularPlanarizeUtils._euclidean_distance(x, c) for c in centroids])
+                min([ZENV_MeshAngularPlanarizeUtils._euclidean_distance(x, c) for c in centroids])
                 for x in data
             ])
             
@@ -108,7 +108,7 @@ class ZENV_AngularPlanarizeUtils:
     @staticmethod
     def _assign_clusters(data, centroids):
         """Assign each point to nearest centroid"""
-        distances = np.array([[ZENV_AngularPlanarizeUtils._euclidean_distance(x, c) for c in centroids] for x in data])
+        distances = np.array([[ZENV_MeshAngularPlanarizeUtils._euclidean_distance(x, c) for c in centroids] for x in data])
         return np.argmin(distances, axis=1)
 
     @staticmethod
@@ -137,16 +137,16 @@ class ZENV_AngularPlanarizeUtils:
             labels: cluster assignments for each point
         """
         # Initialize centroids using k-means++
-        centroids = ZENV_AngularPlanarizeUtils._init_centroids(normals, cluster_count)
+        centroids = ZENV_MeshAngularPlanarizeUtils._init_centroids(normals, cluster_count)
         
         for _ in range(max_iter):
             old_centroids = centroids.copy()
             
             # Assign points to nearest centroid
-            labels = ZENV_AngularPlanarizeUtils._assign_clusters(normals, centroids)
+            labels = ZENV_MeshAngularPlanarizeUtils._assign_clusters(normals, centroids)
             
             # Update centroids
-            centroids = ZENV_AngularPlanarizeUtils._update_centroids(normals, labels, cluster_count)
+            centroids = ZENV_MeshAngularPlanarizeUtils._update_centroids(normals, labels, cluster_count)
             
             # Check for convergence
             if np.all(np.abs(old_centroids - centroids) < tol):
@@ -189,7 +189,7 @@ class ZENV_AngularPlanarizeUtils:
 #    Main Operator
 # ------------------------------------------------------------------------
 
-class ZENV_OT_AngularPlanarize(Operator):
+class ZENV_OT_MeshAngularPlanarize(Operator):
     """Convert smooth mesh into angular form using normal-based clustering"""
     bl_idname = "zenv.angular_planarize"
     bl_label = "Apply Angular Planarize"
@@ -213,7 +213,7 @@ class ZENV_OT_AngularPlanarize(Operator):
         positions = np.array([v.co[:] for v in bm.verts])
         
         # Perform clustering
-        clusters = ZENV_AngularPlanarizeUtils.compute_clusters(
+        clusters = ZENV_MeshAngularPlanarizeUtils.compute_clusters(
             normals, 
             props.cluster_count
         )
@@ -225,7 +225,7 @@ class ZENV_OT_AngularPlanarize(Operator):
                 continue
             
             # Get cluster data
-            avg_normal, centroid = ZENV_AngularPlanarizeUtils.get_cluster_data(
+            avg_normal, centroid = ZENV_MeshAngularPlanarizeUtils.get_cluster_data(
                 positions, normals, cluster_id, cluster_mask
             )
             
@@ -242,7 +242,7 @@ class ZENV_OT_AngularPlanarize(Operator):
         
         # Optional boundary smoothing
         if props.smooth_boundaries:
-            ZENV_AngularPlanarizeUtils.smooth_boundaries(bm, clusters, 0.3)
+            ZENV_MeshAngularPlanarizeUtils.smooth_boundaries(bm, clusters, 0.3)
         
         # Update mesh
         bm.to_mesh(obj.data)
@@ -256,7 +256,7 @@ class ZENV_OT_AngularPlanarize(Operator):
 #    Panel
 # ------------------------------------------------------------------------
 
-class ZENV_PT_AngularPlanarizePanel(Panel):
+class ZENV_PT_MeshAngularPlanarize_Panel(Panel):
     """Panel for angular planarize settings"""
     bl_label = "MESH Angular Planarize"
     bl_idname = "ZENV_PT_angular_planarize_panel"
@@ -274,7 +274,7 @@ class ZENV_PT_AngularPlanarizePanel(Panel):
         layout.prop(props, "smooth_boundaries")
         
         layout.separator()
-        layout.operator(ZENV_OT_AngularPlanarize.bl_idname)
+        layout.operator(ZENV_OT_MeshAngularPlanarize.bl_idname)
 
 
 # ------------------------------------------------------------------------
@@ -282,19 +282,19 @@ class ZENV_PT_AngularPlanarizePanel(Panel):
 # ------------------------------------------------------------------------
 
 classes = (
-    ZENV_PG_AngularPlanarizeProps,
-    ZENV_OT_AngularPlanarize,
-    ZENV_PT_AngularPlanarizePanel,
+    ZENV_PG_MeshAngularPlanarize_Props,
+    ZENV_OT_MeshAngularPlanarize,
+    ZENV_PT_MeshAngularPlanarize_Panel,
 )
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.angular_planarize_props = PointerProperty(type=ZENV_PG_AngularPlanarizeProps)
+    for current_class_to_register in classes:
+        bpy.utils.register_class(current_class_to_register)
+    bpy.types.Scene.angular_planarize_props = PointerProperty(type=ZENV_PG_MeshAngularPlanarize_Props)
 
 def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    for current_class_to_unregister in reversed(classes):
+        bpy.utils.unregister_class(current_class_to_unregister)
     del bpy.types.Scene.angular_planarize_props
 
 if __name__ == "__main__":
