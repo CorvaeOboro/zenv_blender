@@ -1,19 +1,25 @@
-"""
+bl_info = {
+    "name": 'MESH Separate by UV Quadrants',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250809',
+    "description": 'Separate mesh into sliced objects based on UV space quadrants',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '3',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "tags": ['UV split'],
+    "description_short": 'split mesh along UV seams and transform',
+    "description_medium": 'Separate mesh into sliced objects based on UV space quadrants , useful to cut a tiling landscape texture into its texture "tiles" for painting or transition baking',
+    "description_long": """
 Separate Mesh by UV Quadrants
 the selected mesh is sliced and separated into objects based on UV space quadrants
 stores original positions , transforms the mesh to UV space to slice
 then transforms back to original positions and localizes UV to zero to one space
-"""
-
-bl_info = {
-    "name": "MESH Separate by UV Quadrants",
-    "author": "CorvaeOboro",
-    "version": (1, 3),
-    "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV",
-    "description": "Separate mesh into sliced objects based on UV space quadrants",
-    "doc_url": "",
-    "category": "ZENV",
+""",
+    "location": 'View3D > Sidebar > ZENV',
+    "doc_url": '',
 }
 
 import bpy

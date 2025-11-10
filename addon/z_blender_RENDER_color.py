@@ -1,14 +1,20 @@
-# RENDER Unlit Color
-# render unlit basecolor images from camera 
-
 bl_info = {
-    "name": "RENDER Unlit Color",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'RENDER Unlit Color',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Renders unlit texture images with datetime suffix",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Renders unlit texture images with datetime suffix',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Render',
+    "group_prefix": 'RENDER',
+    "description_short": 'quick renders color unlit image with datetime suffix',
+    "description_long": """
+RENDER Unlit Color
+ render unlit basecolor images from camera
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

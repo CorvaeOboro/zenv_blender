@@ -1,15 +1,19 @@
-# VFX SLASH GENERATOR
-# generates a parabola mesh for vfx slash effects
-# useful for game vfx
-
 bl_info = {
-    "name": "GEN VFX Slash",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN VFX Slash',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Parabola Slash Mesh Generator"
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Parabola Slash Mesh Generator',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "description_long": """
+VFX SLASH GENERATOR
+generates a parabola mesh for vfx slash effects
+useful for game vfx
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

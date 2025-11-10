@@ -1,15 +1,21 @@
-# VIEW Scale Clipping
-# adjusts viewport clipping and view settings based on object size
-
 bl_info = {
-    "name": "VIEW Scale Clipping",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 1),
+    "name": 'VIEW Scale Clipping',
     "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV > VIEW Scale Clipping",
-    "description": "Adjust viewport clipping based on object size"
-}  
+    "category": 'ZENV',
+    "version": '20250403',
+    "description": 'Adjust viewport clipping based on object size',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '2',
+    "group": 'View',
+    "group_prefix": 'VIEW',
+    "description_short": 'uses bounds of objects in scene to set near and far clipping',
+    "description_long": """
+VIEW Scale Clipping
+ adjusts viewport clipping and view settings based on object size
+""",
+    "location": 'View3D > Sidebar > ZENV > VIEW Scale Clipping',
+}
 
 import bpy
 import bmesh

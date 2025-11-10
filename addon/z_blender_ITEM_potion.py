@@ -1,15 +1,19 @@
-# POTION GENERATOR
-# generates procedural potion bottles with modular components
-# useful for creating fantasy potions with various decorative elements
-
 bl_info = {
-    "name": "GEN Potion Generator",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Potion Generator',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Generate procedural potion bottles with modular components",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Generate procedural potion bottles with modular components',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "description_long": """
+POTION GENERATOR
+- generates procedural potion bottles with modular components
+- useful for creating fantasy potions with various decorative elements
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

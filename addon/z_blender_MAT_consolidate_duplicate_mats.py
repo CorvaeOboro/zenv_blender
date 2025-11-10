@@ -1,16 +1,22 @@
-# MATERIAL CONSOLIDATE BY TEXTURE
-# consolidates materials based on base color texture
-# useful for cleaning up duplicate materials
-
 bl_info = {
-    "name": "MAT Consolidate Materials by Texture",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MAT Consolidate Materials by Texture',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Consolidates materials based on base color texture",
-}   
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Consolidates materials based on base color texture',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '33',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'reduce to one material per texture',
+    "description_long": """
+MATERIAL CONSOLIDATE BY TEXTURE
+ consolidates materials based on base color texture
+useful for cleaning up duplicate materials
+""",
+    "location": 'View3D > ZENV',
+}
 
 import bpy
 

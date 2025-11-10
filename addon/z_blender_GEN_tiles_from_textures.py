@@ -1,4 +1,16 @@
-"""
+bl_info = {
+    "name": 'GEN random Tiles by Textures',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Create a grid of planes with random textures',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "description_short": 'generate random tiles from texture set for tiling and seam blending review',
+    "description_long": """
 Generate Random Tiles from Textures - A Blender addon for texture visualization.
 
 This addon creates a grid of planes with randomly assigned textures from a
@@ -6,16 +18,11 @@ selected folder. It's particularly useful for:
 - Reviewing texture seams in a texture set
 - Visualizing texture variations
 - Testing material setups with different textures
-"""
 
-bl_info = {
-    "name": "GEN random Tiles by Textures",
-    "author": "CorvaeOboro",
-    "version": (1, 2),
-    "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Create a grid of planes with random textures",
-    "category": "ZENV",
+consider rotation toggle and offset , the initial conditions of the texture tiles being laid out may have different system 
+in isometric game likely the textures arent being rotated , but perhaps mirrored ? each of such transforms influences the texture's macro pattern for example a rotated set couldnt have a global diagonal direction lighting
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

@@ -1,21 +1,25 @@
-"""
+bl_info = {
+    "name": 'EXPORT All Objects to FBX Files for UE4',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Save each object in the scene to its own FBX file with UE4-optimized settings',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '2',
+    "group": 'Export',
+    "group_prefix": 'EXPORT',
+    "description_short": 'batch export selected objects to separate FBX files',
+    "description_long": """
 EXPORT Objects to FBX Files 
 batch export each object in the current scene to its own separate .fbx file. 
 This is useful for:
 - Creating individual assets for game engines like Unreal Engine
 - Preparing objects for use in other 3D applications
 - Exporting models with proper scale and orientation for external use
-"""
-
-bl_info = {
-    "name": "EXPORT All Objects to FBX Files for UE4",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (4, 0, 0),
-    "location": "File > Export > All Objects to FBX Files",
-    "description": "Save each object in the scene to its own FBX file with UE4-optimized settings",
-}   
+""",
+    "location": 'File > Export > All Objects to FBX Files',
+}
 
 import bpy
 import os

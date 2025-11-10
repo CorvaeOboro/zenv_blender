@@ -1,15 +1,21 @@
-# MESH SEPARATE BY UV
-# separates mesh into individual objects based on UV islands
-# useful for splitting objects that share UV space into separate objects
-
 bl_info = {
-    "name": "MESH Separate by UV Islands",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 7),
+    "name": 'MESH Separate by UV Islands',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Separates mesh into individual objects based on UV islands",
+    "category": 'ZENV',
+    "version": '20250402',
+    "description": 'Separates mesh into individual objects based on UV islands',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '2',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": 'for each uv island detach mesh into parts',
+    "description_long": """
+MESH SEPARATE BY UV
+ separates mesh into individual objects based on UV islands
+ useful for splitting objects that share UV space into separate objects
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

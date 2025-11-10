@@ -1,14 +1,21 @@
-# MESH Cut World Bricker
-# Cut mesh by grid of world unit size, 1 per centimeter, similar to Bricker in Houdini.
-
 bl_info = {
-    "name": "MESH Cut World Bricker",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MESH Cut World Bricker',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Cut mesh by grid of world unit size, 1 per centimeter, similar to Bricker in Houdini",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Cut mesh by grid of world unit size, 1 per centimeter, similar to Bricker in Houdini',
+    "status": 'wip',
+    "approved": True,
+    "sort_priority": '75',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": 'Cut mesh into brick like segments',
+    "description_medium": 'Cut mesh by grid of world unit size, 1 per centimeter, similar to Bricker in Houdini',
+    "description_long": """
+MESH Cut World Bricker
+ Cut mesh by grid of world unit size, 1 per centimeter, similar to Bricker in Houdini.
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

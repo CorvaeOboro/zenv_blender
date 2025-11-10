@@ -1,21 +1,27 @@
-"""
+bl_info = {
+    "name": 'EXPORT All Objects to Separate Blend Files',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Save each object in the scene to its own blend file',
+
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Export',
+    "group_prefix": 'EXPORT',
+    "description_short": 'batch export selected objects to separate blend files',
+    "description_medium": 'batch export selected objects to separate blend files',
+    "description_long": """
 EXPORT Objects to Blend Files 
 batch export each object in the current scene to its own separate .blend file. 
 This is useful for:
 - Creating individual asset files from a collection of objects
 - Splitting large scenes into smaller, more manageable files
 - Preparing objects for use in other projects
-"""
-
-bl_info = {
-    "name": "EXPORT All Objects to Separate Blend Files",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (4, 0, 0),
-    "location": "File > Export > All Objects to Blend Files",
-    "description": "Save each object in the scene to its own blend file",
-}   
+""",
+    "location": 'File > Export > All Objects to Blend Files',
+}
 
 import bpy
 import os

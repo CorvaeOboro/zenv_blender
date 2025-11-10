@@ -1,17 +1,21 @@
-"""
+bl_info = {
+    "name": 'MESH Angular Planarize',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250809',
+    "description": 'Converts smooth meshes into angular forms using normal-based clustering',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '90',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": 'planarize mesh faces by random k-means angle cluster , useful for rock like sharpening with flat areas',
+    "description_long": """
 MESH Angular Planarize - Normal-based clustering approach
 Converts smooth meshes into angular forms using k-means clustering
 of vertex normals and planar displacement.
-"""
-
-bl_info = {
-    "name": "MESH Angular Planarize",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Converts smooth meshes into angular forms using normal-based clustering",
-    "category": "ZENV",
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

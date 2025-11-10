@@ -1,17 +1,20 @@
-"""
-MESH Noise Surface Displacement - A Blender addon for realistic surface effects.
-
-Applies world-space 3D noise patterns using bricker-style resolution.
-"""
-
 bl_info = {
-    "name": "MESH Noise Surface Displacement",
-    "author": "CorvaeOboro",
-    "version": (1, 2),
+    "name": 'MESH Noise Surface Displacement',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Apply world-space 3D noise patterns to mesh surfaces",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Apply world-space 3D noise patterns to mesh surfaces',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '70',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": '3D noise-based surface displacement with presets',
+    "description_long": """
+MESH Noise Surface Displacement - A Blender addon for realistic surface effects.
+Applies world-space 3D noise patterns using bricker-style resolution.
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

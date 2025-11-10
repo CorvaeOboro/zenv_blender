@@ -1,13 +1,16 @@
-# MATERIAL RENAME BY TEXTURE NAME
-
 bl_info = {
-    "name": "MAT Rename Material by Texture",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MAT Rename Material by Texture',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Rename and merge materials based on their base color texture names"
+    "category": 'ZENV',
+    "version": '20250213',
+    "description": 'Rename and merge materials based on their base color texture names',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '15',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'rename material by texture name',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

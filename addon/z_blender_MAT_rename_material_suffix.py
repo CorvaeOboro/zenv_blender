@@ -1,14 +1,20 @@
-# MATERIAL RENAME AFFIX
-# prefix and suffix addition or removal for material names
-
 bl_info = {
-    "name": "MAT Rename Material Suffix",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MAT Rename Material Suffix',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Add or remove customizable prefix and suffix to material names"
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Add or remove customizable prefix and suffix to material names',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '20',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'add or remove prefix or suffix on materials',
+    "description_long": """
+MATERIAL RENAME AFFIX
+ prefix and suffix addition or removal for material names
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

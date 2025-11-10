@@ -1,17 +1,21 @@
-"""
+bl_info = {
+    "name": 'MAT Remove Unused Materials',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250403',
+    "description": 'Remove unused materials and materials with no faces',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'remove unused materials',
+    "description_long": """
 MAT Remove Unused Materials - A Blender addon for cleaning up materials.
 1. Unassigns the materials from the objects material slotsthat are not used on faces.
 2. Removes materials from scene that are not assigned to any objects.
-"""
-
-bl_info = {
-    "name": "MAT Remove Unused Materials",
-    "author": "CorvaeOboro",
-    "version": (1, 2),
-    "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV > MAT Remove Unused Materials",
-    "description": "Remove unused materials and materials with no faces",
-    "category": "ZENV",
+""",
+    "location": 'View3D > Sidebar > ZENV > MAT Remove Unused Materials',
 }
 
 import bpy

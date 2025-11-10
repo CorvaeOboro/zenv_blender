@@ -1,15 +1,21 @@
-# VIEW FLAT TEXTURE MODE
-# unlit , color view , no outlines
-
 bl_info = {
-    "name": "VIEW Flat Texture View",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'VIEW Flat Texture View',
     "blender": (4, 0, 0),
-    "location": "3D View > Sidebar > ZENV",
-    "description": "Changes the viewport settings to flat color texture",
-}  
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Changes the viewport settings to flat color texture',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'View',
+    "group_prefix": 'VIEW',
+    "description_short": 'quickview flat color texture , unlit viewmode',
+    "description_long": """
+VIEW FLAT TEXTURE MODE
+ unlit , color view , no outlines
+""",
+    "location": '3D View > Sidebar > ZENV',
+}
 
 import bpy
 

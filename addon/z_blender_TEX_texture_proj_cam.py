@@ -1,15 +1,22 @@
-# TEXTURE PROJECTION FROM CAMERA
-# create camera from current view and project textures
-# bake textures using camera projection and visibility masks
-
 bl_info = {
-    "name": "TEX Camera Projection",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'TEX Camera Projection',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Create camera from current view and bake projected textures",
+    "category": 'ZENV',
+    "version": '20250119',
+    "description": 'Create camera from current view and bake projected textures',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Texture',
+    "group_prefix": 'TEX',
+    "description_short": 'Create camera from current view and bake projected textures',
+    "description_medium": 'texture projection from camera - creates square orthographic camera from current view , and the camera projects image onto mesh baking to texture . workflow similar to "quick edits" in texture paint mode , now with permanent cameras',
+    "description_long": """
+TEXTURE PROJECTION FROM CAMERA
+ create camera from current view and project textures
+ bake textures using camera projection and visibility masks
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

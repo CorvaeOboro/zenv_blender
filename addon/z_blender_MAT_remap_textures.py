@@ -1,17 +1,20 @@
-"""
-MAT Remap Textures - A Blender addon for texture path remapping.
-
-remap texture paths in materials, switch between texture sets.
-"""
-
 bl_info = {
-    "name": "MAT Remap Textures",
-    "author": "CorvaeOboro",
-    "version": (1, 1),
+    "name": 'MAT Remap Textures',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Remap texture paths in materials",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250213',
+    "description": 'Remap texture paths in materials',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'remap texture paths in materials',
+    "description_long": """
+MAT Remap Textures - A Blender addon for texture path remapping.
+remap texture paths in materials, switch between texture sets.
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

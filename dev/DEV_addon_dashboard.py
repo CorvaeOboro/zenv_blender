@@ -902,11 +902,7 @@ class AddonDashboard:
                 value = bl_info[field]
                 lines.append(f'    "{field}": {repr(value)},')
         
-        # Add extended fields (with blank line separator)
-        has_extended = any(field in bl_info for field in extended_fields)
-        if has_extended:
-            lines.append('')
-        
+        # Add extended fields (no blank line separator - causes parsing issues)
         for field in extended_fields:
             if field in bl_info:
                 value = bl_info[field]

@@ -1,18 +1,21 @@
-"""
+bl_info = {
+    "name": 'MAT Unlit Convert',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Convert materials to unlit',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '70',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'convert all materials to emission for unlit render',
+    "description_long": """
 MAT Unlit Convert 
-
 Convert materials to unlit by removing all nodes except basecolor and opacity textures and
 connecting them directly to the emission material output.
-"""
-
-bl_info = {
-    "name": "MAT Unlit Convert",
-    "author": "CorvaeOboro",
-    "version": (1, 1),
-    "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Convert materials to unlit",
-    "category": "ZENV",
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

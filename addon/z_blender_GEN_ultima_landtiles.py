@@ -1,11 +1,14 @@
 bl_info = {
-    "name": "ULTIMA Map from CSV",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 7),
+    "name": 'ULTIMA Map from CSV',
     "blender": (2, 93, 0),
-    "location": "View3D > Tool",
-    "description": "Generate a map from Ultima land textures for texture painting and debugging with improved performance and UV mapping."
+    "category": 'ZENV',
+    "version": '20241209',
+    "description": 'Generate a map from Ultima land textures for texture painting and debugging with improved performance and UV mapping.',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Ultima',
+    "group_prefix": 'ULTIMA',
+    "location": 'View3D > Tool',
 }
 
 import bpy

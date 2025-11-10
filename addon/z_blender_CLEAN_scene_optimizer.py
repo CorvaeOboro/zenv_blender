@@ -1,23 +1,24 @@
-"""
+bl_info = {
+    "name": 'CLEAN Scene Optimizer',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Tools for cleaning and optimizing scene data including unused textures, materials, and mesh data',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Clean',
+    "group_prefix": 'CLEAN',
+    "description_short": 'optimize removing unused material , textures , and mesh data',
+    "description_long": """
 CLEAN Scene Optimizer 
 - Removing unused textures and materials
 - Cleaning up missing texture references
 - Consolidating duplicate materials
 - Optimizing mesh data
 - Removing empty vertex groups
-"""
-
-bl_info = {
-    "name": "CLEAN Scene Optimizer",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": (
-        "Tools for cleaning and optimizing scene data including unused textures, "
-        "materials, and mesh data"
-    )
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

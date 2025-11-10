@@ -26,6 +26,7 @@ each addon is a self contained python file , to be installed and enabled individ
 - [cut_world_bricker](addon/z_blender_MESH_cut_world_bricker.py) - Cut mesh into brick like segments
 - [to_UV_space](addon/z_blender_MESH_to_UV_space.py) - transform mesh to match UV layout in 3D space
 - [angular_planarize](addon/z_blender_MESH_angular_planarize.py) - planarize mesh faces by random k-means angle cluster , useful for rock like sharpening with flat areas 
+- <img src="https://raw.githubusercontent.com/CorvaeOboro/zenv_blender/master/docs/z_blender_MESH_angular_planarize_20250416.png?raw=true" height = "200">
 - [wood_grain](addon/z_blender_MESH_wood_grain.py) - generate wood grain patterns on mesh
 
 ## GENERATIVE

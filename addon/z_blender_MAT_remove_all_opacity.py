@@ -1,15 +1,20 @@
-# MATERIAL REMOVE OPACITY ALL
-# for each material in the scene remove all opacity nodes
-
 bl_info = {
-    "name": "MAT Remove Opacity",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MAT Remove Opacity',
     "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV",
-    "description": "Remove opacity from all materials",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250212',
+    "description": 'Remove opacity from all materials',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '52',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'remove all opacity textures in materials',
+    "description_long": """
+MATERIAL REMOVE OPACITY ALL
+ for each material in the scene remove all opacity nodes
+""",
+    "location": 'View3D > Sidebar > ZENV',
 }
 
 import bpy

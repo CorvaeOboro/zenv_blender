@@ -153,5 +153,7 @@ dmypy.json
 cython_debug/
 
 **/backup/**
-.aider*
-00_start_aider.bat
+dev/linter_reports/
+dev/notes/
+dev/DEV_blender_addon_image_generator.bat
+dev_output/

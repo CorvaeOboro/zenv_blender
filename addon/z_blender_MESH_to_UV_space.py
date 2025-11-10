@@ -1,18 +1,22 @@
-"""
+bl_info = {
+    "name": 'MESH to UV Space',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Transform mesh between 3D and UV space with vertex separation and merging',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '50',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": 'transform mesh to match UV layout in 3D space',
+    "description_long": """
 Mesh to UV Space
 Transform mesh between 3D and UV space with vertex separation and merging
-"""
-
-bl_info = {
-    "name": "Mesh to UV Space",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV",
-    "description": "Transform mesh between 3D and UV space with vertex separation and merging",
-    "warning": "",
-    "doc_url": "",
-    "category": "ZENV",
+""",
+    "location": 'View3D > Sidebar > ZENV',
+    "warning": '',
+    "doc_url": '',
 }
 
 import bpy

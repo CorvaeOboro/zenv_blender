@@ -1,17 +1,21 @@
-"""
+bl_info = {
+    "name": 'UV Mirror Zero Pivot',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Mirror UVs around zero pivot point horizontally or vertically',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'UV',
+    "group_prefix": 'UV',
+    "description_short": 'U or V mirroring with pivot always at zero instead of the default of selected center',
+    "description_long": """
 UV MIRROR ZERO PIVOT
 Mirror UVs around zero pivot point
 Flips UVs horizontally or vertically in UV editor, with options for selected faces or entire UV
-"""
-
-bl_info = {
-    "name": "UV Mirror Zero Pivot",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
-    "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Mirror UVs around zero pivot point horizontally or vertically",
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

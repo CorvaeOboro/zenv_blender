@@ -1,14 +1,21 @@
-# MESH SEPARATE BY AXIS
-# separates mesh into two parts by slicing along chosen axis
-
 bl_info = {
-    "name": "MESH Separate by Axis",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 5),
+    "name": 'MESH Separate by Axis',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Separates mesh into two parts by slicing along chosen axis",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Separates mesh into two parts by slicing along chosen axis',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '4',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": 'separate mesh parts by axis',
+    "description_medium": 'separates mesh into two parts by slicing along chosen axis',
+    "description_long": """
+MESH SEPARATE BY AXIS
+ separates mesh into two parts by slicing along chosen axis
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

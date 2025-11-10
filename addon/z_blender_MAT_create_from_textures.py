@@ -1,17 +1,20 @@
-"""
-MAT Create From Textures - A Blender addon for creating materials from textures.
-
-Create PBR materials from texture files using common naming conventions.
-"""
-
 bl_info = {
-    "name": "MAT Create From Textures",
-    "author": "CorvaeOboro",
-    "version": (1, 1),
+    "name": 'MAT Create From Textures',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Create materials from texture files",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Create materials from texture files',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '22',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'create materials from texture folder',
+    "description_long": """
+MAT Create From Textures - A Blender addon for creating materials from textures.
+Create PBR materials from texture files using common naming conventions.
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

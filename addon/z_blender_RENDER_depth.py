@@ -1,14 +1,20 @@
-# RENDER Depth Map
-# with automatic per object camera clipping adjustments.
-
 bl_info = {
-    "name": "RENDER Depth Map",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'RENDER Depth Map',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Renders depth map images with datetime suffix",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Renders depth map images with datetime suffix',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '2',
+    "group": 'Render',
+    "group_prefix": 'RENDER',
+    "description_short": 'renders depth with auto min max from selected object with datetime suffix',
+    "description_long": """
+RENDER Depth Map
+ with automatic per object camera clipping adjustments.
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

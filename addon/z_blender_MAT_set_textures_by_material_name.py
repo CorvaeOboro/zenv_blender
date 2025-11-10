@@ -1,17 +1,21 @@
-"""
+bl_info = {
+    "name": 'MAT Set Textures by Material Name',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250215',
+    "description": 'Set textures to materials based on material names',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '99',
+    "group": 'Material',
+    "group_prefix": 'MAT',
+    "description_short": 'assign textures based on material names',
+    "description_long": """
 MAT Set Textures by Material Name 
 - A Blender addon for fixing texture paths in materials.
 Recreates material nodes with correct texture paths based on material names.
-"""
-
-bl_info = {
-    "name": "MAT Set Textures by Material Name",
-    "author": "CorvaeOboro",
-    "version": (1, 1),
-    "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Set textures to materials based on material names",
-    "category": "ZENV",
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

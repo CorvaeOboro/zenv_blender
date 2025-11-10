@@ -1,15 +1,17 @@
-# TEXTURE VARIANT VIEW
-# quickly view and organize texture variants
-# cycle through textures in a folder and move them to ranked subfolders
-
 bl_info = {
-    "name": "TEX Texture Variant View",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'TEX Texture Variant View',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Quickly view and organize texture variants on a model",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Quickly view and organize texture variants on a model',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '2',
+    "branch": 'Texture',
+    "branch_prefix": 'TEX',
+    "description_short": 'Quickly view and organize texture variants on a model',
+    "description_long": 'specify a folder of textures , then with a mesh selected can quickly cycle through them applied to the mesh , ranking them into subfolders . useful for visualizing and choosing the best from many synthesized texture variants',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

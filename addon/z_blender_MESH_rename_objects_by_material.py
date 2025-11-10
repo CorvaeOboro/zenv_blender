@@ -1,17 +1,20 @@
-"""
-MESH Rename Objects By Material - A Blender addon for consistent object naming.
-
-Renames objects based on their primary material, with optional suffix/prefix adjustments.
-"""
-
 bl_info = {
-    "name": "MESH Rename Objects By Material",
-    "author": "CorvaeOboro",
-    "version": (1, 2),
+    "name": 'MESH Rename Objects By Material',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Rename objects based on material names",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Rename objects based on material names',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '60',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": 'rename objects by material name',
+    "description_long": """
+MESH Rename Objects By Material - A Blender addon for consistent object naming.
+Renames objects based on their primary material, with optional suffix/prefix adjustments.
+""",
+    "location": 'View3D > ZENV',
 }
 
 import bpy

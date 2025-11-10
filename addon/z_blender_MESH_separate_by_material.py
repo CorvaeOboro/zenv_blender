@@ -1,16 +1,21 @@
-"""
+bl_info = {
+    "name": 'MESH Separate By Material',
+    "blender": (4, 0, 0),
+    "category": 'ZENV',
+    "version": '20250403',
+    "description": 'Separate mesh by material assignment',
+    "status": 'working',
+    "approved": True,
+    "sort_priority": '1',
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_short": 'for each material detach mesh into parts',
+    "description_medium": 'Separates mesh objects by material assignment while preserving hierarchies.',
+    "description_long": """
 MESH Separate By Material - A Blender addon for mesh separation
 Separates mesh objects by material assignment while preserving hierarchies.
-"""
-
-bl_info = {
-    "name": "MESH Separate By Material",
-    "author": "CorvaeOboro",
-    "version": (1, 2),
-    "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV > MESH Separate By Material",
-    "description": "Separate mesh by material assignment",
-    "category": "ZENV",
+""",
+    "location": 'View3D > Sidebar > ZENV > MESH Separate By Material',
 }
 
 import bpy
