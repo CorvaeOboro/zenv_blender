@@ -5,13 +5,16 @@ VFX Volumetric Cloud Blender Addon
 """
 
 bl_info = {
-    "name": "VFX Volumetric Cloud",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'VFX Volumetric Cloud',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Creates realistic volumetric clouds using sphere clusters and point clouds",
-    "category": "ZENV"
+    "category": 'ZENV',
+    "version": '20250312',
+    "description": 'Creates volumetric clouds using sphere clusters and point clouds',
+    "status": 'wip',
+    "approved": True,
+    "group": 'VFX',
+    "group_prefix": 'VFX',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

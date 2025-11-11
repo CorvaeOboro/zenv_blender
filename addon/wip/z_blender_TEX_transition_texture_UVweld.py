@@ -5,13 +5,16 @@
 # bakes saved to "00_bake_texture" subfolder by target object name
 
 bl_info = {
-    "name": "TEX Transition Bake by UV Stitch",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 3),
+    "name": 'TEX Transition Bake by UV Stitch',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Create a transition between two meshes by UV stitching ",
+    "category": 'ZENV',
+    "version": '20250402',
+    "description": 'Create a transition between two meshes by UV stitching',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Texture',
+    "group_prefix": 'TEX',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

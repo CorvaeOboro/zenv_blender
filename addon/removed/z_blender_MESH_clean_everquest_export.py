@@ -1,11 +1,15 @@
 bl_info = {
-    "name": "MESH Fix Everquest mesh export",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MESH Fix Everquest mesh export',
     "blender": (2, 80, 0),
-    "location": "View3D > ZENV",
-    "description": " mirror x global , flip uv vertical 0,0 centered , merge verts by distance , flat shading by face , flip normals . Fix Everquest mesh export from s3d zone exporter",
+    "category": 'ZENV',
+    "version": '20250122',
+    "description": 'mirror x global , flip uv vertical 0,0 centered , merge verts by distance , flat shading by face , flip normals . Fix Everquest mesh export from s3d zone exporter',
+    "status": 'deprecated',
+    "approved": False,
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "description_long": 'this was specific to early exports that needed lots of fixes for conversion . now no longer needed since the Lantern extract and unity tool have much beter exports',
+    "location": 'View3D > ZENV',
 }
 #//==================================================================================================
 import bpy

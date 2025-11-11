@@ -2,13 +2,16 @@
 # Customizable UI panel with dynamic operator buttons
 
 bl_info = {
-    "name": "UI Addon Window",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'UI Addon Window',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Customizable UI panel with dynamic operator buttons"
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Customizable UI panel with dynamic operator buttons',
+    "status": 'wip',
+    "approved": True,
+    "group": 'UI',
+    "group_prefix": 'UI',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

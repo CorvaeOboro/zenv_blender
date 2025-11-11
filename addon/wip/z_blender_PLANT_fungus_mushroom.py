@@ -3,13 +3,16 @@ Fungus Mushroom Generator - Creates procedural mushrooms with detailed gills
 """
 
 bl_info = {
-    "name": "PLANT Fungus Mushroom",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'PLANT Fungus Mushroom',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Creates realistic mushrooms with mesh-based geometry",
-    "category": "ZENV"
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Creates  mushrooms with mesh-based geometry',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Plant',
+    "group_prefix": 'PLANT',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

@@ -3,13 +3,16 @@ VFX Splash Simulator - Creates viscous fluid splash simulations
 """
 
 bl_info = {
-    "name": "VFX Splash Simulator",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'VFX Splash Simulator',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Creates viscous fluid splash simulations using FLIP",
-    "category": "ZENV"
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Creates viscous fluid splash simulations using FLIP',
+    "status": 'wip',
+    "approved": True,
+    "group": 'VFX',
+    "group_prefix": 'VFX',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

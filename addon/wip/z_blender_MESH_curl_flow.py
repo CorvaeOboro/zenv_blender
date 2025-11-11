@@ -3,13 +3,16 @@ Curl Flow Generator - Creates mesh geometry with curl flow patterns
 """
 
 bl_info = {
-    "name": "MESH Curl Flow",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MESH Curl Flow',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Creates mesh geometry with curl flow patterns",
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Creates mesh geometry with curl flow patterns',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

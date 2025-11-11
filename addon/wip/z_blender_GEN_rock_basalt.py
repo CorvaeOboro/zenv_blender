@@ -4,13 +4,16 @@ Generates stylized sharp rock meshes with tiered extrusions and directional bias
 """
 
 bl_info = {
-    "name": "GEN Rock Basalt Generator",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Rock Basalt Generator',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV > GEN Rock Basalt",
-    "description": "Generate sharp, angular basalt rock formations",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Generate sharp, angular basalt rock formations',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > ZENV > GEN Rock Basalt',
 }
 
 __addon_enabled__ = True

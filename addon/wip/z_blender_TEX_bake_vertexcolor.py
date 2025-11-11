@@ -2,13 +2,16 @@
 # Bake vertex colors to texture maps and vice versa
 
 bl_info = {
-    "name": "TEX Vertex Color Baker",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'TEX Vertex Color Baker',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Bake vertex colors to texture maps and vice versa",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Bake vertex colors to texture maps and vice versa',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Texture',
+    "group_prefix": 'TEX',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

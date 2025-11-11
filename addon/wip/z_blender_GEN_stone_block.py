@@ -4,13 +4,16 @@ Generates weathered stone blocks with realistic damage, wear patterns, and battl
 """
 
 bl_info = {
-    "name": "GEN Medieval Stone",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Medieval Stone',
     "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV > GEN Medieval Stone",
-    "description": "Medieval Stone Block Generator with Wear and Damage"
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Medieval Stone Block Generator with Wear and Damage',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > Sidebar > ZENV > GEN Medieval Stone',
 }
 
 import bpy

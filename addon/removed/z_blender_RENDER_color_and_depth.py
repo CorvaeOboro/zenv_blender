@@ -1,11 +1,15 @@
 bl_info = {
-    "name": "RENDER color and depth ",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'RENDER color and depth',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": " renders quick flat color and depth images with datetime suffix",
+    "category": 'ZENV',
+    "version": '20250119',
+    "description": 'renders quick flat color and depth images with datetime suffix',
+    "status": 'deprecated',
+    "approved": False,
+    "group": 'Render',
+    "group_prefix": 'RENDER',
+    "description_long": 'this is no longer used , we split into  separate tools ( RENDER_Color , and RENDER_Depth ) to focus on the rendering settings and materials needed for each operatio indepenedntly',
+    "location": 'View3D > ZENV',
 }
 #//==================================================================================================
 import bpy

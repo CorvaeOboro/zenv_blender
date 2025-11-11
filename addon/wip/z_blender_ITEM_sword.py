@@ -20,13 +20,16 @@ from bpy.props import (
 )
 
 bl_info = {
-    "name": "ITEM Sword Generator (Enhanced Realism)",
-    "category": "ZENV",
-    "author": "CorvaeOboro (modified by ChatGPT)",
-    "version": (4, 0),
+    "name": 'ITEM Sword Generator',
     "blender": (4, 0, 2),
-    "location": "View3D > ZENV",
-    "description": "Generate historically accurate swords with advanced geometry, bevels, and improved pivot"
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Generate historically accurate swords with advanced geometry, bevels, and improved pivot',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Item',
+    "group_prefix": 'ITEM',
+    "location": 'View3D > ZENV',
 }
 
 # ------------------------------------------------------------------------

@@ -10,13 +10,16 @@ Inspired by Norse runes
 """
 
 bl_info = {
-    "name": "GEN Runes Norse (Unified Mesh)",
-    "author": "CorvaeOboro",
-    "version": (1, 1),
+    "name": 'GEN Runes Norse',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Generate procedural rune-like symbols as extruded meshes with restored decorations and secondary strokes.",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250222',
+    "description": 'Generate procedural rune-like symbols as extruded meshes with restored decorations and secondary strokes.',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

@@ -5,13 +5,16 @@ useful for creating hyper realistic monster teeth with various types and styles
 """
 
 bl_info = {
-    "name": "GEN Tooth Generator",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Tooth Generator',
     "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV > GEN Tooth Generator",
-    "description": "Generate monster teeth with  features",
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Generate monster teeth with  features',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > Sidebar > ZENV > GEN Tooth Generator',
 }
 
 import bpy

@@ -3,13 +3,16 @@
 # while maintaining texture mapping by moving in whole number increments
 
 bl_info = {
-    "name": "UV Island Optimizer",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'UV Island Optimizer',
     "blender": (4, 0, 0),
-    "location": "3D View > Side Panel > ZENV > UV Island Optimizer",
-    "description": "Optimize UV island positions by moving them closer to origin",
+    "category": 'ZENV',
+    "version": '20250212',
+    "description": 'Optimize UV island positions by moving them closer to origin',
+    "status": 'wip',
+    "approved": True,
+    "group": 'UV',
+    "group_prefix": 'UV',
+    "location": '3D View > Side Panel > ZENV > UV Island Optimizer',
 }
 
 import bpy

@@ -3,13 +3,16 @@ Diffusion Reaction Generator - Creates organic, brain-like mesh structures
 """
 
 bl_info = {
-    "name": "MESH Diffusion Reaction",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MESH Diffusion Reaction',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Creates organic mesh structures using diffusion-reaction patterns",
-    "category": "ZENV"
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Creates organic mesh structures using diffusion-reaction patterns',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

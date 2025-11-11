@@ -6,15 +6,18 @@ Useful for generating coils, vines, or decorative patterns.
 """
 
 bl_info = {
-    "name": "Helix Along Curve Generator",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Helix Along Curve',
     "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV > CURVE Helix Generator",
-    "description": "Generate helical curves that follow a base curve",
-    "warning": "",
-    "doc_url": "",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250222',
+    "description": 'Generate helical curves that follow a base curve',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > Sidebar > ZENV > CURVE Helix Generator',
+    "warning": '',
+    "doc_url": '',
 }
 
 import bpy

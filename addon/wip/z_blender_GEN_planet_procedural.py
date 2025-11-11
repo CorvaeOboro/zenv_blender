@@ -2,13 +2,16 @@
 # Generate procedural planets with customizable features
 
 bl_info = {
-    "name": "GEN Planet Procedural",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Planet Procedural',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Generate procedural planets with customizable features",
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Generate procedural planets with customizable features',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

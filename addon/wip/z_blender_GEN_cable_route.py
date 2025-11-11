@@ -4,13 +4,16 @@ Projects and routes cables along surfaces with proper overlapping and stacking b
 """
 
 bl_info = {
-    "name": "GEN Cable Route",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Cable Route',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Generate cable routes with proper overlapping"
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Generate cable routes with proper overlapping',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

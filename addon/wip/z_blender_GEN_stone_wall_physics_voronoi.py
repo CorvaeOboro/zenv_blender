@@ -5,13 +5,16 @@ Creates realistic stone walls with large stones and filler stones, using physics
 """
 
 bl_info = {
-    "name": "GEN Stone Wall Physics Voronoi",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Stone Wall Physics Voronoi',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Generate layered stone walls using physics and voronoi subdivision",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Generate layered stone walls using physics and voronoi subdivision',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

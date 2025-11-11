@@ -5,14 +5,17 @@ like a tall leaf where the top and bot are pinched and its sides bend inward
 """
 
 bl_info = {
-    "name": "PLANT Grass Cluster",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'PLANT Grass Cluster',
     "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > ZENV > PLANT Grass Cluster",
-    "description": "Generate plant grass clusters",
-    "doc_url": "",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250413',
+    "description": 'Generate plant grass clusters',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Plant',
+    "group_prefix": 'PLANT',
+    "location": 'View3D > Sidebar > ZENV > PLANT Grass Cluster',
+    "doc_url": '',
 }
 
 import bpy

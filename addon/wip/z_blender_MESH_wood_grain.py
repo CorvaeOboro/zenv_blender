@@ -5,13 +5,16 @@ and carved-in crevices.
 """
 
 bl_info = {
-    "name": "MESH Wood Grain Generator",
-    "author": "CorvaeOboro",
-    "version": (1, 5),
+    "name": 'MESH Wood Grain Generator',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Realistic woodgrain using plane cuts and layered noise with inward crevices, zero-centered displacement.",
-    "category": "ZENV",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Realistic woodgrain using plane cuts and layered noise with inward crevices, zero-centered displacement.',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

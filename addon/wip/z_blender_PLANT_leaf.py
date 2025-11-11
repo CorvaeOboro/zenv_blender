@@ -12,13 +12,16 @@ from bpy.props import (FloatProperty, IntProperty, EnumProperty,
                       BoolProperty, FloatVectorProperty, PointerProperty)
 
 bl_info = {
-    "name": "Advanced Leaf Generator",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (2, 0),
+    "name": 'PLANT Leaf Generator',
     "blender": (4, 0, 2),
-    "location": "View3D > ZENV",
-    "description": "Generate biologically accurate leaf meshes"
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Generate leaf meshes',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Plant',
+    "group_prefix": 'PLANT',
+    "location": 'View3D > ZENV',
 }
 
 # ------------------------------------------------------------------------

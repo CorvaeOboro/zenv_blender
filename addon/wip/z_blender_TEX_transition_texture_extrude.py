@@ -3,13 +3,16 @@
 # baking onto the other as part of creating a seamless texture transition
 
 bl_info = {
-    "name": "TEX Transition Texture Extrude",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 1),
+    "name": 'TEX Transition Texture Extrude',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Crete a tranisiton between two meshes by extruding the edge and baking",
+    "category": 'ZENV',
+    "version": '20250420',
+    "description": 'Crete a tranisiton between two meshes by extruding the edge and baking',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Texture',
+    "group_prefix": 'TEX',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

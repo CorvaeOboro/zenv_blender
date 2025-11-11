@@ -7,13 +7,16 @@ Generation processing time at gridsize 1.0 = 12s
 """
 
 bl_info = {
-    "name": "Metal Ingot Generator",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'GEN Metal Ingot Generator',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV > GEN Metal Ingot",
-    "description": "Generate metal ingot meshes",
-    "category": "ZENV"
+    "category": 'ZENV',
+    "version": '20250303',
+    "description": 'Generate metal ingot meshes',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Generative',
+    "group_prefix": 'GEN',
+    "location": 'View3D > ZENV > GEN Metal Ingot',
 }
 
 import bpy

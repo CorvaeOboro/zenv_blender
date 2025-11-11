@@ -3,13 +3,16 @@
 # useful for projecting depth maps or textures from a plane
 
 bl_info = {
-    "name": "RENDER Plane Projection",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'RENDER Plane Projection',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Custom raytrace renderer using a plane as the image plane",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Custom raytrace renderer using a plane as the image plane',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Render',
+    "group_prefix": 'RENDER',
+    "location": 'View3D > ZENV',
 }
 
 import bpy

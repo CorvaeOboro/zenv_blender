@@ -1,8 +1,8 @@
 bl_info = {
     "name": 'GEN Potion Generator',
-    "blender": (4, 0, 0),
+    "blender": (4, 3, 2),
     "category": 'ZENV',
-    "version": '20250302',
+    "version": '20251111',
     "description": 'Generate procedural potion bottles with modular components',
     "status": 'wip',
     "approved": True,
@@ -31,8 +31,7 @@ class ZENV_PotionGenerator_Materials:
         mat = bpy.data.materials.new(name="Potion_Glass")
         mat.use_nodes = True
         mat.blend_method = 'BLEND'
-        mat.use_backface_culling = True
-        mat.shadow_method = 'CLIP'
+        mat.use_backface_culling = False
         
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
@@ -42,13 +41,13 @@ class ZENV_PotionGenerator_Materials:
         output = nodes.new('ShaderNodeOutputMaterial')
         principled = nodes.new('ShaderNodeBsdfPrincipled')
         
-        # Setup principled BSDF
-        principled.inputs['Base Color'].default_value = (0.8, 0.8, 0.8, 1.0)
-        principled.inputs['Metallic'].default_value = 0.1
-        principled.inputs['Roughness'].default_value = 0.05
-        principled.inputs['IOR'].default_value = 1.45
-        principled.inputs['Transmission Weight'].default_value = 1.0
-        principled.inputs['Alpha'].default_value = 0.007
+        # Setup principled BSDF for realistic glass
+        principled.inputs['Base Color'].default_value = (0.9, 0.92, 0.95, 1.0)  # Slight blue tint
+        principled.inputs['Metallic'].default_value = 0.0
+        principled.inputs['Roughness'].default_value = 0.1  # Slightly rough for realism
+        principled.inputs['IOR'].default_value = 1.45  # Glass IOR
+        principled.inputs['Transmission Weight'].default_value = 0.9  # Transparent
+        principled.inputs['Alpha'].default_value = 0.5  # Semi-transparent for viewport visibility
         
         # Link nodes
         links.new(principled.outputs['BSDF'], output.inputs['Surface'])
@@ -61,8 +60,39 @@ class ZENV_PotionGenerator_Materials:
         mat = bpy.data.materials.new(name="Potion_Liquid")
         mat.use_nodes = True
         mat.blend_method = 'BLEND'
-        mat.use_backface_culling = True
-        mat.shadow_method = 'CLIP'
+        mat.use_backface_culling = False
+        
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+        nodes.clear()
+        
+        # Create nodes
+        output = nodes.new('ShaderNodeOutputMaterial')
+        principled = nodes.new('ShaderNodeBsdfPrincipled')
+        
+        # Setup principled BSDF for liquid with subsurface
+        principled.inputs['Base Color'].default_value = color
+        principled.inputs['Metallic'].default_value = 0.0
+        principled.inputs['Roughness'].default_value = 0.05  # Very smooth liquid surface
+        principled.inputs['IOR'].default_value = 1.33  # Water IOR
+        principled.inputs['Transmission Weight'].default_value = 0.6  # Less transparent to be more visible
+        principled.inputs['Alpha'].default_value = 1.0  # Fully opaque
+        
+        # Add subsurface scattering for depth
+        principled.inputs['Subsurface Weight'].default_value = 0.5
+        principled.inputs['Subsurface Radius'].default_value = (color[0], color[1], color[2])
+        principled.inputs['Subsurface Scale'].default_value = 0.15
+        
+        # Link nodes
+        links.new(principled.outputs['BSDF'], output.inputs['Surface'])
+
+        return mat
+
+    @staticmethod
+    def create_basic_material(name="Basic_Material", color=(0.5, 0.5, 0.5, 1.0), roughness=0.5, metallic=0.0):
+        """Create a basic material for decorative elements"""
+        mat = bpy.data.materials.new(name=name)
+        mat.use_nodes = True
         
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
@@ -74,18 +104,15 @@ class ZENV_PotionGenerator_Materials:
         
         # Setup principled BSDF
         principled.inputs['Base Color'].default_value = color
-        principled.inputs['Metallic'].default_value = 0.3
-        principled.inputs['Roughness'].default_value = 0.0
-        principled.inputs['IOR'].default_value = 1.33
-        principled.inputs['Transmission Weight'].default_value = 1.0
-        principled.inputs['Alpha'].default_value = 0.6
+        principled.inputs['Metallic'].default_value = metallic
+        principled.inputs['Roughness'].default_value = roughness
         
         # Link nodes
         links.new(principled.outputs['BSDF'], output.inputs['Surface'])
-
+        
         return mat
 
-class ZENV_PG_potion_generator(bpy.types.PropertyGroup):
+class ZENV_PG_PotionGenerator_Props(bpy.types.PropertyGroup):
     """Property group for potion generator settings"""
     # Main component toggles
     use_bottle: bpy.props.BoolProperty(
@@ -265,7 +292,7 @@ class ZENV_PG_potion_generator(bpy.types.PropertyGroup):
         max=0.8
     )
 
-class ZENV_OT_Generate_Potion(bpy.types.Operator):
+class ZENV_OT_PotionGenerator(bpy.types.Operator):
     """Generate a procedural potion bottle with modular components"""
     bl_idname = "zenv.generate_potion"
     bl_label = "Generate Potion"
@@ -297,159 +324,284 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         return {'FINISHED'}
 
     def create_bottle(self, context, props):
-        """Create the main bottle mesh using curve"""
-        # Create curve for bottle profile
-        bpy.ops.curve.primitive_bezier_curve_add()
-        curve = context.active_object
-        curve.name = "Potion_Bottle_Profile"
-        
-        # Modify curve points for bottle shape
-        points = curve.data.splines[0].bezier_points
+        """Create the main bottle mesh using spin operation with HIGH RESOLUTION curved profile"""
         height = props.bottle_height
         width = props.bottle_width
         
-        # Base point
-        points[0].co = Vector((0, 0, 0))
-        points[0].handle_left = Vector((-width*0.2, 0, 0))
-        points[0].handle_right = Vector((width*0.2, 0, 0))
+        # Create empty mesh
+        mesh = bpy.data.meshes.new("Potion_Bottle_Mesh")
+        bottle = bpy.data.objects.new("Potion_Bottle", mesh)
+        context.collection.objects.link(bottle)
+        context.view_layer.objects.active = bottle
+        bottle.select_set(True)
         
-        # Add points for bottle shape
-        curve.data.splines[0].bezier_points.add(3)
+        # Create bottle profile with SMOOTH CURVES using interpolation
+        bm = bmesh.new()
         
-        # Belly point
-        points[1].co = Vector((width, 0, height*0.3))
-        points[1].handle_left = Vector((width, 0, height*0.15))
-        points[1].handle_right = Vector((width, 0, height*0.45))
+        # Define KEY control points for bottle shape
+        control_points = [
+            (0.05, 0.0),    # Base center
+            (0.7, 0.05),    # Base edge
+            (1.0, 0.3),     # Belly (widest point)
+            (0.4, 0.65),    # Shoulder
+            (0.3, 0.75),    # Neck start
+            (0.25, 0.95),   # Neck
+            (0.25, 1.0),    # Top opening
+        ]
         
-        # Neck start
-        points[2].co = Vector((width*0.3, 0, height*0.7))
-        points[2].handle_left = Vector((width*0.4, 0, height*0.6))
-        points[2].handle_right = Vector((width*0.3, 0, height*0.8))
+        # CATMULL-ROM SPLINE interpolation for SMOOTH REALISTIC CURVES
+        def catmull_rom_point(p0, p1, p2, p3, t):
+            """Calculate point on Catmull-Rom spline for smooth curves"""
+            t2 = t * t
+            t3 = t2 * t
+            
+            x = 0.5 * ((2 * p1[0]) +
+                      (-p0[0] + p2[0]) * t +
+                      (2*p0[0] - 5*p1[0] + 4*p2[0] - p3[0]) * t2 +
+                      (-p0[0] + 3*p1[0] - 3*p2[0] + p3[0]) * t3)
+            
+            z = 0.5 * ((2 * p1[1]) +
+                      (-p0[1] + p2[1]) * t +
+                      (2*p0[1] - 5*p1[1] + 4*p2[1] - p3[1]) * t2 +
+                      (-p0[1] + 3*p1[1] - 3*p2[1] + p3[1]) * t3)
+            
+            return (x, z)
         
-        # Top point
-        points[3].co = Vector((width*0.25, 0, height))
-        points[3].handle_left = Vector((width*0.25, 0, height*0.9))
-        points[3].handle_right = Vector((width*0.25, 0, height*1.1))
+        profile_points = []
+        segments_per_section = 16  # High resolution for smooth curves
         
-        # Convert to mesh
-        curve.data.resolution_u = 32
-        curve.data.fill_mode = 'FULL'
-        curve.data.bevel_depth = 0.01
-        curve.data.bevel_resolution = 8
+        # Generate smooth curve through all control points
+        for i in range(len(control_points) - 1):
+            # Get 4 points for Catmull-Rom (p0, p1, p2, p3)
+            p0 = control_points[max(0, i - 1)]
+            p1 = control_points[i]
+            p2 = control_points[i + 1]
+            p3 = control_points[min(len(control_points) - 1, i + 2)]
+            
+            # Interpolate between p1 and p2 using smooth curve
+            for j in range(segments_per_section):
+                t = j / segments_per_section
+                x, z = catmull_rom_point(p0, p1, p2, p3, t)
+                profile_points.append((x * width, z * height))
         
-        # Add screw modifier for revolution
-        screw = curve.modifiers.new(name="Screw", type='SCREW')
-        screw.steps = 32
-        screw.render_steps = 32
-        screw.use_smooth_shade = True
+        # Add final point
+        profile_points.append((control_points[-1][0] * width, control_points[-1][1] * height))
         
-        # Convert to mesh
-        context.view_layer.objects.active = curve
-        bpy.ops.object.convert(target='MESH')
-        bottle = context.active_object
-        bottle.name = "Potion_Bottle"
+        # Create vertices for HIGH RESOLUTION profile
+        verts = []
+        for x, z in profile_points:
+            v = bm.verts.new((x, 0, z))
+            verts.append(v)
         
-        # Add materials
-        bottle.data.materials.append(ZENV_PotionGenerator_Materials.create_glass_material())
+        # Create edges connecting all vertices
+        for i in range(len(verts) - 1):
+            bm.edges.new([verts[i], verts[i + 1]])
+        
+        bm.to_mesh(mesh)
+        bm.free()
+        
+        # Enter edit mode and spin the profile around Z axis
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # Spin with HIGH STEPS for smooth revolution
+        bpy.ops.mesh.spin(
+            steps=72,  # High step count for smooth circular revolution
+            angle=math.radians(360),
+            center=(0, 0, 0),
+            axis=(0, 0, 1),
+            use_auto_merge=True
+        )
+        
+        # Clean up duplicate vertices
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.remove_doubles(threshold=0.0001)
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Ensure bottle is selected and active
+        bpy.ops.object.select_all(action='DESELECT')
+        bottle.select_set(True)
+        context.view_layer.objects.active = bottle
+        
+        # Add Solidify modifier for consistent wall thickness (hollow bottle)
+        solidify = bottle.modifiers.new(name="Glass_Walls", type='SOLIDIFY')
+        solidify.thickness = props.bottle_width * 0.04  # 4% wall thickness
+        solidify.offset = -1.0  # Solidify inward to keep outer shape
+        solidify.use_even_offset = True
+        solidify.use_quality_normals = True
+        solidify.use_rim = True  # Keep top rim open
+        bpy.ops.object.modifier_apply(modifier=solidify.name)
+        
+        # Apply smooth shading
+        bpy.ops.object.shade_smooth()
+        
+        # Add materials AFTER conversion
+        glass_mat = ZENV_PotionGenerator_Materials.create_glass_material()
+        if bottle.data.materials:
+            bottle.data.materials[0] = glass_mat
+        else:
+            bottle.data.materials.append(glass_mat)
+        
+        # Ensure all faces use the material
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bottle.active_material_index = 0
+        bpy.ops.object.material_slot_assign()
+        bpy.ops.object.mode_set(mode='OBJECT')
         
         return bottle
 
     def create_liquid(self, context, bottle, props):
-        """Create liquid using volumetrics and shrinkwrap"""
-        # Duplicate bottle for liquid base
-        bpy.ops.object.select_all(action='DESELECT')
-        bottle.select_set(True)
-        context.view_layer.objects.active = bottle
-        bpy.ops.object.duplicate()
-        liquid = context.active_object
-        liquid.name = "Potion_Liquid"
+        """Create liquid using SAME CURVE as bottle for perfect sync"""
+        height = props.bottle_height
+        width = props.bottle_width
         
-        # Clear any inherited materials
-        liquid.data.materials.clear()
+        # Create liquid mesh
+        mesh = bpy.data.meshes.new("Potion_Liquid_Mesh")
+        liquid = bpy.data.objects.new("Potion_Liquid", mesh)
+        context.collection.objects.link(liquid)
+        context.view_layer.objects.active = liquid
+        liquid.select_set(True)
         
-        # Apply all modifiers from the bottle to get clean mesh
-        for modifier in liquid.modifiers:
-            bpy.ops.object.modifier_apply(modifier=modifier.name)
+        bm = bmesh.new()
         
-        # First shrinkwrap to get exact bottle interior
-        shrink = liquid.modifiers.new(name="Shrinkwrap", type='SHRINKWRAP')
-        shrink.wrap_method = 'PROJECT'
-        shrink.wrap_mode = 'INSIDE'
-        shrink.target = bottle
-        shrink.offset = -props.bottle_width * 0.03
-        shrink.use_project_z = True
-        bpy.ops.object.modifier_apply(modifier=shrink.name)
+        # USE SAME CONTROL POINTS AS BOTTLE (in sync!)
+        control_points = [
+            (0.05, 0.0),    # Base center
+            (0.7, 0.05),    # Base edge
+            (1.0, 0.3),     # Belly (widest point)
+            (0.4, 0.65),    # Shoulder
+            (0.3, 0.75),    # Neck start
+        ]
         
-        # Initial remesh for clean topology
-        remesh = liquid.modifiers.new(name="Remesh", type='REMESH')
-        remesh.mode = 'VOXEL'
-        remesh.voxel_size = props.bottle_width * 0.02  # Smaller voxels for better detail
-        remesh.use_smooth_shade = True
-        bpy.ops.object.modifier_apply(modifier=remesh.name)
+        # SAME CATMULL-ROM INTERPOLATION as bottle
+        def catmull_rom_point(p0, p1, p2, p3, t):
+            """Calculate point on Catmull-Rom spline for smooth curves"""
+            t2 = t * t
+            t3 = t2 * t
+            
+            x = 0.5 * ((2 * p1[0]) +
+                      (-p0[0] + p2[0]) * t +
+                      (2*p0[0] - 5*p1[0] + 4*p2[0] - p3[0]) * t2 +
+                      (-p0[0] + 3*p1[0] - 3*p2[0] + p3[0]) * t3)
+            
+            z = 0.5 * ((2 * p1[1]) +
+                      (-p0[1] + p2[1]) * t +
+                      (2*p0[1] - 5*p1[1] + 4*p2[1] - p3[1]) * t2 +
+                      (-p0[1] + 3*p1[1] - 3*p2[1] + p3[1]) * t3)
+            
+            return (x, z)
         
-        # Cut the top of the liquid based on fill amount
+        liquid_points = []
+        segments_per_section = 16  # SAME as bottle
+        inset_factor = 0.92  # Scale down to 92% to fit inside glass
+        
+        # Generate smooth curve through control points
+        for i in range(len(control_points) - 1):
+            p0 = control_points[max(0, i - 1)]
+            p1 = control_points[i]
+            p2 = control_points[i + 1]
+            p3 = control_points[min(len(control_points) - 1, i + 2)]
+            
+            for j in range(segments_per_section):
+                t = j / segments_per_section
+                x, z = catmull_rom_point(p0, p1, p2, p3, t)
+                # Scale down to fit inside bottle
+                liquid_points.append((x * width * inset_factor, z * height))
+        
+        # Add final point
+        liquid_points.append((control_points[-1][0] * width * inset_factor, control_points[-1][1] * height))
+        
+        # Create vertices
+        verts = []
+        for x, z in liquid_points:
+            v = bm.verts.new((x, 0, z))
+            verts.append(v)
+        
+        # Create edges
+        for i in range(len(verts) - 1):
+            bm.edges.new([verts[i], verts[i + 1]])
+        
+        bm.to_mesh(mesh)
+        bm.free()
+        
+        # Spin to create liquid volume
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        bpy.ops.mesh.spin(
+            steps=64,
+            angle=math.radians(360),
+            center=(0, 0, 0),
+            axis=(0, 0, 1),
+            use_auto_merge=True
+        )
+        
+        bpy.ops.mesh.remove_doubles(threshold=0.0001)
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Cut liquid to fill level
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
         bm = bmesh.from_edit_mesh(liquid.data)
         
-        # Calculate cut height
+        # Calculate fill height
         max_z = max(v.co.z for v in bm.verts)
         min_z = min(v.co.z for v in bm.verts)
-        liquid_height = min_z + (max_z - min_z) * props.liquid_fill_amount
+        fill_height = min_z + (max_z - min_z) * props.liquid_fill_amount
         
-        # Delete vertices above liquid height
-        for v in bm.verts:
-            if v.co.z > liquid_height:
-                v.select = True
-            else:
-                v.select = False
+        # Delete vertices above fill level
+        verts_to_delete = [v for v in bm.verts if v.co.z > fill_height]
+        bmesh.ops.delete(bm, geom=verts_to_delete, context='VERTS')
         
-        bmesh.update_edit_mesh(liquid.data)
-        bpy.ops.mesh.delete(type='VERT')
-        
-        # Fill holes and ensure manifold
+        # Fill top hole
         bpy.ops.mesh.select_all(action='SELECT')
+        bmesh.update_edit_mesh(liquid.data)
         bpy.ops.mesh.fill_holes(sides=0)
         bpy.ops.mesh.normals_make_consistent(inside=False)
         bpy.ops.object.mode_set(mode='OBJECT')
         
-        # Smooth the top surface
+        # Smooth shading
         bpy.ops.object.shade_smooth()
         
-        # Add slight displacement for liquid surface
-        displace = liquid.modifiers.new(name="Displace", type='DISPLACE')
-        tex = bpy.data.textures.new("Liquid_Surface", type='MUSGRAVE')
-        tex.noise_scale = props.liquid_noise_scale * 5.0
-        tex.noise_intensity = 1.0
-        tex.nabla = 0.03
-        displace.texture = tex
-        displace.strength = props.liquid_noise_amount * 0.003 * props.bottle_width  # Reduced strength
-        displace.mid_level = 0.0
-        bpy.ops.object.modifier_apply(modifier=displace.name)
+        # Remesh for clean topology
+        remesh = liquid.modifiers.new(name="Smooth_Surface", type='REMESH')
+        remesh.mode = 'SMOOTH'
+        remesh.octree_depth = 6
+        remesh.use_smooth_shade = True
+        bpy.ops.object.modifier_apply(modifier=remesh.name)
         
-        # Final high-quality remesh for airtight mesh
-        final_remesh = liquid.modifiers.new(name="Final_Remesh", type='REMESH')
-        final_remesh.mode = 'SHARP'  # Sharp mode for better detail preservation
-        final_remesh.octree_depth = 8  # High resolution
-        final_remesh.scale = 0.99
-        final_remesh.use_smooth_shade = True
-        bpy.ops.object.modifier_apply(modifier=final_remesh.name)
+        # Optional: Add subtle surface displacement
+        if props.liquid_noise_amount > 0:
+            displace = liquid.modifiers.new(name="Surface_Ripples", type='DISPLACE')
+            tex = bpy.data.textures.new("Liquid_Noise", type='MUSGRAVE')
+            tex.noise_scale = props.liquid_noise_scale * 3.0
+            tex.noise_intensity = 0.5
+            displace.texture = tex
+            displace.strength = props.liquid_noise_amount * 0.001 * props.bottle_width
+            displace.direction = 'NORMAL'
+            bpy.ops.object.modifier_apply(modifier=displace.name)
         
-        # Add subsurf for final smoothing
-        subsurf = liquid.modifiers.new(name="Subsurf", type='SUBSURF')
-        subsurf.levels = 2
-        subsurf.render_levels = 3
+        # Subdivision for smooth surface
+        subsurf = liquid.modifiers.new(name="Smooth", type='SUBSURF')
+        subsurf.levels = 1
+        subsurf.render_levels = 2
         bpy.ops.object.modifier_apply(modifier=subsurf.name)
         
-        # Create new liquid material
+        # Assign liquid material
         liquid_mat = ZENV_PotionGenerator_Materials.create_liquid_material(props.liquid_color)
-        
-        # Clear materials and assign new one
-        if liquid.data.materials:
-            liquid.data.materials.clear()
+        liquid.data.materials.clear()
         liquid.data.materials.append(liquid_mat)
         
-        # Parent to bottle
+        # Ensure all faces have material
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        liquid.active_material_index = 0
+        bpy.ops.object.material_slot_assign()
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Parent to bottle but keep as separate object
         liquid.parent = bottle
         
         return liquid
@@ -464,6 +616,14 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
             bpy.ops.mesh.primitive_plane_add()
             cloth = context.active_object
             cloth.name = "Neck_Cloth"
+            # Add material
+            cloth_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Neck_Cloth_Material",
+                color=(0.5, 0.2, 0.1, 1.0),
+                roughness=0.9,
+                metallic=0.0
+            )
+            cloth.data.materials.append(cloth_mat)
             # Add cloth simulation and modifiers here
             cloth.parent = bottle
 
@@ -472,6 +632,14 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
             bpy.ops.curve.primitive_bezier_circle_add()
             chain = context.active_object
             chain.name = "Neck_Chain"
+            # Add material
+            chain_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Chain_Material",
+                color=(0.7, 0.7, 0.7, 1.0),
+                roughness=0.3,
+                metallic=0.9
+            )
+            chain.data.materials.append(chain_mat)
             # Add array modifier for chain links
             chain.parent = bottle
 
@@ -480,6 +648,14 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
             bpy.ops.curve.primitive_bezier_circle_add()
             rope = context.active_object
             rope.name = "Neck_Rope"
+            # Add material
+            rope_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Rope_Material",
+                color=(0.6, 0.5, 0.3, 1.0),
+                roughness=0.8,
+                metallic=0.0
+            )
+            rope.data.materials.append(rope_mat)
             # Add curve modifiers for rope twist
             rope.parent = bottle
 
@@ -512,13 +688,11 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         bpy.ops.curve.primitive_bezier_circle_add(
             radius=cork_radius * 0.8,
             enter_editmode=False,
-            align='WORLD'
+            align='WORLD',
+            location=cork.location  # Position at creation
         )
         spiral = context.active_object
         spiral.name = "Cork_Spiral"
-        
-        # Position spiral at cork center
-        spiral.location = cork.location
         
         # Add screw modifier to create spiral
         screw = spiral.modifiers.new(name="Screw", type='SCREW')
@@ -528,7 +702,9 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         screw.steps = 16
         screw.render_steps = 16
         
-        # Convert to mesh
+        # Select and convert spiral to mesh
+        bpy.ops.object.select_all(action='DESELECT')
+        spiral.select_set(True)
         context.view_layer.objects.active = spiral
         bpy.ops.object.convert(target='MESH')
         
@@ -537,7 +713,13 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         solidify.thickness = cork_radius * 0.1 * props.cork_spiral_depth
         bpy.ops.object.modifier_apply(modifier=solidify.name)
         
-        # Boolean cut spiral from cork
+        # Switch back to cork as active object
+        bpy.ops.object.select_all(action='DESELECT')
+        cork.select_set(True)
+        context.view_layer.objects.active = cork
+        
+        # Boolean cut spiral from cork (ensure cork is active)
+        context.view_layer.objects.active = cork
         bool_spiral = cork.modifiers.new(name="Boolean_Spiral", type='BOOLEAN')
         bool_spiral.object = spiral
         bool_spiral.operation = 'DIFFERENCE'
@@ -573,8 +755,10 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         subsurf.levels = 2
         subsurf.render_levels = 3
         
-        # Create material with enhanced wood shader
-        mat = bpy.data.materials.new(name="Cork_Material")
+        # Create material with UNIQUE name
+        import time
+        mat_name = f"Cork_Material_{int(time.time() * 1000)}"
+        mat = bpy.data.materials.new(name=mat_name)
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
@@ -583,30 +767,31 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         # Create nodes for wood material
         output = nodes.new('ShaderNodeOutputMaterial')
         principled = nodes.new('ShaderNodeBsdfPrincipled')
-        wood_noise = nodes.new('ShaderNodeTexMusgrave')
+        wood_noise = nodes.new('ShaderNodeTexNoise')  # Changed from TexMusgrave for Blender 4.x
         color_ramp = nodes.new('ShaderNodeValToRGB')
         mapping = nodes.new('ShaderNodeMapping')
         texcoord = nodes.new('ShaderNodeTexCoord')
         bump = nodes.new('ShaderNodeBump')
         
-        # Setup noise texture
-        wood_noise.inputs['Scale'].default_value = 2.0
-        wood_noise.inputs['Detail'].default_value = 1.0
-        wood_noise.inputs['Dimension'].default_value = 2.0
+        # Setup noise texture for cork grain
+        wood_noise.inputs['Scale'].default_value = 3.0
+        wood_noise.inputs['Detail'].default_value = 2.0
+        wood_noise.inputs['Roughness'].default_value = 0.5  # Changed from Dimension for Noise node
         
-        # Setup color ramp for wood grain
-        color_ramp.color_ramp.elements[0].position = 0.4
-        color_ramp.color_ramp.elements[0].color = (0.4, 0.2, 0.1, 1)
-        color_ramp.color_ramp.elements[1].position = 0.6
-        color_ramp.color_ramp.elements[1].color = (0.6, 0.3, 0.15, 1)
+        # Setup color ramp for realistic cork colors
+        color_ramp.color_ramp.elements[0].position = 0.35
+        color_ramp.color_ramp.elements[0].color = (0.45, 0.28, 0.15, 1)  # Darker cork
+        color_ramp.color_ramp.elements[1].position = 0.65
+        color_ramp.color_ramp.elements[1].color = (0.65, 0.42, 0.22, 1)  # Lighter cork
         
-        # Setup bump
-        bump.inputs['Strength'].default_value = 0.5
-        bump.inputs['Distance'].default_value = 0.02
+        # Setup bump for surface texture
+        bump.inputs['Strength'].default_value = 0.8
+        bump.inputs['Distance'].default_value = 0.015
         
-        # Setup principled BSDF
-        principled.inputs['Roughness'].default_value = 0.7
-        principled.inputs['Specular IOR Level'].default_value = 0.2
+        # Setup principled BSDF for cork material
+        principled.inputs['Roughness'].default_value = 0.85  # Cork is quite rough
+        principled.inputs['Specular IOR Level'].default_value = 0.15  # Low specularity
+        principled.inputs['Sheen Weight'].default_value = 0.2  # Slight sheen for realism
         
         # Link nodes
         links.new(texcoord.outputs['Generated'], mapping.inputs['Vector'])
@@ -617,22 +802,52 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         links.new(bump.outputs['Normal'], principled.inputs['Normal'])
         links.new(principled.outputs['BSDF'], output.inputs['Surface'])
         
-        # Assign material
+        # ASSIGN MATERIAL IMMEDIATELY after creation, BEFORE modifiers
+        cork.data.materials.clear()
         cork.data.materials.append(mat)
+        print(f"Cork material assigned BEFORE modifiers: {mat.name}")
         
-        # Apply modifiers in correct order
+        # Apply modifiers in correct order AFTER assigning material
         context.view_layer.objects.active = cork
         for modifier in cork.modifiers:
             try:
                 bpy.ops.object.modifier_apply(modifier=modifier.name)
-            except:
-                print(f"Failed to apply modifier: {modifier.name}")
+            except Exception as e:
+                print(f"Failed to apply modifier {modifier.name}: {e}")
         
-        # Delete the spiral object
-        bpy.data.objects.remove(spiral, do_unlink=True)
+        # IMPORTANT: Delete the spiral helper object completely
+        if spiral and spiral.name in bpy.data.objects:
+            bpy.data.objects.remove(spiral, do_unlink=True)
         
-        # Parent to bottle
+        # Ensure cork is selected and active
+        bpy.ops.object.select_all(action='DESELECT')
+        cork.select_set(True)
+        context.view_layer.objects.active = cork
+        
+        # Verify material is STILL assigned after modifiers
+        if len(cork.data.materials) == 0:
+            print("WARNING: Material was lost during modifier application! Re-assigning...")
+            cork.data.materials.append(mat)
+        
+        # FORCE material assignment to all faces
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        cork.active_material_index = 0
+        bpy.ops.object.material_slot_assign()
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Final verification
+        print(f"Cork FINAL check - Material slots: {len(cork.data.materials)}, Material: {cork.data.materials[0].name if cork.data.materials else 'NONE'}")
+        print(f"Cork has {len(cork.data.polygons)} faces")
+        
+        # Apply smooth shading BEFORE parenting
+        bpy.ops.object.shade_smooth()
+        
+        # Parent to bottle LAST (after everything else is done)
         cork.parent = bottle
+        
+        # One more verification after parenting
+        print(f"Cork after parenting - Material: {cork.data.materials[0].name if cork.data.materials else 'STILL NONE!'}")
         
         return cork
 
@@ -649,12 +864,31 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
             sphere = context.active_object
             sphere.name = "Bottle_Topper"
             # Position and scale sphere
+            sphere.location = Vector((0, 0, props.bottle_height * 1.05))
+            sphere.scale = Vector((0.15, 0.15, 0.15))
+            # Add material
+            sphere_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Topper_Material",
+                color=(0.8, 0.6, 0.2, 1.0),
+                roughness=0.3,
+                metallic=0.8
+            )
+            sphere.data.materials.append(sphere_mat)
+            bpy.ops.object.shade_smooth()
             sphere.parent = bottle
 
         elif props.topper_type in {'SPIRAL_SPHERE', 'SPIRAL_CURL'}:
             bpy.ops.curve.primitive_bezier_circle_add()
             spiral = context.active_object
             spiral.name = "Bottle_Spiral"
+            # Add material
+            spiral_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Spiral_Material",
+                color=(0.8, 0.6, 0.2, 1.0),
+                roughness=0.4,
+                metallic=0.7
+            )
+            spiral.data.materials.append(spiral_mat)
             # Add curve modifiers for spiral shape
             spiral.parent = bottle
 
@@ -699,20 +933,34 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
             
         if props.base_type == 'TEETH':
             # Create teeth around base
+            teeth_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Teeth_Material",
+                color=(0.9, 0.9, 0.85, 1.0),
+                roughness=0.6,
+                metallic=0.0
+            )
             for i in range(8):
                 angle = (i / 8) * 2 * math.pi
                 bpy.ops.mesh.primitive_cone_add(radius1=0.1, depth=0.2)
                 tooth = context.active_object
                 tooth.name = f"Base_Tooth_{i}"
+                tooth.data.materials.append(teeth_mat)
                 tooth.parent = bottle
 
         elif props.base_type == 'CLAWS':
             # Create claw feet
+            claw_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Claw_Material",
+                color=(0.3, 0.25, 0.2, 1.0),
+                roughness=0.7,
+                metallic=0.0
+            )
             for i in range(3):
                 angle = (i / 3) * 2 * math.pi
                 bpy.ops.mesh.primitive_cone_add(radius1=0.15, depth=0.3)
                 claw = context.active_object
                 claw.name = f"Base_Claw_{i}"
+                claw.data.materials.append(claw_mat)
                 claw.parent = bottle
 
         elif props.base_type == 'CLOTH':
@@ -720,6 +968,14 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
             bpy.ops.mesh.primitive_plane_add()
             cloth = context.active_object
             cloth.name = "Base_Cloth"
+            # Add material
+            cloth_mat = ZENV_PotionGenerator_Materials.create_basic_material(
+                name="Cloth_Material",
+                color=(0.6, 0.3, 0.2, 1.0),
+                roughness=0.9,
+                metallic=0.0
+            )
+            cloth.data.materials.append(cloth_mat)
             cloth.parent = bottle
 
     def create_liquid_material(self, color):
@@ -728,7 +984,6 @@ class ZENV_OT_Generate_Potion(bpy.types.Operator):
         mat.use_nodes = True
         mat.blend_method = 'BLEND'
         mat.use_backface_culling = True
-        mat.shadow_method = 'CLIP'
         
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
@@ -822,15 +1077,15 @@ class ZENV_PT_PotionGenerator_Panel(bpy.types.Panel):
             box.prop(props, "base_type")
 
 classes = (
-    ZENV_PG_potion_generator,
-    ZENV_OT_Generate_Potion,
+    ZENV_PG_PotionGenerator_Props,
+    ZENV_OT_PotionGenerator,
     ZENV_PT_PotionGenerator_Panel,
 )
 
 def register():
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.zenv_potion_props = bpy.props.PointerProperty(type=ZENV_PG_potion_generator)
+    bpy.types.Scene.zenv_potion_props = bpy.props.PointerProperty(type=ZENV_PG_PotionGenerator_Props)
 
 def unregister():
     for current_class_to_unregister in reversed(classes):

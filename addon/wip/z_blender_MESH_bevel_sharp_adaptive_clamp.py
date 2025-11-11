@@ -10,13 +10,16 @@ from mathutils import Vector, Matrix
 from bpy.props import FloatProperty, BoolProperty, IntProperty, EnumProperty, PointerProperty
 
 bl_info = {
-    "name": "MESH Bevel Sharp Adaptive Clamp",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'MESH Bevel Sharp Adaptive Clamp',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Add adaptive bevels to sharp edges with dynamic overlap prevention",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Add adaptive bevels to sharp edges with dynamic overlap prevention',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Mesh',
+    "group_prefix": 'MESH',
+    "location": 'View3D > ZENV',
 }
 
 class ZENV_PG_bevel_sharp_adaptive_clamp(bpy.types.PropertyGroup):

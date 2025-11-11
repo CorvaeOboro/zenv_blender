@@ -2,13 +2,16 @@
 # Calculate render scale based on desired pixels per unit
 
 bl_info = {
-    "name": "RENDER Scale Per Pixel",
-    "category": "ZENV",
-    "author": "CorvaeOboro",
-    "version": (1, 0),
+    "name": 'RENDER Scale Per Pixel',
     "blender": (4, 0, 0),
-    "location": "View3D > ZENV",
-    "description": "Calculate render scale based on desired pixels per unit",
+    "category": 'ZENV',
+    "version": '20250302',
+    "description": 'Calculate render scale based on target texel pixels per unit',
+    "status": 'wip',
+    "approved": True,
+    "group": 'Render',
+    "group_prefix": 'RENDER',
+    "location": 'View3D > ZENV',
 }
 
 import bpy
