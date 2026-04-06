@@ -76,6 +76,29 @@ class AddonMetadataValidator:
     
     # Valid status values
     VALID_STATUS_VALUES = {"wip", "working", "stable", "deprecated"}
+
+    EXCLUDED_DIR_NAMES = {
+        "backup",
+        "backups",
+        "_backup",
+        "bak",
+        "old",
+        "archive",
+        "archives",
+        "__pycache__",
+        ".git",
+        ".svn",
+        ".hg",
+        ".idea",
+        ".vscode",
+        ".venv",
+        "venv",
+        ".mypy_cache",
+        ".pytest_cache",
+        "node_modules",
+        "dist",
+        "build",
+    }
     
     def __init__(self, addon_dir: str):
         self.addon_dir = os.path.abspath(addon_dir)
@@ -232,9 +255,20 @@ class AddonMetadataValidator:
         print("Scanning addon directory for metadata validation...")
         print("=" * 80)
         print(f"Directory: {self.addon_dir}\n")
+
+        self.addons = []
+        excluded_dir_names = {d.casefold() for d in self.EXCLUDED_DIR_NAMES}
         
         py_files = []
-        for root, _, files in os.walk(self.addon_dir):
+        for root, dirs, files in os.walk(self.addon_dir):
+            dirs[:] = [
+                d for d in dirs
+                if d.casefold() not in excluded_dir_names
+                and not d.startswith('.')
+                and not d.casefold().startswith('backup')
+                and not d.casefold().endswith('_backup')
+            ]
+
             for file in files:
                 if file.endswith('.py') and file.startswith('z_blender_'):
                     py_files.append(os.path.join(root, file))

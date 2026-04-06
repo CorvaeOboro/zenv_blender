@@ -51,11 +51,22 @@ class AddonDashboard:
     
     def __init__(self, root, addon_dir: str):
         self.root = root
-        self.addon_dir = addon_dir
-        self.validator = AddonMetadataValidator(addon_dir)
+        self.addon_dir = os.path.abspath(addon_dir)
+        if os.path.basename(self.addon_dir).lower() != "addon":
+            candidate_addon_dir = os.path.join(self.addon_dir, "addon")
+            if os.path.isdir(candidate_addon_dir):
+                self.addon_dir = candidate_addon_dir
+        self.validator = AddonMetadataValidator(self.addon_dir)
         self.addons: List[AddonMetadata] = []
         self.filtered_addons: List[AddonMetadata] = []
         self.selected_addon: Optional[AddonMetadata] = None
+
+        self.selected_file_path_var = tk.StringVar(value="")
+        self.tree_item_to_addon: Dict[str, AddonMetadata] = {}
+
+        self.file_modified_time: Dict[str, float] = {}
+        self.sort_column: Optional[str] = None
+        self.sort_reverse: bool = False
         
         self.setup_ui()
         self.load_addons()
@@ -323,7 +334,7 @@ class AddonDashboard:
         
         # Tree
         self.tree = ttk.Treeview(tree_frame, 
-                                 columns=('category', 'name', 'status', 'approved', 'group', 'version', 'issues'),
+                                 columns=('category', 'name', 'status', 'approved', 'group', 'version', 'modified', 'issues'),
                                  show='tree headings',
                                  yscrollcommand=vsb.set,
                                  xscrollcommand=hsb.set)
@@ -339,6 +350,7 @@ class AddonDashboard:
         self.tree.column('approved', width=80, minwidth=60, stretch=False)
         self.tree.column('group', width=100, minwidth=80, stretch=False)
         self.tree.column('version', width=100, minwidth=80, stretch=False)
+        self.tree.column('modified', width=140, minwidth=120, stretch=False)
         self.tree.column('issues', width=60, minwidth=50, stretch=False)
         
         self.tree.heading('category', text='Category', command=lambda: self.sort_by('category'))
@@ -347,6 +359,7 @@ class AddonDashboard:
         self.tree.heading('approved', text='Approved', command=lambda: self.sort_by('approved'))
         self.tree.heading('group', text='Group', command=lambda: self.sort_by('group'))
         self.tree.heading('version', text='Version', command=lambda: self.sort_by('version'))
+        self.tree.heading('modified', text='DateModified', command=lambda: self.sort_by('modified'))
         self.tree.heading('issues', text='Issues', command=lambda: self.sort_by('issues'))
         
         # Grid layout
@@ -380,6 +393,10 @@ class AddonDashboard:
         
         # Save button on the right
         ttk.Button(header, text="Save Changes", command=self.save_metadata).grid(row=0, column=2, sticky=tk.E, padx=(10, 0))
+
+        ttk.Label(header, text="File:").grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
+        self.selected_file_path_entry = ttk.Entry(header, textvariable=self.selected_file_path_var, state='readonly')
+        self.selected_file_path_entry.grid(row=1, column=1, columnspan=2, sticky=(tk.W, tk.E), padx=(15, 0), pady=(2, 0))
         
         # Notebook for tabs
         self.notebook = ttk.Notebook(parent)
@@ -538,6 +555,13 @@ class AddonDashboard:
         
         self.validator.scan_directory()
         self.addons = self.validator.addons
+
+        self.file_modified_time = {}
+        for addon in self.addons:
+            try:
+                self.file_modified_time[addon.file_path] = os.path.getmtime(addon.file_path)
+            except OSError:
+                self.file_modified_time[addon.file_path] = 0.0
         
         # Update group filter
         groups = set()
@@ -606,9 +630,13 @@ class AddonDashboard:
     
     def populate_tree(self):
         """Populate tree view with filtered addons."""
+        selected_file_path = self.selected_addon.file_path if self.selected_addon else None
+
         # Clear tree
         for item in self.tree.get_children():
             self.tree.delete(item)
+
+        self.tree_item_to_addon = {}
         
         # Add addons
         for addon in self.filtered_addons:
@@ -618,6 +646,8 @@ class AddonDashboard:
             approved = str(addon.bl_info.get('approved', 'N/A'))
             group = addon.bl_info.get('group', 'N/A')
             version = addon.bl_info.get('version', 'N/A')
+            modified_ts = self.file_modified_time.get(addon.file_path, 0.0)
+            modified_str = datetime.fromtimestamp(modified_ts).strftime('%Y-%m-%d %H:%M') if modified_ts else 'N/A'
             issue_count = len(addon.issues)
             
             # Determine tag
@@ -628,52 +658,103 @@ class AddonDashboard:
             else:
                 tag = 'ok'
             
-            self.tree.insert('', 'end', values=(category, name, status, approved, group, version, issue_count),
+            item_id = addon.file_path
+            self.tree_item_to_addon[item_id] = addon
+            self.tree.insert('', 'end', iid=item_id,
+                           values=(category, name, status, approved, group, version, modified_str, issue_count),
                            tags=(tag,))
         
         self.addon_count_label.config(text=f"({len(self.filtered_addons)})")
+
+        if selected_file_path and self.tree.exists(selected_file_path):
+            self.tree.selection_set(selected_file_path)
+            self.tree.see(selected_file_path)
     
     def sort_by(self, column):
         """Sort tree by column."""
-        # Implementation would sort filtered_addons and repopulate
-        pass
+        if self.sort_column == column:
+            self.sort_reverse = not self.sort_reverse
+        else:
+            self.sort_column = column
+            self.sort_reverse = False
+
+        def safe_int(val) -> int:
+            try:
+                return int(val)
+            except Exception:
+                return 0
+
+        def sort_key(addon: AddonMetadata):
+            if column == 'modified':
+                return self.file_modified_time.get(addon.file_path, 0.0)
+            if column == 'version':
+                return safe_int(addon.bl_info.get('version', 0))
+            if column == 'issues':
+                return len(addon.issues)
+            if column == 'category':
+                return (addon.folder_category or '').casefold()
+            if column == 'name':
+                return (addon.bl_info.get('name', addon.file_name) or '').casefold()
+            if column == 'status':
+                return (addon.bl_info.get('status', '') or '').casefold()
+            if column == 'approved':
+                return str(addon.bl_info.get('approved', '')).casefold()
+            if column == 'group':
+                return (addon.bl_info.get('group', '') or '').casefold()
+
+            return (addon.bl_info.get(column, '') or '').casefold()
+
+        self.filtered_addons.sort(key=sort_key, reverse=self.sort_reverse)
+        self.populate_tree()
     
     def on_addon_select(self, event):
         """Handle addon selection."""
         selection = self.tree.selection()
         if not selection:
             return
-        
-        item = self.tree.item(selection[0])
-        name = item['values'][1]  # Name is now second column (after category)
-        
-        # Find addon
-        for addon in self.filtered_addons:
-            if addon.bl_info.get('name', addon.file_name) == name:
-                self.selected_addon = addon
-                self.display_addon_details(addon)
-                break
+
+        item_id = selection[0]
+        addon = self.tree_item_to_addon.get(item_id)
+        if addon is None:
+            item = self.tree.item(item_id)
+            name = item['values'][1]  # Name is now second column (after category)
+
+            for candidate in self.filtered_addons:
+                if candidate.bl_info.get('name', candidate.file_name) == name:
+                    addon = candidate
+                    break
+
+        if addon is None:
+            return
+
+        self.selected_addon = addon
+        self.display_addon_details(addon)
     
     def reselect_addon(self, file_path: str, name: str):
         """Reselect an addon in the tree after reload."""
-        # Find the addon in the tree by matching name or file path
+        if self.tree.exists(file_path):
+            self.tree.selection_set(file_path)
+            self.tree.see(file_path)
+            addon = self.tree_item_to_addon.get(file_path)
+            if addon is not None:
+                self.selected_addon = addon
+                self.display_addon_details(addon)
+                return
+
         for item in self.tree.get_children():
             values = self.tree.item(item)['values']
-            item_name = values[1]  # Name is second column
-            
-            # Find the addon to check file path
-            for addon in self.filtered_addons:
-                if addon.bl_info.get('name', addon.file_name) == item_name:
-                    if addon.file_path == file_path or item_name == name:
-                        # Select this item
-                        self.tree.selection_set(item)
-                        self.tree.see(item)
-                        self.selected_addon = addon
-                        self.display_addon_details(addon)
-                        return
-        
-        # If not found in filtered list, clear selection
+            item_name = values[1]
+            if item_name == name:
+                self.tree.selection_set(item)
+                self.tree.see(item)
+                addon = self.tree_item_to_addon.get(item)
+                if addon is not None:
+                    self.selected_addon = addon
+                    self.display_addon_details(addon)
+                return
+
         self.selected_addon = None
+        self.selected_file_path_var.set("")
     
     def get_git_timestamp(self, file_path: str) -> str:
         """Get last git commit timestamp for file in YYYYMMDDHHMMSS format."""
@@ -698,6 +779,8 @@ class AddonDashboard:
     
     def display_addon_details(self, addon: AddonMetadata):
         """Display addon details in right panel."""
+        self.selected_file_path_var.set(addon.file_path)
+
         # Update git timestamp
         git_timestamp = self.get_git_timestamp(addon.file_path)
         self.git_timestamp_label.config(text=f"Last Update: {git_timestamp}")
@@ -990,6 +1073,12 @@ def main():
     else:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         addon_dir = os.path.join(script_dir, "..", "addon")
+
+    addon_dir = os.path.abspath(addon_dir)
+    if os.path.basename(addon_dir).lower() != "addon":
+        candidate_addon_dir = os.path.join(addon_dir, "addon")
+        if os.path.isdir(candidate_addon_dir):
+            addon_dir = candidate_addon_dir
     
     if not os.path.exists(addon_dir):
         print(f"ERROR: Directory '{addon_dir}' does not exist")

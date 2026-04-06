@@ -3,7 +3,9 @@ blender addons focused on singular features of 3d modelling , materials , and te
 
 [DOWNLOAD]( https://github.com/CorvaeOboro/zenv_blender/archive/refs/heads/main.zip ) 
 
-each addon is a self contained python file , to be installed and enabled individually , to demonstrate a specific modular feature .
+- each addon is self-contained and can be run independently
+- many of the addons are work in progress
+
 # INSTALL 
 - download and extract folder to local filepath
 - in Blender > Edit > Preferences > Addon > Install

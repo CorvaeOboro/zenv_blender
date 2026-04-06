@@ -200,8 +200,8 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
 
             # Select all new objects and make the first one active
             if new_objects:
-                for obj in new_objects:
-                    obj.select_set(True)
+                for created_obj in new_objects:
+                    created_obj.select_set(True)
                 context.view_layer.objects.active = new_objects[0]
 
             bm.free()
@@ -211,6 +211,104 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode=original_mode)
 
             self.report({'INFO'}, f"Successfully separated into {len(islands)} UV islands")
+            return {'FINISHED'}
+
+        except Exception as e:
+            if 'bm' in locals():
+                bm.free()
+            if 'obj' in locals() and obj:
+                bpy.ops.object.mode_set(mode=original_mode)
+            self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
+            return {'CANCELLED'}
+
+
+class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
+    """Separate the mesh so every face becomes its own object (all UV edges split)"""
+    bl_idname = "zenv.separatebyuv_faces"
+    bl_label = "Separate Faces (Split All UV Edges)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def duplicate_face(self, context, obj, face, uv_layer, face_index):
+        new_mesh = bpy.data.meshes.new(name=f"{obj.name}_face")
+        new_bm = bmesh.new()
+
+        vert_map = {}
+        for vert in face.verts:
+            new_vert = new_bm.verts.new(vert.co)
+            vert_map[vert] = new_vert
+
+        new_bm.verts.ensure_lookup_table()
+        new_bm.verts.index_update()
+
+        new_uv_layer = new_bm.loops.layers.uv.new()
+
+        new_verts = [vert_map[v] for v in face.verts]
+        try:
+            new_face = new_bm.faces.new(new_verts)
+        except ValueError:
+            new_bm.free()
+            bpy.data.meshes.remove(new_mesh)
+            return None
+
+        new_face.material_index = face.material_index
+        new_face.smooth = face.smooth
+
+        for i, loop in enumerate(face.loops):
+            new_face.loops[i][new_uv_layer].uv = loop[uv_layer].uv
+
+        new_bm.to_mesh(new_mesh)
+        new_obj = bpy.data.objects.new(name=f"{obj.name}_face_{face_index:04d}", object_data=new_mesh)
+
+        for mat in obj.data.materials:
+            new_obj.data.materials.append(mat)
+
+        context.collection.objects.link(new_obj)
+        new_obj.matrix_world = obj.matrix_world
+
+        new_bm.free()
+        return new_obj
+
+    def execute(self, context):
+        try:
+            obj = context.active_object
+            if not obj or obj.type != 'MESH':
+                self.report({'ERROR'}, "Active object is not a mesh")
+                return {'CANCELLED'}
+
+            original_mode = obj.mode
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
+            bm.faces.ensure_lookup_table()
+
+            if not bm.loops.layers.uv:
+                bm.free()
+                self.report({'ERROR'}, "Mesh has no UV layer")
+                return {'CANCELLED'}
+
+            uv_layer = bm.loops.layers.uv.verify()
+
+            new_objects = []
+            for i, face in enumerate(bm.faces):
+                new_obj = self.duplicate_face(context, obj, face, uv_layer, i)
+                if new_obj is not None:
+                    new_objects.append(new_obj)
+
+            if new_objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+            if new_objects:
+                for created_obj in new_objects:
+                    created_obj.select_set(True)
+                context.view_layer.objects.active = new_objects[0]
+
+            bm.free()
+
+            if original_mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode=original_mode)
+
+            self.report({'INFO'}, f"Successfully separated into {len(new_objects)} faces")
             return {'FINISHED'}
 
         except Exception as e:
@@ -232,9 +330,11 @@ class ZENV_PT_MeshSeparateByUVIsland_Panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator("zenv.separatebyuv_islands", icon='OUTLINER_OB_MESH')
+        layout.operator("zenv.separatebyuv_faces", icon='OUTLINER_OB_MESH')
 
 classes = (
     ZENV_OT_MeshSeparateByUVIsland,
+    ZENV_OT_MeshSeparateByUVFace,
     ZENV_PT_MeshSeparateByUVIsland_Panel,
 )
 

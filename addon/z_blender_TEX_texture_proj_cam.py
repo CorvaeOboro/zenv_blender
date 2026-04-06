@@ -29,10 +29,6 @@ from mathutils import Matrix, Vector
 import math
 import logging
 
-# ------------------------------------------------------------------------
-#    Setup Logging
-# ------------------------------------------------------------------------
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -49,6 +45,37 @@ class ZENV_TextureProj_Properties:
         camera = context.scene.camera
         if camera and camera.data.type == 'ORTHO':
             camera.data.ortho_scale = self.zenv_ortho_scale
+    
+    @staticmethod
+    def clean_filepath(filepath):
+        """Clean filepath by removing quotes and normalizing path"""
+        if not filepath:
+            return filepath
+        
+        # Strip leading/trailing whitespace
+        cleaned = filepath.strip()
+        
+        # Remove surrounding quotes (single or double)
+        if (cleaned.startswith('"') and cleaned.endswith('"')) or \
+           (cleaned.startswith("'") and cleaned.endswith("'")):
+            cleaned = cleaned[1:-1]
+        
+        # Normalize path separators for the OS
+        cleaned = os.path.normpath(cleaned)
+        
+        return cleaned
+    
+    @staticmethod
+    def update_texture_path(self, context):
+        """Update callback for texture path - cleans pasted paths with quotes"""
+        if context.scene.zenv_texture_path:
+            cleaned_path = ZENV_TextureProj_Properties.clean_filepath(context.scene.zenv_texture_path)
+            
+            # Only update if the path actually changed (avoid infinite recursion)
+            if cleaned_path != context.scene.zenv_texture_path:
+                # Temporarily disable the update callback to avoid recursion
+                context.scene.zenv_texture_path = cleaned_path
+                logger.info(f"Cleaned filepath: {cleaned_path}")
 
     @classmethod
     def register(cls):
@@ -60,6 +87,13 @@ class ZENV_TextureProj_Properties:
             min=0.1,
             update=cls.update_ortho_scale
         )
+        bpy.types.Scene.zenv_bake_margin = bpy.props.IntProperty(
+            name="Bake Margin",
+            description="Bake padding in pixels (0 = no padding)",
+            default=16,
+            min=0,
+            max=256
+        )
         bpy.types.Scene.zenv_texture_resolution = bpy.props.IntProperty(
             name="Resolution",
             description="Resolution of the baked texture",
@@ -69,8 +103,9 @@ class ZENV_TextureProj_Properties:
         )
         bpy.types.Scene.zenv_texture_path = bpy.props.StringProperty(
             name="Texture Path",
-            description="Path to the texture file",
-            subtype='FILE_PATH'
+            description="Path to the texture file (paste paths with quotes will be auto-cleaned)",
+            subtype='FILE_PATH',
+            update=cls.update_texture_path
         )
         bpy.types.Scene.zenv_debug_mode = bpy.props.BoolProperty(
             name="Debug Mode",
@@ -165,6 +200,7 @@ class ZENV_TextureProj_Properties:
     def unregister(cls):
         """Unregister all properties"""
         del bpy.types.Scene.zenv_ortho_scale
+        del bpy.types.Scene.zenv_bake_margin
         del bpy.types.Scene.zenv_texture_resolution
         del bpy.types.Scene.zenv_texture_path
         del bpy.types.Scene.zenv_debug_mode
@@ -318,13 +354,22 @@ class ZENV_TextureProj_Utils:
         context.scene.render.bake.use_pass_direct = True
         context.scene.render.bake.use_pass_indirect = False
         context.scene.render.bake.use_pass_color = True
-        context.scene.render.bake.margin = 16
+        context.scene.render.bake.margin = context.scene.zenv_bake_margin
         context.scene.render.bake.use_clear = True  # Clear image before baking
         
         # Set high quality settings
         context.scene.cycles.use_denoising = True
         context.scene.cycles.preview_denoiser = 'OPTIX'
         context.scene.cycles.use_high_quality_normals = True
+
+    @staticmethod
+    def find_any_camera(scene):
+        if not scene:
+            return None
+        for obj in scene.objects:
+            if obj.type == 'CAMERA':
+                return obj
+        return None
 
 # ------------------------------------------------------------------------
 #    Operators
@@ -456,6 +501,46 @@ class ZENV_OT_TextureProj_GetCameraResolution(bpy.types.Operator):
         self.report({'INFO'}, f"Got resolution: {context.scene.render.resolution_x}x{context.scene.render.resolution_y}")
         return {'FINISHED'}
 
+class ZENV_OT_TextureProj_DropImage(bpy.types.Operator):
+    """Open file browser to select an image"""
+    bl_idname = "zenv.textureproj_drop_image"
+    bl_label = "Select Image"
+    bl_description = "Open file browser to select an image file"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
+    filter_glob: bpy.props.StringProperty(
+        default="*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.tiff;*.tif;*.exr;*.hdr",
+        options={'HIDDEN'}
+    )
+
+    def execute(self, context):
+        # Clean the filepath (remove quotes, normalize path)
+        cleaned_filepath = ZENV_TextureProj_Properties.clean_filepath(self.filepath)
+        
+        # Validate that the file is an image
+        valid_extensions = {'.png', '.jpg', '.jpeg', '.bmp', '.tga', '.tiff', '.tif', '.exr', '.hdr'}
+        file_ext = os.path.splitext(cleaned_filepath)[1].lower()
+        
+        if file_ext not in valid_extensions:
+            self.report({'ERROR'}, f"Invalid file type: {file_ext}. Please select an image file.")
+            return {'CANCELLED'}
+        
+        # Check if file exists
+        if not os.path.isfile(cleaned_filepath):
+            self.report({'ERROR'}, f"File not found: {cleaned_filepath}")
+            return {'CANCELLED'}
+        
+        # Set the texture path
+        context.scene.zenv_texture_path = cleaned_filepath
+        self.report({'INFO'}, f"Loaded image: {os.path.basename(cleaned_filepath)}")
+        
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
 class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
     """Bake texture using camera projection"""
     bl_idname = "zenv.textureproj_bake"
@@ -465,10 +550,7 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return (context.active_object and 
-                context.active_object.type == 'MESH' and 
-                context.scene.camera and
-                context.scene.zenv_texture_path)
+        return True
 
     def execute(self, context):
         """
@@ -559,9 +641,18 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
 
     def initial_checks(self, context):
         """Perform initial checks before baking"""
-        if not context.scene.camera:
-            self.report({'ERROR'}, "No camera found in the scene")
+        if not (context.active_object and context.active_object.type == 'MESH'):
+            self.report({'ERROR'}, "Select a mesh object")
             return False
+
+        if not context.scene.camera:
+            fallback_cam = ZENV_TextureProj_Utils.find_any_camera(context.scene)
+            if fallback_cam:
+                context.scene.camera = fallback_cam
+                self.report({'INFO'}, f"No active camera set. Using: {fallback_cam.name}")
+            else:
+                self.report({'ERROR'}, "No camera found in the scene")
+                return False
         if not context.scene.zenv_texture_path:
             self.report({'ERROR'}, "No texture path specified")
             return False
@@ -760,6 +851,8 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
 
     def perform_baking(self, context, source_mesh, target_mesh):
         """Perform the actual bake operation"""
+        bake_margin = context.scene.zenv_bake_margin
+
         # Setup render settings
         context.scene.render.engine = 'CYCLES'
         context.scene.cycles.device = 'GPU'
@@ -768,7 +861,10 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         context.scene.render.bake.use_pass_direct = True
         context.scene.render.bake.use_pass_indirect = False
         context.scene.render.bake.use_pass_color = True
-        context.scene.render.bake.margin = 16
+        context.scene.render.bake.margin = bake_margin
+        
+        # Set color management to Standard for exact texture colors (no color transform)
+        context.scene.view_settings.view_transform = 'Standard'
         
         # Select objects for baking
         bpy.ops.object.select_all(action='DESELECT')
@@ -785,7 +881,7 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
             pass_filter={'COLOR'},
             use_selected_to_active=True,
             cage_extrusion=0.001,  # Tiny extrusion for  baking
-            margin=16
+            margin=bake_margin
         )
         
         # Save result
@@ -1132,13 +1228,20 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return (context.active_object and 
-                context.active_object.type == 'MESH' and 
-                context.scene.camera)
+        return True
 
     def execute(self, context):
         """Bake visibility mask using pure ray casting - EXACT COPY from debug addon"""
         scene = context.scene
+        if not scene.camera:
+            fallback_cam = ZENV_TextureProj_Utils.find_any_camera(scene)
+            if fallback_cam:
+                scene.camera = fallback_cam
+                self.report({'INFO'}, f"No active camera set. Using: {fallback_cam.name}")
+            else:
+                self.report({'ERROR'}, "No active camera and no camera found in scene")
+                return {'CANCELLED'}
+
         camera = scene.camera
         target_obj = context.active_object
         
@@ -1157,7 +1260,9 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         
         # Get settings
         num_rays = scene.zenv_mask_sample_count
-        texture_size = scene.zenv_texture_resolution
+        
+        # Use texture resolution (supports non-square)
+        texture_width, texture_height = ZENV_TextureProj_Utils.get_texture_resolution(context)
         
         # Get camera location
         cam_location = camera.matrix_world.to_translation()
@@ -1276,19 +1381,25 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         if image_name in bpy.data.images:
             bpy.data.images.remove(bpy.data.images[image_name])
         
-        image = bpy.data.images.new(image_name, texture_size, texture_size, alpha=False)
+        image = bpy.data.images.new(image_name, texture_width, texture_height, alpha=False)
         
         # Initialize to black
-        pixels = np.zeros(texture_size * texture_size * 4, dtype=np.float32)
+        pixels = np.zeros(texture_width * texture_height * 4, dtype=np.float32)
         
         # Write hit points to texture with small radius to fill gaps
-        splat_radius = max(1, int(texture_size / (samples_per_axis * 2)))  # Adaptive radius
-        print(f"Using splat radius: {splat_radius} pixels")
+        # Use average of width and height for splat radius calculation
+        avg_texture_size = (texture_width + texture_height) / 2
+        dilation_amount = context.scene.zenv_mask_dilation
+        if dilation_amount == 0:
+            splat_radius = 0
+        else:
+            splat_radius = max(1, int(avg_texture_size / (samples_per_axis * 2)))  # Adaptive radius
+        print(f"Using splat radius: {splat_radius} pixels (texture: {texture_width}x{texture_height})")
         
         for uv_x, uv_y, visibility in hit_points_uv:
             # Convert UV to pixel coordinates (don't flip Y - Blender handles it)
-            px = int(uv_x * (texture_size - 1))
-            py = int(uv_y * (texture_size - 1))  # No flip
+            px = int(uv_x * (texture_width - 1))
+            py = int(uv_y * (texture_height - 1))  # No flip
             
             # Splat in a small radius around the hit point
             for dy in range(-splat_radius, splat_radius + 1):
@@ -1296,11 +1407,11 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
                     write_x = px + dx
                     write_y = py + dy
                     
-                    if 0 <= write_x < texture_size and 0 <= write_y < texture_size:
+                    if 0 <= write_x < texture_width and 0 <= write_y < texture_height:
                         # Optional: use distance falloff for softer edges
                         dist = (dx*dx + dy*dy) ** 0.5
                         if dist <= splat_radius:
-                            idx = (write_y * texture_size + write_x) * 4
+                            idx = (write_y * texture_width + write_x) * 4
                             # Use max to avoid overwriting brighter values
                             pixels[idx] = max(pixels[idx], visibility)
                             pixels[idx + 1] = max(pixels[idx + 1], visibility)
@@ -1308,17 +1419,16 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
                             pixels[idx + 3] = 1.0
         
         # Dilate mask - expand white pixels
-        dilation_amount = context.scene.zenv_mask_dilation
         if dilation_amount > 0:
             print(f"Dilating mask (expanding white pixels by {dilation_amount})...")
-            pixels_2d = pixels.reshape((texture_size, texture_size, 4))
+            pixels_2d = pixels.reshape((texture_height, texture_width, 4))
             
             # Perform dilation multiple times for larger expansion
             for iteration in range(dilation_amount):
                 dilated = pixels_2d.copy()
                 
-                for y in range(texture_size):
-                    for x in range(texture_size):
+                for y in range(texture_height):
+                    for x in range(texture_width):
                         # Check if current pixel is black (< 0.5)
                         if pixels_2d[y, x, 0] < 0.5:
                             # Check 8 neighbors
@@ -1327,7 +1437,7 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
                                     if dx == 0 and dy == 0:
                                         continue
                                     nx, ny = x + dx, y + dy
-                                    if 0 <= nx < texture_size and 0 <= ny < texture_size:
+                                    if 0 <= nx < texture_width and 0 <= ny < texture_height:
                                         # If neighbor is white (>= 0.5), make current pixel white
                                         if pixels_2d[ny, nx, 0] >= 0.5:
                                             dilated[y, x, 0] = 1.0
@@ -1901,11 +2011,13 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         return {
             'original_obj': context.active_object,
             'render_engine': context.scene.render.engine,
+            'view_transform': context.scene.view_settings.view_transform,
         }
 
     def restore_state(self, context, state):
         """Restore previous scene state"""
         context.scene.render.engine = state['render_engine']
+        context.scene.view_settings.view_transform = state['view_transform']
 
 # ------------------------------------------------------------------------
 #    Panel
@@ -1946,7 +2058,31 @@ class ZENV_PT_TextureProj_Panel(bpy.types.Panel):
         # Texture settings
         box = layout.box()
         box.label(text="Texture:", icon='TEXTURE')
-        box.prop(context.scene, "zenv_texture_path")
+        
+        col = box.column(align=True)
+        
+        # File path property with browse button
+        row = col.row(align=True)
+        row.prop(context.scene, "zenv_texture_path", text="")
+        row.operator("zenv.textureproj_drop_image", text="", icon='FILEBROWSER')
+        
+        # Display current image info if available
+        if context.scene.zenv_texture_path:
+            image_path = bpy.path.abspath(context.scene.zenv_texture_path)
+            if os.path.isfile(image_path):
+                filename = os.path.basename(image_path)
+                col.separator()
+                info_col = col.column(align=True)
+                info_col.label(text=f"File: {filename}", icon='IMAGE_DATA')
+                
+                # Try to get image dimensions
+                try:
+                    img = bpy.data.images.load(image_path, check_existing=True)
+                    if img and img.size[0] > 0:
+                        info_col.label(text=f"Size: {img.size[0]}x{img.size[1]}px")
+                except:
+                    pass
+        
         box.prop(context.scene, "zenv_square_texture")
         
         # Show appropriate texture resolution controls based on square_texture setting
@@ -1962,6 +2098,20 @@ class ZENV_PT_TextureProj_Panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Baking:", icon='RENDER_RESULT')
         box.operator("zenv.textureproj_bake", icon='RENDER_STILL')
+        active_obj = context.active_object
+        if not (active_obj and active_obj.type == 'MESH'):
+            box.label(text="No Selected Mesh", icon='INFO')
+        else:
+            if not context.scene.zenv_texture_path:
+                box.label(text="No Texture Selected", icon='INFO')
+
+            if not context.scene.camera:
+                fallback_cam = ZENV_TextureProj_Utils.find_any_camera(context.scene)
+                if fallback_cam:
+                    box.label(text=f"No Active Camera (will use {fallback_cam.name})", icon='INFO')
+                else:
+                    box.label(text="No Camera In Scene", icon='INFO')
+        box.prop(context.scene, "zenv_bake_margin")
         box.prop(context.scene, "zenv_use_mask_as_alpha")
 
         # Visibility Mask
@@ -1977,6 +2127,7 @@ class ZENV_PT_TextureProj_Panel(bpy.types.Panel):
 classes = (
     ZENV_OT_TextureProj_CreateCamera,
     ZENV_OT_TextureProj_GetCameraResolution,
+    ZENV_OT_TextureProj_DropImage,
     ZENV_OT_TextureProj_BakeTexture,
     ZENV_OT_TextureProj_BakeVisibilityMask,
     ZENV_PT_TextureProj_Panel,

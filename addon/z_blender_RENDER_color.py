@@ -41,6 +41,7 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
         try:
             # Store original render settings
             original_engine = context.scene.render.engine
+            original_view_transform = context.scene.view_settings.view_transform
             original_materials = self.store_original_materials()
             
             # Setup rendering
@@ -50,14 +51,15 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
             self.setup_flat_color_rendering(context)
             
             # Render and save
-            success = self.render_color_image(context)
+            render_filepath = self.render_color_image(context)
             
             # Restore original settings and materials
             context.scene.render.engine = original_engine
+            context.scene.view_settings.view_transform = original_view_transform
             self.restore_materials(original_materials)
             
-            if success:
-                self.report({'INFO'}, "Unlit color image rendered successfully")
+            if render_filepath:
+                self.report({'INFO'}, f"Rendered: {render_filepath}")
                 return {'FINISHED'}
             return {'CANCELLED'}
             
@@ -88,6 +90,9 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
         context.scene.render.engine = 'BLENDER_EEVEE'
         context.scene.render.image_settings.file_format = 'PNG'
         context.scene.render.image_settings.color_mode = 'RGB'
+        
+        # Set color management to Standard for exact texture colors (no color transform)
+        context.scene.view_settings.view_transform = 'Standard'
         
         # Disable unnecessary effects
         context.scene.eevee.use_gtao = False
@@ -158,6 +163,8 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
         
         # Set render path with blend filename included
         render_filepath = os.path.join(output_folder, f"{blend_filename}_color_{datetime_str}.png")
+        # Convert to absolute path for display
+        render_filepath = os.path.abspath(render_filepath)
         context.scene.render.filepath = render_filepath
         
         # Render
@@ -166,7 +173,7 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
         if not os.path.exists(render_filepath):
             raise Exception("Failed to save rendered color image")
             
-        return True
+        return render_filepath
 
 # ------------------------------------------------------------------------
 #    Panel

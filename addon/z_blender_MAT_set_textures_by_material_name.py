@@ -214,6 +214,73 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
         
         return True
 
+class ZENV_OT_AssignMaterialsByMeshName(Operator):
+    """Assign materials to meshes based on matching names."""
+    bl_idname = "zenv.assign_materials_by_mesh_name"
+    bl_label = "Assign Materials by Mesh Name"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the material assignment operation."""
+        try:
+            import re
+            
+            # Get all mesh objects in the scene
+            mesh_objects = [obj for obj in bpy.data.objects if obj.type == 'MESH']
+            
+            if not mesh_objects:
+                self.report({'WARNING'}, "No mesh objects found in scene")
+                return {'CANCELLED'}
+            
+            # Get all materials
+            materials = {mat.name: mat for mat in bpy.data.materials}
+            
+            if not materials:
+                self.report({'WARNING'}, "No materials found in scene")
+                return {'CANCELLED'}
+            
+            assigned_count = 0
+            skipped_count = 0
+            
+            for obj in mesh_objects:
+                # Remove suffix like .001, .002, etc. from mesh name
+                base_name = re.sub(r'\.\d{3,}$', '', obj.name)
+                
+                # Try to find a matching material
+                matched_material = None
+                
+                # First try exact match with base name
+                if base_name in materials:
+                    matched_material = materials[base_name]
+                else:
+                    # Try case-insensitive match
+                    for mat_name, mat in materials.items():
+                        if mat_name.lower() == base_name.lower():
+                            matched_material = mat
+                            break
+                
+                if matched_material:
+                    # Clear existing materials and assign the matched one
+                    obj.data.materials.clear()
+                    obj.data.materials.append(matched_material)
+                    assigned_count += 1
+                else:
+                    skipped_count += 1
+            
+            if assigned_count > 0:
+                msg = f"Assigned materials to {assigned_count} mesh(es)"
+                if skipped_count > 0:
+                    msg += f", skipped {skipped_count} mesh(es) without matching materials"
+                self.report({'INFO'}, msg)
+                return {'FINISHED'}
+            else:
+                self.report({'WARNING'}, f"No materials were assigned, {skipped_count} mesh(es) had no matching materials")
+                return {'CANCELLED'}
+                
+        except Exception as e:
+            self.report({'ERROR'}, f"Error: {str(e)}")
+            return {'CANCELLED'}
+
 # ------------------------------------------------------------------------
 #    Panel
 # ------------------------------------------------------------------------
@@ -237,6 +304,9 @@ class ZENV_PT_SetTextureByMaterialNamePanel(Panel):
         box.prop(props, "material_suffix")
 
         box.operator(ZENV_OT_SetTextureByMaterialName.bl_idname)
+        
+        box.separator()
+        box.operator(ZENV_OT_AssignMaterialsByMeshName.bl_idname)
 
 # ------------------------------------------------------------------------
 #    Registration
@@ -245,6 +315,7 @@ class ZENV_PT_SetTextureByMaterialNamePanel(Panel):
 classes = (
     ZENV_PG_SetTextureByMaterialName_Properties,
     ZENV_OT_SetTextureByMaterialName,
+    ZENV_OT_AssignMaterialsByMeshName,
     ZENV_PT_SetTextureByMaterialNamePanel,
 )
 
