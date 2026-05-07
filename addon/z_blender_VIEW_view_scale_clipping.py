@@ -2,7 +2,7 @@ bl_info = {
     "name": 'VIEW Scale Clipping',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250403',
+    "version": '20260418',
     "description": 'Adjust viewport clipping based on object size',
     "status": 'working',
     "approved": True,
@@ -33,117 +33,140 @@ class ZENV_OT_ViewAutoClippingBounds(Operator):
     def poll(cls, context):
         return context.scene.objects
 
-    def get_object_size(self, obj):
-        """Get object size considering all geometry"""
+    def get_object_bounds(self, obj, depsgraph):
+        """Return ``(bounds_min, bounds_max)`` for ``obj`` in world space.
+
+        The evaluated mesh from ``depsgraph`` is used so modifiers and
+        shape keys are honored. Returns ``None`` when the object has no
+        geometry we can sample.
+        """
         if not obj:
-            return 0.0
-            
-        # Get world matrix
+            return None
+
         world_matrix = obj.matrix_world
-        
-        # Handle different object types
+        points = []
+
         if obj.type == 'MESH':
-            # Use bmesh for accurate bounds
-            bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            bmesh.ops.transform(bm, matrix=world_matrix, verts=bm.verts)
-            
-            # Get bounds
-            bounds = [v.co for v in bm.verts]
-            bm.free()
-            
+            obj_eval = obj.evaluated_get(depsgraph)
+            mesh_eval = obj_eval.to_mesh()
+            try:
+                if mesh_eval is not None and len(mesh_eval.vertices) > 0:
+                    points.extend(world_matrix @ v.co for v in mesh_eval.vertices)
+            finally:
+                try:
+                    obj_eval.to_mesh_clear()
+                except Exception:
+                    pass
+
         elif obj.type == 'CURVE':
-            # Get curve points
-            bounds = []
             for spline in obj.data.splines:
                 if spline.type == 'BEZIER':
-                    bounds.extend([world_matrix @ p.co for p in spline.bezier_points])
+                    points.extend(world_matrix @ p.co for p in spline.bezier_points)
                 else:
-                    bounds.extend([world_matrix @ p.co for p in spline.points])
-                    
+                    points.extend(world_matrix @ p.co.xyz for p in spline.points)
+
         elif obj.type in {'EMPTY', 'CAMERA', 'LIGHT'}:
-            # Use object location and display size
-            bounds = [world_matrix.translation]
+            loc = world_matrix.translation
             size = obj.empty_display_size if obj.type == 'EMPTY' else 1.0
-            bounds.extend([
+            points.append(loc)
+            points.extend([
                 world_matrix @ mathutils.Vector((size, 0, 0)),
                 world_matrix @ mathutils.Vector((0, size, 0)),
-                world_matrix @ mathutils.Vector((0, 0, size))
+                world_matrix @ mathutils.Vector((0, 0, size)),
             ])
-            
+
         else:
-            # Fallback to dimensions
-            size = max(obj.dimensions)
-            loc = world_matrix.translation
-            bounds = [loc + mathutils.Vector((size, size, size))]
-            
-        # Calculate max distance from origin
-        if bounds:
-            return max(p.length for p in bounds)
-        return 0.0
+            # Fallback: use the 8 bounding-box corners transformed to
+            # world space, which works for every object type Blender
+            # exposes local bbox_corners on.
+            try:
+                points.extend(world_matrix @ mathutils.Vector(corner)
+                              for corner in obj.bound_box)
+            except Exception:
+                points.append(world_matrix.translation)
+
+        if not points:
+            return None
+
+        bounds_min = mathutils.Vector((
+            min(p.x for p in points),
+            min(p.y for p in points),
+            min(p.z for p in points),
+        ))
+        bounds_max = mathutils.Vector((
+            max(p.x for p in points),
+            max(p.y for p in points),
+            max(p.z for p in points),
+        ))
+        return bounds_min, bounds_max
 
     def update_viewport_settings(self, context):
-        """Update viewport settings based on object size"""
-        # Default settings
-        settings = {
-            'scope': 'ALL',  # Use all objects by default
-            'clip_start_factor': 0.001,  # Start clipping at 0.1% of max size
-            'clip_end_factor': 5.0,     # End clipping at 5x max size (reduced from 10x)
-            'view_lens': 50.0,          # Standard lens
-            'zoom_factor': 0.5          # Zoom factor to get closer to objects
-        }
-        
-        # Get largest object size
-        max_size = 0.0
-        active_obj = None
-        bounds_center = mathutils.Vector((0, 0, 0))
-        total_objects = 0
-        
-        objects = context.scene.objects  # Always use all objects
-            
-        for obj in objects:
-            size = self.get_object_size(obj)
-            if size > max_size:
-                max_size = size
-                active_obj = obj
-            bounds_center += obj.matrix_world.translation
-            total_objects += 1
-                
-        if max_size == 0.0 or total_objects == 0:
+        """Update viewport settings based on true scene bounds."""
+        # Tuning constants.
+        CLIP_START_FACTOR = 0.001   # Near clip as a fraction of scene diagonal.
+        CLIP_END_FACTOR = 5.0       # Far clip as a multiple of scene diagonal.
+        VIEW_LENS = 50.0
+
+        depsgraph = context.evaluated_depsgraph_get()
+
+        # Aggregate an overall axis-aligned bounding box across every
+        # object in the current scene. 
+        overall_min = None
+        overall_max = None
+
+        for obj in context.scene.objects:
+            bounds = self.get_object_bounds(obj, depsgraph)
+            if bounds is None:
+                continue
+            bmin, bmax = bounds
+            if overall_min is None:
+                overall_min = bmin.copy()
+                overall_max = bmax.copy()
+            else:
+                overall_min.x = min(overall_min.x, bmin.x)
+                overall_min.y = min(overall_min.y, bmin.y)
+                overall_min.z = min(overall_min.z, bmin.z)
+                overall_max.x = max(overall_max.x, bmax.x)
+                overall_max.y = max(overall_max.y, bmax.y)
+                overall_max.z = max(overall_max.z, bmax.z)
+
+        if overall_min is None:
             return False
 
-        # Calculate average center and adjusted size
-        bounds_center /= total_objects
-        adjusted_size = max_size * settings['zoom_factor']  # Use half the max size for closer view
+        extent = overall_max - overall_min
+        scene_diagonal = max(extent.length, 1e-6)  # Real measure of scene size.
+        bounds_center = (overall_min + overall_max) * 0.5
 
-        # Calculate clip values
-        clip_start = max(adjusted_size * settings['clip_start_factor'], 0.001)
-        clip_end = adjusted_size * settings['clip_end_factor']
-            
-        # Update viewport settings across all screens
+        clip_start = max(scene_diagonal * CLIP_START_FACTOR, 0.001)
+        clip_end = scene_diagonal * CLIP_END_FACTOR
+        view_distance = scene_diagonal
+
+        # Walk every 3D viewport, but dedupe so the same space is only
+        # touched once 
         processed_count = 0
-        for window in context.window_manager.windows:
-            for screen in bpy.data.screens:
-                for area in screen.areas:
-                    if area.type == 'VIEW_3D':
-                        for space in area.spaces:
-                            if space.type == 'VIEW_3D':
-                                # Update clip values
-                                space.clip_start = clip_start
-                                space.clip_end = clip_end
-                                # Update lens
-                                space.lens = settings['view_lens']
-                                
-                                # Update view distance for closer look
-                                region3d = space.region_3d
-                                if region3d:
-                                    # Set view distance based on adjusted size
-                                    region3d.view_distance = adjusted_size * 2
-                                    # Look at center of bounds
-                                    region3d.view_location = bounds_center
-                                
-                                processed_count += 1
-        
+        seen_spaces = set()
+        for screen in bpy.data.screens:
+            for area in screen.areas:
+                if area.type != 'VIEW_3D':
+                    continue
+                for space in area.spaces:
+                    if space.type != 'VIEW_3D':
+                        continue
+                    if space.as_pointer() in seen_spaces:
+                        continue
+                    seen_spaces.add(space.as_pointer())
+
+                    space.clip_start = clip_start
+                    space.clip_end = clip_end
+                    space.lens = VIEW_LENS
+
+                    region3d = space.region_3d
+                    if region3d:
+                        region3d.view_distance = view_distance
+                        region3d.view_location = bounds_center
+
+                    processed_count += 1
+
         return processed_count
         
     def execute(self, context):

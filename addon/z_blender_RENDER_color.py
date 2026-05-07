@@ -2,7 +2,7 @@ bl_info = {
     "name": 'RENDER Unlit Color',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250302',
+    "version": '20260418',
     "description": 'Renders unlit texture images with datetime suffix',
     "status": 'working',
     "approved": True,
@@ -33,71 +33,140 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
     bl_label = "Render Unlit Color"
     bl_options = {'REGISTER', 'UNDO'}
     
+    # Subset of EEVEE attributes that we may disable to get a flat unlit
+    # render. Each one is guarded because Blender 4.2+ removed
+    # ``use_bloom`` / ``use_ssr`` entirely.
+    _EEVEE_FLAGS = ('use_gtao', 'use_bloom', 'use_ssr')
+
+    @staticmethod
+    def _resolve_eevee_engine():
+        """Return the EEVEE engine id available in this Blender build.
+
+        Blender 4.2 renamed ``BLENDER_EEVEE`` to ``BLENDER_EEVEE_NEXT``.
+        Fall back to whatever id is present in the enum.
+        """
+        try:
+            enum_items = bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items
+            ids = {item.identifier for item in enum_items}
+        except Exception:
+            ids = set()
+        for candidate in ('BLENDER_EEVEE_NEXT', 'BLENDER_EEVEE'):
+            if candidate in ids:
+                return candidate
+        # Last resort: keep whatever the scene already has.
+        return None
+
     def execute(self, context):
         if not context.scene.camera:
             self.report({'ERROR'}, "No active camera found.")
             return {'CANCELLED'}
-            
+
+        original_state = self.store_original_render_state(context)
+        original_materials = self.store_original_materials()
+
         try:
-            # Store original render settings
-            original_engine = context.scene.render.engine
-            original_view_transform = context.scene.view_settings.view_transform
-            original_materials = self.store_original_materials()
-            
             # Setup rendering
             self.setup_rendering(context)
-            
+
             # Create temporary materials
             self.setup_flat_color_rendering(context)
-            
+
             # Render and save
             render_filepath = self.render_color_image(context)
-            
-            # Restore original settings and materials
-            context.scene.render.engine = original_engine
-            context.scene.view_settings.view_transform = original_view_transform
-            self.restore_materials(original_materials)
-            
+
             if render_filepath:
                 self.report({'INFO'}, f"Rendered: {render_filepath}")
                 return {'FINISHED'}
             return {'CANCELLED'}
-            
+
         except Exception as e:
             logger.error(f"Unlit color rendering failed: {str(e)}")
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
 
+        finally:
+            # Always restore the scene, even if rendering failed.
+            self.restore_original_render_state(context, original_state)
+            self.restore_materials(original_materials)
+
+    def store_original_render_state(self, context):
+        """Capture every render setting we are going to modify."""
+        scene = context.scene
+        render = scene.render
+        state = {
+            'engine': render.engine,
+            'file_format': render.image_settings.file_format,
+            'color_mode': render.image_settings.color_mode,
+            'filepath': render.filepath,
+            'view_transform': scene.view_settings.view_transform,
+        }
+        eevee = getattr(scene, 'eevee', None)
+        if eevee is not None:
+            for flag in self._EEVEE_FLAGS:
+                if hasattr(eevee, flag):
+                    state[f'eevee.{flag}'] = getattr(eevee, flag)
+        return state
+
+    def restore_original_render_state(self, context, state):
+        """Restore whatever was captured by ``store_original_render_state``."""
+        scene = context.scene
+        render = scene.render
+        render.engine = state['engine']
+        render.image_settings.file_format = state['file_format']
+        render.image_settings.color_mode = state['color_mode']
+        render.filepath = state['filepath']
+        scene.view_settings.view_transform = state['view_transform']
+        eevee = getattr(scene, 'eevee', None)
+        if eevee is not None:
+            for flag in self._EEVEE_FLAGS:
+                key = f'eevee.{flag}'
+                if key in state and hasattr(eevee, flag):
+                    setattr(eevee, flag, state[key])
+
     def store_original_materials(self):
-        """Store original material assignments"""
+        """Snapshot per-slot material assignments for every mesh object.
+
+        Keys are the objects themselves (not their names) so an object
+        rename between store and restore no longer silently drops the
+        mapping. Stale references are filtered during restore.
+        """
         original_materials = {}
         for obj in bpy.data.objects:
             if obj.type == 'MESH':
-                original_materials[obj.name] = [slot.material for slot in obj.material_slots]
+                original_materials[obj] = [slot.material for slot in obj.material_slots]
         return original_materials
 
     def restore_materials(self, original_materials):
-        """Restore original material assignments"""
-        for obj_name, materials in original_materials.items():
-            obj = bpy.data.objects.get(obj_name)
-            if obj and obj.type == 'MESH':
-                for i, material in enumerate(materials):
-                    if i < len(obj.material_slots):
-                        obj.material_slots[i].material = material
+        """Restore original material assignments captured by ``store_original_materials``."""
+        for obj, materials in original_materials.items():
+            try:
+                if obj is None or obj.type != 'MESH':
+                    continue
+            except ReferenceError:
+                # Object was deleted between store and restore.
+                continue
+            for i, material in enumerate(materials):
+                if i < len(obj.material_slots):
+                    obj.material_slots[i].material = material
 
     def setup_rendering(self, context):
         """Setup render settings for unlit color"""
-        context.scene.render.engine = 'BLENDER_EEVEE'
+        engine_id = self._resolve_eevee_engine()
+        if engine_id is not None:
+            context.scene.render.engine = engine_id
         context.scene.render.image_settings.file_format = 'PNG'
         context.scene.render.image_settings.color_mode = 'RGB'
-        
+
         # Set color management to Standard for exact texture colors (no color transform)
         context.scene.view_settings.view_transform = 'Standard'
-        
-        # Disable unnecessary effects
-        context.scene.eevee.use_gtao = False
-        context.scene.eevee.use_bloom = False
-        context.scene.eevee.use_ssr = False
+
+        # Disable unnecessary effects, tolerating Blender versions that
+        # have removed some of these attributes (notably 4.2+).
+        eevee = getattr(context.scene, 'eevee', None)
+        if eevee is not None:
+            for flag in self._EEVEE_FLAGS:
+                if hasattr(eevee, flag):
+                    setattr(eevee, flag, False)
 
     def setup_flat_color_rendering(self, context):
         """Create and assign temporary materials for unlit color rendering"""

@@ -12,13 +12,11 @@ bl_info = {
     "description_short": 'generate random tiles from texture set for tiling and seam blending review',
     "description_long": """
 Generate Random Tiles from Textures - A Blender addon for texture visualization.
-
 This addon creates a grid of planes with randomly assigned textures from a
 selected folder. It's particularly useful for:
 - Reviewing texture seams in a texture set
 - Visualizing texture variations
 - Testing material setups with different textures
-
 consider rotation toggle and offset , the initial conditions of the texture tiles being laid out may have different system 
 in isometric game likely the textures arent being rotated , but perhaps mirrored ? each of such transforms influences the texture's macro pattern for example a rotated set couldnt have a global diagonal direction lighting
 """,

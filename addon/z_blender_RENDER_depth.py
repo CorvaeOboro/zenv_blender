@@ -2,7 +2,7 @@ bl_info = {
     "name": 'RENDER Depth Map',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250302',
+    "version": '20260418',
     "description": 'Renders depth map images with datetime suffix',
     "status": 'working',
     "approved": True,
@@ -21,44 +21,10 @@ import bpy
 import os
 from datetime import datetime
 from mathutils import Vector
+
 import logging
-
-# ------------------------------------------------------------------------
-#    Logging
-# ------------------------------------------------------------------------
-
-# Setup logging to output to both console and Blender's info area
-class ZENV_RenderDepthOnly_BlenderLogHandler(logging.Handler):
-    def emit(self, record):
-        msg = self.format(record)
-        print(msg)  # Print to console
-        if record.levelno >= logging.INFO:
-            self.blender_report(msg)
-    
-    def blender_report(self, msg):
-        if hasattr(bpy.context, 'window_manager'):
-            self.report_to_window({'INFO'}, msg)
-    
-    def report_to_window(self, type, msg):
-        if hasattr(bpy.context, 'window_manager'):
-            bpy.context.window_manager.popup_menu(lambda self, context: self.layout.label(text=msg), 
-                                                title="Depth Render Info", 
-                                                icon='INFO')
-
-# Setup logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-# Add console handler
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-
-# Add Blender handler
-blender_handler = ZENV_RenderDepthOnly_BlenderLogHandler()
-blender_handler.setFormatter(formatter)
-logger.addHandler(blender_handler)
+_zenv_depth_console_handler = None
 
 # ------------------------------------------------------------------------
 #    Operator
@@ -283,13 +249,41 @@ classes = (
     ZENV_OT_RenderDepthOnly,
 )
 
+def _install_logger():
+    """Attach a single StreamHandler to ``logger`` (idempotent)."""
+    global _zenv_depth_console_handler
+    if _zenv_depth_console_handler is not None:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    _zenv_depth_console_handler = handler
+
+
+def _uninstall_logger():
+    """Remove the handler added by :func:`_install_logger`."""
+    global _zenv_depth_console_handler
+    if _zenv_depth_console_handler is None:
+        return
+    try:
+        logger.removeHandler(_zenv_depth_console_handler)
+    except ValueError:
+        pass
+    _zenv_depth_console_handler = None
+
+
 def register():
+    _install_logger()
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
+
 
 def unregister():
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
+    _uninstall_logger()
 
 if __name__ == "__main__":
     register()

@@ -20,16 +20,139 @@ MESH Cut World Bricker
 
 import bpy
 import bmesh
+import time
 from mathutils import Vector
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 
 # ------------------------------------------------------------------------
 #    Setup Logging
 # ------------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+_zenv_bricker_console_handler = None
+
+
+# ------------------------------------------------------------------------
+#    Utilities (estimation, formatting) - kept in a class to avoid polluting
+#    the addon's module namespace.
+# ------------------------------------------------------------------------
+
+class ZENV_MeshBricker_Utils:
+    """Static utility methods and tuning constants for the bricker addon."""
+
+    # these are estimates from slicing cube , it varies based on existing mesh density
+    MS_PER_CELL = 0.002
+    WARN_CELLS = 5_000_000
+    DANGER_CELLS = 10_000_000
+
+    @staticmethod
+    def get_target_objects(context) -> List[bpy.types.Object]:
+        """Return the mesh objects the operator will act on (active object).
+
+        The operator only acts on the active mesh; selected mesh objects are
+        used as a fallback when there is no valid active mesh, so the bbox
+        preview still works in that case.
+        """
+        objs: List[bpy.types.Object] = []
+        act = context.active_object
+        if act and act.type == 'MESH' and not act.hide_viewport:
+            objs.append(act)
+        else:
+            for o in context.selected_objects:
+                if o.type == 'MESH' and not o.hide_viewport:
+                    objs.append(o)
+        return objs
+
+    @staticmethod
+    def world_bounds(objs: List[bpy.types.Object]) -> Tuple[Optional[Vector], Optional[Vector]]:
+        """Compute combined world-space bounding box from object bound_box corners."""
+        if not objs:
+            return None, None
+        mins = [float('inf')] * 3
+        maxs = [float('-inf')] * 3
+        for obj in objs:
+            for corner in obj.bound_box:
+                wc = obj.matrix_world @ Vector(corner)
+                for i in range(3):
+                    if wc[i] < mins[i]:
+                        mins[i] = wc[i]
+                    if wc[i] > maxs[i]:
+                        maxs[i] = wc[i]
+        return Vector(mins), Vector(maxs)
+
+    @classmethod
+    def estimate(cls, context) -> Optional[Dict[str, Any]]:
+        """Estimate cut counts, cell counts and processing time for the current selection.
+
+        Returns a dict with keys: size, nx, ny, nz, total_cuts, cells, est_seconds,
+        severity ('ok'|'warn'|'danger'), or None if no valid target.
+        """
+        objs = cls.get_target_objects(context)
+        bmin, bmax = cls.world_bounds(objs)
+        if bmin is None:
+            return None
+        density = context.scene.zenv_bricker_density
+        if density <= 0.0:
+            return None
+
+        size = bmax - bmin
+        # Number of cut planes along each axis covering the bbox at the given density
+        nx = max(0, int(size.x / density) + 1)
+        ny = max(0, int(size.y / density) + 1)
+        nz = max(0, int(size.z / density) + 1)
+        total_cuts = nx + ny + nz
+        # Resulting cell count is the dominant cost driver for sequential bisects
+        cells = max(1, nx) * max(1, ny) * max(1, nz)
+
+        est_seconds = (cells * cls.MS_PER_CELL) / 1000.0
+
+        if cells >= cls.DANGER_CELLS:
+            severity = 'danger'
+        elif cells >= cls.WARN_CELLS:
+            severity = 'warn'
+        else:
+            severity = 'ok'
+
+        return {
+            'objects': [o.name for o in objs],
+            'size': size,
+            'nx': nx, 'ny': ny, 'nz': nz,
+            'total_cuts': total_cuts,
+            'cells': cells,
+            'est_seconds': est_seconds,
+            'severity': severity,
+        }
+
+    @staticmethod
+    def format_time(seconds: float) -> str:
+        if seconds < 1.0:
+            return f"{seconds * 1000.0:.0f} ms"
+        if seconds < 60.0:
+            return f"{seconds:.1f} s"
+        if seconds < 3600.0:
+            return f"{seconds / 60.0:.1f} min"
+        return f"{seconds / 3600.0:.2f} h"
+
+    @staticmethod
+    def format_count(n: int) -> str:
+        """Format a large integer as a short 3-digit string with a magnitude suffix.
+
+        Examples: 466_000 -> '466K', 8_000_000 -> '8.00M', 1_234 -> '1.23K', 42 -> '42'.
+        """
+        n = int(n)
+        if n < 1_000:
+            return str(n)
+        for suffix, scale in (('B', 1_000_000_000), ('M', 1_000_000), ('K', 1_000)):
+            if n >= scale:
+                v = n / scale
+                if v >= 100:
+                    return f"{v:.0f}{suffix}"
+                if v >= 10:
+                    return f"{v:.1f}{suffix}"
+                return f"{v:.2f}{suffix}"
+        return str(n)
+
 
 # ------------------------------------------------------------------------
 #    Operators
@@ -81,15 +204,32 @@ class ZENV_OT_MeshBricker_Cut(bpy.types.Operator):
             cuts.append(axis_cuts)
         return cuts
 
+    def invoke(self, context, event):
+        """Show a confirmation dialog when the estimated workload is in the danger zone."""
+        info = ZENV_MeshBricker_Utils.estimate(context)
+        if info is not None:
+            logger.info(
+                "Bricker pre-run estimate: cuts X=%d Y=%d Z=%d (total=%d), cells=%d, est=%s, severity=%s",
+                info['nx'], info['ny'], info['nz'], info['total_cuts'],
+                info['cells'], ZENV_MeshBricker_Utils.format_time(info['est_seconds']),
+                info['severity'],
+            )
+            if info['severity'] == 'danger':
+                return context.window_manager.invoke_confirm(self, event)
+        return self.execute(context)
+
     def execute(self, context):
         try:
             obj = context.active_object
             if not obj or obj.type != 'MESH':
                 self.report({'ERROR'}, "Please select a mesh object")
                 return {'CANCELLED'}
-            
+
+            pre_estimate = ZENV_MeshBricker_Utils.estimate(context)
             logger.info(f"Starting mesh bricking for object: {obj.name}")
-            
+
+            t_start = time.perf_counter()
+
             # Store active object and mode
             original_mode = obj.mode
             bpy.ops.object.mode_set(mode='OBJECT')
@@ -132,10 +272,45 @@ class ZENV_OT_MeshBricker_Cut(bpy.types.Operator):
             
             # Restore original mode
             bpy.ops.object.mode_set(mode=original_mode)
-            
-            logger.info("Mesh bricking completed successfully")
-            self.report({'INFO'}, f"Successfully bricked mesh with {sum(len(c) for c in cuts)} cuts")
-            
+
+            elapsed = time.perf_counter() - t_start
+            total_cuts = sum(len(c) for c in cuts)
+            nx_a = max(1, len(cuts[0]))
+            ny_a = max(1, len(cuts[1]))
+            nz_a = max(1, len(cuts[2]))
+            cells_a = nx_a * ny_a * nz_a
+            ms_per_cell_actual = (elapsed * 1000.0) / max(1, cells_a)
+
+            logger.info("=" * 60)
+            logger.info("Mesh bricking COMPLETED")
+            logger.info(
+                "  Object: %s | cuts X=%d Y=%d Z=%d (total=%d) | cells=%d",
+                obj.name, len(cuts[0]), len(cuts[1]), len(cuts[2]), total_cuts, cells_a,
+            )
+            logger.info(
+                "  Elapsed: %s (%.3fs) | actual ms/cell = %.5f",
+                ZENV_MeshBricker_Utils.format_time(elapsed), elapsed, ms_per_cell_actual,
+            )
+            if pre_estimate is not None:
+                est_s = pre_estimate['est_seconds']
+                ratio = (elapsed / est_s) if est_s > 0 else float('inf')
+                logger.info(
+                    "  Pre-run estimate: %s | actual/est ratio = %.2fx",
+                    ZENV_MeshBricker_Utils.format_time(est_s), ratio,
+                )
+            logger.info(
+                "  Tip: to refine the estimate, edit ZENV_MeshBricker_Utils.MS_PER_CELL = %.5f",
+                ms_per_cell_actual,
+            )
+            logger.info("=" * 60)
+
+            self.report(
+                {'INFO'},
+                f"Bricked '{obj.name}': {total_cuts} cuts, "
+                f"{ZENV_MeshBricker_Utils.format_count(cells_a)} cells "
+                f"in {ZENV_MeshBricker_Utils.format_time(elapsed)}",
+            )
+
             return {'FINISHED'}
             
         except Exception as e:
@@ -158,15 +333,39 @@ class ZENV_PT_MeshBricker_Panel(bpy.types.Panel):
     def draw(self, context):
         """Draw the panel UI"""
         layout = self.layout
-        box = layout.box()
-        box.label(text="Grid Settings", icon='MESH_GRID')
-        box.prop(context.scene, "zenv_bricker_density")
-        
-        # Add operator with proper icon
-        op_box = layout.box()
-        op_box.label(text="Operations", icon='MOD_BOOLEAN')
-        row = op_box.row(align=True)
-        row.operator(ZENV_OT_MeshBricker_Cut.bl_idname, icon='MOD_BEVEL')
+        layout.prop(context.scene, "zenv_bricker_density")
+
+        info = ZENV_MeshBricker_Utils.estimate(context)
+        if info is not None:
+            col = layout.column(align=True)
+            col.label(text=f"Cuts: {info['total_cuts']}", icon='MOD_BEVEL')
+            sev = info['severity']
+            row = col.row()
+            if sev == 'danger':
+                row.alert = True
+                row.label(
+                    text=f"Cells: {ZENV_MeshBricker_Utils.format_count(info['cells'])}  (DANGER)",
+                    icon='ERROR',
+                )
+            elif sev == 'warn':
+                row.label(
+                    text=f"Cells: {ZENV_MeshBricker_Utils.format_count(info['cells'])}  (heavy)",
+                    icon='ERROR',
+                )
+            else:
+                row.label(
+                    text=f"Cells: {ZENV_MeshBricker_Utils.format_count(info['cells'])}",
+                    icon='MESH_GRID',
+                )
+            col.label(
+                text=f"Est: {ZENV_MeshBricker_Utils.format_time(info['est_seconds'])}",
+                icon='TIME',
+            )
+
+        run_row = layout.row(align=True)
+        if info is not None and info['severity'] == 'danger':
+            run_row.alert = True
+        run_row.operator(ZENV_OT_MeshBricker_Cut.bl_idname, icon='MOD_BEVEL')
 
 # ------------------------------------------------------------------------
 #    Registration
@@ -177,8 +376,34 @@ classes = (
     ZENV_PT_MeshBricker_Panel,
 )
 
+def _install_logger():
+    """Attach a single StreamHandler to ``logger`` (idempotent)."""
+    global _zenv_bricker_console_handler
+    if _zenv_bricker_console_handler is not None:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    _zenv_bricker_console_handler = handler
+
+
+def _uninstall_logger():
+    """Remove the handler added by :func:`_install_logger`."""
+    global _zenv_bricker_console_handler
+    if _zenv_bricker_console_handler is None:
+        return
+    try:
+        logger.removeHandler(_zenv_bricker_console_handler)
+    except ValueError:
+        pass
+    _zenv_bricker_console_handler = None
+
+
 def register():
     """Register the addon"""
+    _install_logger()
     # Register property
     bpy.types.Scene.zenv_bricker_density = bpy.props.FloatProperty(
         name="Bricker Density",
@@ -189,7 +414,7 @@ def register():
         precision=3,
         subtype='DISTANCE'
     )
-    
+
     # Register classes
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
@@ -202,8 +427,10 @@ def unregister():
         bpy.utils.unregister_class(current_class_to_unregister)
     
     # Unregister property
-    del bpy.types.Scene.zenv_bricker_density
+    if hasattr(bpy.types.Scene, "zenv_bricker_density"):
+        del bpy.types.Scene.zenv_bricker_density
     logger.info("Mesh Bricker unregistered")
+    _uninstall_logger()
 
 if __name__ == "__main__":
     register()

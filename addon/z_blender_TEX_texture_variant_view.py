@@ -2,27 +2,42 @@ bl_info = {
     "name": 'TEX Texture Variant View',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250302',
+    "version": '20260418',
     "description": 'Quickly view and organize texture variants on a model',
     "status": 'working',
     "approved": True,
     "sort_priority": '2',
-    "branch": 'Texture',
-    "branch_prefix": 'TEX',
+    "group": 'Texture',
+    "group_prefix": 'TEX',
     "description_short": 'Quickly view and organize texture variants on a model',
-    "description_long": 'specify a folder of textures , then with a mesh selected can quickly cycle through them applied to the mesh , ranking them into subfolders . useful for visualizing and choosing the best from many synthesized texture variants',
+    "description_long": 'specify a folder of textures , then with a mesh selected can quickly cycle through them applied to the mesh , ranking them into subfolders . useful for visualizing and choosing the best from many synthesized texture variants , supports valid_exts = .png ,.jpg, .jpeg, .tga, .tif, .tiff, .bmp, .webp',
     "location": 'View3D > ZENV',
 }
 
 import bpy
 import os
 import shutil
-from bpy.props import StringProperty, PointerProperty, IntProperty
+from bpy.props import StringProperty, PointerProperty, IntProperty, CollectionProperty
 from bpy.types import PropertyGroup, Panel, Operator
+
+_ZENV_TEX_NODE_NAME = "ZENV_TEX_variant"
 
 # ------------------------------------------------------------------------
 #    Properties
 # ------------------------------------------------------------------------
+
+class ZENV_PG_TextureVariantFilePath(PropertyGroup):
+    """One entry in the texture variant list.
+    Using a CollectionProperty of path items trying to avoid the pitfall of
+    packing filesystem paths into a single delimited string 
+    """
+    path: StringProperty(
+        name="Path",
+        description="Absolute path to a texture image on disk",
+        subtype='FILE_PATH',
+        default="",
+    )
+
 
 class ZENV_PG_TextureVariantViewRank_Properties(PropertyGroup):
     """Properties for texture variant viewer"""
@@ -31,10 +46,10 @@ class ZENV_PG_TextureVariantViewRank_Properties(PropertyGroup):
         description="Folder containing texture images",
         subtype='DIR_PATH'
     )
-    texture_files: StringProperty(
+    texture_files: CollectionProperty(
         name="Texture Files",
-        description="List of texture files",
-        default=""
+        description="List of texture files discovered in the folder, in order",
+        type=ZENV_PG_TextureVariantFilePath,
     )
     material_index: IntProperty(
         name="Material Index",
@@ -50,27 +65,56 @@ class ZENV_TextureVariantViewRank_Utils:
     """Utility functions for texture variant viewing"""
     
     @staticmethod
+    def _set_texture_list(props, paths):
+        """Replace the CollectionProperty contents with ``paths``."""
+        props.texture_files.clear()
+        for p in paths:
+            item = props.texture_files.add()
+            item.path = p
+
+    @staticmethod
+    def _get_texture_list(props):
+        return [item.path for item in props.texture_files]
+
+    @staticmethod
     def load_textures(context):
         """Load textures from the specified folder"""
         props = context.scene.zenv_TextureVariantViewRank_props
         folder_path = props.folder_path
-        props.texture_files = ""
         props.material_index = 0
 
-        if folder_path:
-            image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) 
-                         if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            props.texture_files = '|'.join(image_files)
+        image_paths = []
 
-        # Store original texture
+        # Capture the material's currently assigned texture (if any) so the
+        # user can cycle back to the original without losing it.
         obj = context.active_object
-        if obj and obj.material_slots and obj.material_slots[0].material and obj.material_slots[0].material.use_nodes:
+        if (obj and obj.material_slots and obj.material_slots[0].material
+                and obj.material_slots[0].material.use_nodes):
             bsdf = obj.material_slots[0].material.node_tree.nodes.get('Principled BSDF')
             if bsdf and bsdf.inputs['Base Color'].links:
                 img_tex_node = bsdf.inputs['Base Color'].links[0].from_node
                 if img_tex_node and img_tex_node.type == 'TEX_IMAGE' and img_tex_node.image:
                     original_texture_path = bpy.path.abspath(img_tex_node.image.filepath)
-                    props.texture_files = original_texture_path + '|' + props.texture_files
+                    if original_texture_path:
+                        image_paths.append(original_texture_path)
+
+        # Enumerate only actual files in the folder -- never subdirectories
+        # finding images of type extensions 
+        if folder_path:
+            abs_folder = bpy.path.abspath(folder_path)
+            valid_exts = ('.png', '.jpg', '.jpeg', '.tga', '.tif', '.tiff', '.bmp', '.webp')
+            try:
+                entries = os.listdir(abs_folder)
+            except (FileNotFoundError, PermissionError):
+                entries = []
+            for f in entries:
+                full = os.path.join(abs_folder, f)
+                if not os.path.isfile(full):
+                    continue
+                if f.lower().endswith(valid_exts):
+                    image_paths.append(full)
+
+        ZENV_TextureVariantViewRank_Utils._set_texture_list(props, image_paths)
 
     @staticmethod
     def assign_texture(context):
@@ -78,35 +122,47 @@ class ZENV_TextureVariantViewRank_Utils:
         props = context.scene.zenv_TextureVariantViewRank_props
         obj = context.active_object
 
-        if props.texture_files and obj and obj.material_slots and obj.material_slots[0].material:
-            textures = props.texture_files.split('|')
-            current_texture = textures[props.material_index]
+        textures = ZENV_TextureVariantViewRank_Utils._get_texture_list(props)
+        if not textures or not obj or not obj.material_slots or not obj.material_slots[0].material:
+            return
+        if not (0 <= props.material_index < len(textures)):
+            return
+        current_texture = textures[props.material_index]
 
-            mat = obj.material_slots[0].material
-            if mat.use_nodes:
-                bsdf = mat.node_tree.nodes.get('Principled BSDF')
-                if bsdf:
-                    if 'Image Texture' not in mat.node_tree.nodes:
-                        img_tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
-                    else:
-                        img_tex_node = mat.node_tree.nodes['Image Texture']
-                    img_tex_node.image = bpy.data.images.load(current_texture, check_existing=True)
-                    mat.node_tree.links.new(bsdf.inputs['Base Color'], img_tex_node.outputs['Color'])
-                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        mat = obj.material_slots[0].material
+        if not mat.use_nodes:
+            return
+        bsdf = mat.node_tree.nodes.get('Principled BSDF')
+        if bsdf is None:
+            return
+
+        # Using specific stable name we control so that
+        # repeated runs find (and update) the same node instead of
+        # spawning ``Image Texture.001``, ``.002`` etc.
+        img_tex_node = mat.node_tree.nodes.get(_ZENV_TEX_NODE_NAME)
+        if img_tex_node is None:
+            img_tex_node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+            img_tex_node.name = _ZENV_TEX_NODE_NAME
+            img_tex_node.label = _ZENV_TEX_NODE_NAME
+
+        img_tex_node.image = bpy.data.images.load(current_texture, check_existing=True)
+        mat.node_tree.links.new(bsdf.inputs['Base Color'], img_tex_node.outputs['Color'])
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
     @staticmethod
     def cycle_texture(context, direction):
         """Cycle to next or previous texture"""
         props = context.scene.zenv_TextureVariantViewRank_props
 
-        if props.texture_files:
-            textures = props.texture_files.split('|')
-            num_textures = len(textures)
-            if direction == 'NEXT':
-                props.material_index = (props.material_index + 1) % num_textures
-            elif direction == 'PREVIOUS':
-                props.material_index = (props.material_index - 1) % num_textures
-            ZENV_TextureVariantViewRank_Utils.assign_texture(context)
+        textures = ZENV_TextureVariantViewRank_Utils._get_texture_list(props)
+        num_textures = len(textures)
+        if num_textures == 0:
+            return
+        if direction == 'NEXT':
+            props.material_index = (props.material_index + 1) % num_textures
+        elif direction == 'PREVIOUS':
+            props.material_index = (props.material_index - 1) % num_textures
+        ZENV_TextureVariantViewRank_Utils.assign_texture(context)
 
 # ------------------------------------------------------------------------
 #    Operators
@@ -139,12 +195,12 @@ class ZENV_OT_TextureVariantViewRank_CopyPath(Operator):
     @classmethod
     def poll(cls, context):
         props = context.scene.zenv_TextureVariantViewRank_props
-        return props.texture_files != ""
+        return len(props.texture_files) > 0
 
     def execute(self, context):
         try:
             props = context.scene.zenv_TextureVariantViewRank_props
-            textures = props.texture_files.split('|')
+            textures = ZENV_TextureVariantViewRank_Utils._get_texture_list(props)
             current_texture = textures[props.material_index]
             context.window_manager.clipboard = current_texture
             self.report({'INFO'}, "Texture path copied to clipboard")
@@ -162,7 +218,7 @@ class ZENV_OT_TextureVariantViewRank_CyclePrevious(Operator):
     @classmethod
     def poll(cls, context):
         props = context.scene.zenv_TextureVariantViewRank_props
-        return props.texture_files != ""
+        return len(props.texture_files) > 0
 
     def execute(self, context):
         try:
@@ -181,7 +237,7 @@ class ZENV_OT_TextureVariantViewRank_CycleNext(Operator):
     @classmethod
     def poll(cls, context):
         props = context.scene.zenv_TextureVariantViewRank_props
-        return props.texture_files != ""
+        return len(props.texture_files) > 0
 
     def execute(self, context):
         try:
@@ -200,12 +256,12 @@ class ZENV_OT_TextureVariantViewRank_CopyToFolder(Operator):
     @classmethod
     def poll(cls, context):
         props = context.scene.zenv_TextureVariantViewRank_props
-        return props.texture_files != "" and props.folder_path != ""
+        return len(props.texture_files) > 0 and props.folder_path != ""
 
     def execute(self, context):
         try:
             props = context.scene.zenv_TextureVariantViewRank_props
-            textures = props.texture_files.split('|')
+            textures = ZENV_TextureVariantViewRank_Utils._get_texture_list(props)
             current_texture_path = textures[props.material_index]
 
             target_folder = bpy.path.abspath(props.folder_path)
@@ -214,6 +270,13 @@ class ZENV_OT_TextureVariantViewRank_CopyToFolder(Operator):
 
             texture_name = os.path.basename(current_texture_path)
             new_texture_path = os.path.join(subfolder_path, texture_name)
+            # Don't silently clobber an earlier ranking decision.
+            if os.path.exists(new_texture_path):
+                self.report({'WARNING'}, f"Skipped: '{new_texture_path}' already exists.")
+                return {'CANCELLED'}
+            if os.path.abspath(current_texture_path) == os.path.abspath(new_texture_path):
+                self.report({'WARNING'}, "Source and destination are the same file.")
+                return {'CANCELLED'}
             shutil.copyfile(current_texture_path, new_texture_path)
 
             self.report({'INFO'}, f"Texture copied to {new_texture_path}")
@@ -231,12 +294,12 @@ class ZENV_OT_TextureVariantViewRank_MoveToFolder(Operator):
     @classmethod
     def poll(cls, context):
         props = context.scene.zenv_TextureVariantViewRank_props
-        return props.texture_files != "" and props.folder_path != ""
+        return len(props.texture_files) > 0 and props.folder_path != ""
 
     def execute(self, context):
         try:
             props = context.scene.zenv_TextureVariantViewRank_props
-            textures = props.texture_files.split('|')
+            textures = ZENV_TextureVariantViewRank_Utils._get_texture_list(props)
             current_texture_path = textures[props.material_index]
 
             target_folder = bpy.path.abspath(props.folder_path)
@@ -245,10 +308,18 @@ class ZENV_OT_TextureVariantViewRank_MoveToFolder(Operator):
 
             texture_name = os.path.basename(current_texture_path)
             new_texture_path = os.path.join(subfolder_path, texture_name)
+            if os.path.exists(new_texture_path):
+                self.report({'WARNING'}, f"Skipped: '{new_texture_path}' already exists.")
+                return {'CANCELLED'}
+            if os.path.abspath(current_texture_path) == os.path.abspath(new_texture_path):
+                self.report({'WARNING'}, "Source and destination are the same file.")
+                return {'CANCELLED'}
             shutil.move(current_texture_path, new_texture_path)
 
+            # Update the in-memory list so subsequent cycle and copy ops
+            # still find this texture at its new location.
             textures[props.material_index] = new_texture_path
-            props.texture_files = '|'.join(textures)
+            ZENV_TextureVariantViewRank_Utils._set_texture_list(props, textures)
 
             self.report({'INFO'}, f"Texture moved to {new_texture_path}")
             return {'FINISHED'}
@@ -279,7 +350,7 @@ class ZENV_PT_TextureVariantViewRank_Panel(Panel):
         box.operator("zenv.texturevariant_load", icon='FILE_REFRESH')
 
         # Navigation
-        if props.texture_files:
+        if len(props.texture_files) > 0:
             box = layout.box()
             box.label(text="Navigation:", icon='TEXTURE')
             row = box.row(align=True)
@@ -299,6 +370,7 @@ class ZENV_PT_TextureVariantViewRank_Panel(Panel):
 # ------------------------------------------------------------------------
 
 classes = (
+    ZENV_PG_TextureVariantFilePath,
     ZENV_PG_TextureVariantViewRank_Properties,
     ZENV_OT_TextureVariantViewRank_Load,
     ZENV_OT_TextureVariantViewRank_CopyPath,

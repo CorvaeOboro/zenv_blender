@@ -2,7 +2,7 @@ bl_info = {
     "name": 'TEX Camera Projection',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250124',
+    "version": '20260418',
     "description": 'Create camera from current view and bake projected textures',
     "status": 'working',
     "approved": True,
@@ -30,7 +30,7 @@ import math
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+_zenv_tex_proj_cam_console_handler = None
 
 # ------------------------------------------------------------------------
 #    Properties
@@ -293,6 +293,74 @@ class ZENV_TextureProj_Utils:
         except Exception as e:
             logger.warning(f"Could not determine image aspect ratio: {e}")
         return 1.0
+
+    @staticmethod
+    def load_or_refresh_image(image_path):
+        """Return a ``bpy.data.images`` entry that points at ``image_path``.
+
+        ``bpy.data.images`` is keyed by data-block name
+        (typically the basename), but ``image.reload()`` reads from
+        ``image.filepath``. If the scene already contains a block named
+        ``texture.png`` whose ``filepath`` is missing,
+        the naive ``if name in bpy.data.images: image.reload()`` pattern
+        will silently reload the *wrong* (or broken) file, and the
+        subsequent bake a pink/empty image.
+
+        This helper:
+        - Looks up an existing block by name and compares its absolute
+          filepath against the requested path.
+        - Repoints ``filepath`` and forces ``source='FILE'`` before
+          reloading, so a name collision with a different/missing file
+          is recovered rather than silently baked.
+        - Falls back to ``bpy.data.images.load`` with
+          ``check_existing=False`` so we don't get handed a broken block.
+        - Returns the image; the caller should verify ``image.size``
+          (not ``has_data``: Blender loads pixel data lazily, so
+          ``has_data`` can be ``False`` on a  valid image
+          until something samples it).
+        """
+        abs_path = os.path.abspath(bpy.path.abspath(image_path))
+        image_name = os.path.basename(abs_path)
+
+        existing = bpy.data.images.get(image_name)
+        if existing is not None:
+            existing_abs = ""
+            if existing.filepath:
+                try:
+                    existing_abs = os.path.abspath(bpy.path.abspath(existing.filepath))
+                except Exception:
+                    existing_abs = ""
+            same_file = existing_abs.lower() == abs_path.lower()
+            if not same_file:
+                logger.info(
+                    f"Image '{image_name}' already exists with filepath "
+                    f"'{existing.filepath}'; repointing to '{abs_path}'."
+                )
+            existing.source = 'FILE'
+            existing.filepath = abs_path
+            try:
+                existing.reload()
+            except RuntimeError as e:
+                logger.warning(f"reload() failed for '{image_name}': {e}")
+            image = existing
+        else:
+            image = bpy.data.images.load(abs_path, check_existing=False)
+            image.source = 'FILE'
+
+        # Recovery pass: if the header still didn't decode (size is 0),
+        # force one more reload from the explicit path before giving up.
+        # Note: ``has_data`` is intentionally NOT checked here -- pixel
+        # data is loaded lazily, so ``has_data`` can legitimately be
+        # ``False`` on a valid image until first sample.
+        if image.size[0] == 0 or image.size[1] == 0:
+            try:
+                image.filepath = abs_path
+                image.source = 'FILE'
+                image.reload()
+            except RuntimeError as e:
+                logger.error(f"Final reload attempt failed for '{image_name}': {e}")
+
+        return image
     
     @staticmethod
     def setup_material_nodes(material, image=None):
@@ -690,16 +758,22 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         if not os.path.isfile(image_path):
             self.report({'ERROR'}, "Image file not found")
             return None
-        
-        # Load image and ensure it's fresh
-        image_name = os.path.basename(image_path)
-        if image_name in bpy.data.images:
-            image = bpy.data.images[image_name]
-            # Reload from disk to ensure we have the latest version
-            image.reload()
-        else:
-            image = bpy.data.images.load(image_path, check_existing=True)
-        
+
+        # Load image and ensure it's fresh. ``load_or_refresh_image``
+        # repairs the case where a stale data-block of the same name
+        # already exists with a missing/different filepath -- otherwise
+        # ``image.reload()`` would silently reload nothing and the bake
+        # would produce a pink texture.
+        image = ZENV_TextureProj_Utils.load_or_refresh_image(image_path)
+        # Validate via ``size`` only -- ``has_data`` is lazy and may be
+        # ``False`` on a valid image until the bake actually samples it.
+        if image.size[0] == 0 or image.size[1] == 0:
+            self.report(
+                {'ERROR'},
+                f"Source image failed to decode after reload: {image_path}"
+            )
+            return None
+
         # Create material nodes
         tex = nodes.new('ShaderNodeTexImage')
         tex.image = image
@@ -1155,20 +1229,9 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         tex_coord = nodes.new('ShaderNodeTexCoord')
         mapping = nodes.new('ShaderNodeMapping')
         
-        # Load and set image - properly handle existing images
-        image_name = os.path.basename(texture_path)
-        
-        # Check if image already exists in Blender's data
-        if image_name in bpy.data.images:
-            image = bpy.data.images[image_name]
-            # Reload from disk to get fresh data
-            image.reload()
-        else:
-            # Load new image
-            image = bpy.data.images.load(texture_path, check_existing=True)
-        
-        # Ensure image is packed or has valid filepath
-        image.filepath = texture_path
+        # Load and set image -  handle existing images. 
+        # ``load_or_refresh_image`` contains more info 
+        image = ZENV_TextureProj_Utils.load_or_refresh_image(texture_path)
         tex_image.image = image
         
         # Position nodes
@@ -1184,13 +1247,27 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         links.new(mapping.outputs['Vector'], tex_image.inputs['Vector'])
         links.new(tex_image.outputs['Color'], bsdf.inputs['Base Color'])
         
-        # Connect alpha if image has it
-        if image.channels == 4 or 'alpha' in texture_path.lower():
+        # Only wire the alpha channel when the user explicitly opted in
+        # via "Use Visibility Mask as Alpha". Our bake images are always
+        # created with ``alpha=True`` (RGBA), so a plain
+        # ``image.channels == 4`` test would force every bake into a
+        # transparent material -- and ``blend_method='BLEND'`` is the
+        # EEVEE mode that produces per-face sorting artifacts on
+        # concave / overlapping geometry. ``'CLIP'`` is alpha-tested and
+        # has no sorting issues; 
+        if context.scene.zenv_use_mask_as_alpha:
             links.new(tex_image.outputs['Alpha'], bsdf.inputs['Alpha'])
-            # Enable transparency in material
-            mat.blend_method = 'BLEND'
+            mat.blend_method = 'CLIP'
             mat.shadow_method = 'CLIP'
-            logger.info("Connected alpha channel and enabled transparency")
+            if hasattr(mat, 'surface_render_method'):
+                mat.surface_render_method = 'DITHERED'
+            logger.info("Connected alpha channel; material set to CLIP (alpha tested)")
+        else:
+            # Keep the material fully opaque so EEVEE renders without
+            # transparency sorting.
+            mat.blend_method = 'OPAQUE'
+            if hasattr(mat, 'surface_render_method'):
+                mat.surface_render_method = 'DITHERED'
         
         links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
         
@@ -2080,7 +2157,7 @@ class ZENV_PT_TextureProj_Panel(bpy.types.Panel):
                     img = bpy.data.images.load(image_path, check_existing=True)
                     if img and img.size[0] > 0:
                         info_col.label(text=f"Size: {img.size[0]}x{img.size[1]}px")
-                except:
+                except RuntimeError:
                     pass
         
         box.prop(context.scene, "zenv_square_texture")
@@ -2133,7 +2210,33 @@ classes = (
     ZENV_PT_TextureProj_Panel,
 )
 
+def _install_logger():
+    """Attach a single StreamHandler to ``logger`` (idempotent)."""
+    global _zenv_tex_proj_cam_console_handler
+    if _zenv_tex_proj_cam_console_handler is not None:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    _zenv_tex_proj_cam_console_handler = handler
+
+
+def _uninstall_logger():
+    """Remove the handler added by :func:`_install_logger`."""
+    global _zenv_tex_proj_cam_console_handler
+    if _zenv_tex_proj_cam_console_handler is None:
+        return
+    try:
+        logger.removeHandler(_zenv_tex_proj_cam_console_handler)
+    except ValueError:
+        pass
+    _zenv_tex_proj_cam_console_handler = None
+
+
 def register():
+    _install_logger()
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     ZENV_TextureProj_Properties.register()
@@ -2142,6 +2245,7 @@ def unregister():
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     ZENV_TextureProj_Properties.unregister()
+    _uninstall_logger()
 
 if __name__ == "__main__":
     register()
