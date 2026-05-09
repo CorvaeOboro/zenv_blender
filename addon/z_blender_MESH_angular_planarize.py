@@ -32,7 +32,7 @@ from bpy.props import (
 from bpy.types import Panel, Operator, PropertyGroup
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+_zenv_angular_planarize_console_handler = None
 
 
 # ------------------------------------------------------------------------
@@ -291,7 +291,33 @@ classes = (
     ZENV_PT_MeshAngularPlanarize_Panel,
 )
 
+def _install_logger():
+    """Attach a single StreamHandler to ``logger`` (idempotent)."""
+    global _zenv_angular_planarize_console_handler
+    if _zenv_angular_planarize_console_handler is not None:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    _zenv_angular_planarize_console_handler = handler
+
+
+def _uninstall_logger():
+    """Remove the handler added by :func:`_install_logger`."""
+    global _zenv_angular_planarize_console_handler
+    if _zenv_angular_planarize_console_handler is None:
+        return
+    try:
+        logger.removeHandler(_zenv_angular_planarize_console_handler)
+    except ValueError:
+        pass
+    _zenv_angular_planarize_console_handler = None
+
+
 def register():
+    _install_logger()
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     bpy.types.Scene.angular_planarize_props = PointerProperty(type=ZENV_PG_MeshAngularPlanarize_Props)
@@ -300,6 +326,7 @@ def unregister():
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     del bpy.types.Scene.angular_planarize_props
+    _uninstall_logger()
 
 if __name__ == "__main__":
     register()

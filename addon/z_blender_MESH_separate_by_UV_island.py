@@ -2,7 +2,7 @@ bl_info = {
     "name": 'MESH Separate by UV Islands',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250402',
+    "version": '20260418',
     "description": 'Separates mesh into individual objects based on UV islands',
     "status": 'working',
     "approved": True,
@@ -89,72 +89,74 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
 
         return islands
 
-    def duplicate_island(self, context, obj, island_faces, uv_layer):
-        """Create a new object from the given UV island, merging very close UVs first"""
-        # Create new mesh and bmesh
+    def duplicate_island(self, context, src_bm, obj, island_faces, uv_layer):
+        """Create a new object from the given UV island.
+
+        All UV layers on the source mesh (not just the active one used for
+        island detection) are copied with full precision.
+        """
         new_mesh = bpy.data.meshes.new(name=f"{obj.name}_island")
         new_bm = bmesh.new()
-        
+
         # Create vertex map from old to new
         vert_map = {}
-        
-        # Copy vertices and create mapping
         for face in island_faces:
             for vert in face.verts:
                 if vert not in vert_map:
                     new_vert = new_bm.verts.new(vert.co)
                     vert_map[vert] = new_vert
-        
+
         new_bm.verts.ensure_lookup_table()
         new_bm.verts.index_update()
-        
-        # Create new UV layer
-        new_uv_layer = new_bm.loops.layers.uv.new()
-        
-        # Copy faces and their UVs
+
+        # Recreate every UV layer that existed on the source bmesh so we
+        # preserve all UV maps (lightmaps, atlases, etc.).
+        src_uv_layers = list(src_bm.loops.layers.uv.values())
+        src_uv_names = [src_bm.loops.layers.uv.keys()[i]
+                         for i in range(len(src_uv_layers))]
+        new_uv_layers = [new_bm.loops.layers.uv.new(name) for name in src_uv_names]
+
+        # The UV layer used for island detection must still be present and
+        # matched to its new-bmesh counterpart.
+        topo_layer_index = src_uv_layers.index(uv_layer) if uv_layer in src_uv_layers else 0
+        topo_new_layer = new_uv_layers[topo_layer_index]
+
+        skipped_faces = 0
         for face in island_faces:
             new_verts = [vert_map[v] for v in face.verts]
             try:
                 new_face = new_bm.faces.new(new_verts)
-                # Copy UV coordinates
-                for i, loop in enumerate(face.loops):
-                    new_face.loops[i][new_uv_layer].uv = loop[uv_layer].uv
-            except ValueError as e:
-                continue  # Skip faces that can't be created (e.g., duplicate faces)
-        
-        # --- Merge very close UVs ---
-        # This step welds UVs that are nearly coincident (within a tiny threshold)
-        uv_merge_threshold = 1e-5
-        uv_verts = []
-        for v in new_bm.verts:
-            for loop in v.link_loops:
-                uv_verts.append(loop[new_uv_layer].uv)
-        # Simple O(N^2) merge for small islands
-        merged = set()
-        for i in range(len(uv_verts)):
-            if i in merged:
+            except ValueError:
+                # Duplicate face or non-manifold vert set - skip but count.
+                skipped_faces += 1
                 continue
-            for j in range(i+1, len(uv_verts)):
-                if j in merged:
-                    continue
-                if (uv_verts[i] - uv_verts[j]).length < uv_merge_threshold:
-                    uv_verts[j][:] = uv_verts[i][:]
-                    merged.add(j)
-        
-        # Create new object
+            # Preserve per-face attributes that matter downstream.
+            new_face.material_index = face.material_index
+            new_face.smooth = face.smooth
+            # Copy UVs for every layer, keeping per-loop ordering.
+            for src_layer, dst_layer in zip(src_uv_layers, new_uv_layers):
+                for i, loop in enumerate(face.loops):
+                    new_face.loops[i][dst_layer].uv = loop[src_layer].uv
+
         new_bm.to_mesh(new_mesh)
+        new_bm.free()
+
         new_obj = bpy.data.objects.new(name=f"{obj.name}_island", object_data=new_mesh)
-        
+
         # Copy materials from original object
         for mat in obj.data.materials:
             new_obj.data.materials.append(mat)
-        
+
         # Link new object to scene
         context.collection.objects.link(new_obj)
-        
+
         # Copy transform from original object
         new_obj.matrix_world = obj.matrix_world
-        
+
+        if skipped_faces:
+            self.report({'WARNING'},
+                        f"Skipped {skipped_faces} face(s) that could not be recreated in '{new_obj.name}'")
+
         return new_obj
 
     def execute(self, context):
@@ -191,7 +193,7 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
             # Create new objects for each island
             new_objects = []
             for island in islands:
-                new_obj = self.duplicate_island(context, obj, island, uv_layer)
+                new_obj = self.duplicate_island(context, bm, obj, island, uv_layer)
                 new_objects.append(new_obj)
 
             # Remove original object if we created new ones
@@ -225,10 +227,41 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
 class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
     """Separate the mesh so every face becomes its own object (all UV edges split)"""
     bl_idname = "zenv.separatebyuv_faces"
-    bl_label = "Separate Faces (Split All UV Edges)"
+    bl_label = "Separate All Faces"
     bl_options = {'REGISTER', 'UNDO'}
 
-    def duplicate_face(self, context, obj, face, uv_layer, face_index):
+    # Above this face count show an info dialog before proceeding.
+    _CONFIRM_THRESHOLD = 7000
+    # Rough benchmark: ~600 faces/sec when creating separate objects.
+    _FACES_PER_SECOND = 600
+
+    def invoke(self, context, event):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "Active object is not a mesh")
+            return {'CANCELLED'}
+        face_count = len(obj.data.polygons)
+        if face_count > self._CONFIRM_THRESHOLD:
+            self.face_count = face_count
+            return context.window_manager.invoke_props_dialog(self, width=380)
+        return self.execute(context)
+
+    def draw(self, context):
+        layout = self.layout
+        count = getattr(self, 'face_count', 0)
+        est_seconds = max(1, count // self._FACES_PER_SECOND)
+        if est_seconds >= 60:
+            time_str = f"{est_seconds // 60}m {est_seconds % 60}s"
+        else:
+            time_str = f"{est_seconds}s"
+        col = layout.column(align=True)
+        col.label(text=f"Objects to create:  {count}", icon='OUTLINER_OB_MESH')
+        col.label(text=f"Estimated time:       ~{time_str}", icon='TIME')
+        col.separator()
+        col.label(text="Blender may be unresponsive during processing.", icon='ERROR')
+
+    def duplicate_face(self, context, src_bm, obj, face, face_index):
+        """Duplicate a single face into its own object, preserving every UV map."""
         new_mesh = bpy.data.meshes.new(name=f"{obj.name}_face")
         new_bm = bmesh.new()
 
@@ -240,7 +273,11 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
         new_bm.verts.ensure_lookup_table()
         new_bm.verts.index_update()
 
-        new_uv_layer = new_bm.loops.layers.uv.new()
+        # Copy every source UV layer by name.
+        src_uv_layers = list(src_bm.loops.layers.uv.values())
+        src_uv_names = [src_bm.loops.layers.uv.keys()[i]
+                         for i in range(len(src_uv_layers))]
+        new_uv_layers = [new_bm.loops.layers.uv.new(name) for name in src_uv_names]
 
         new_verts = [vert_map[v] for v in face.verts]
         try:
@@ -253,8 +290,9 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
         new_face.material_index = face.material_index
         new_face.smooth = face.smooth
 
-        for i, loop in enumerate(face.loops):
-            new_face.loops[i][new_uv_layer].uv = loop[uv_layer].uv
+        for src_layer, dst_layer in zip(src_uv_layers, new_uv_layers):
+            for i, loop in enumerate(face.loops):
+                new_face.loops[i][dst_layer].uv = loop[src_layer].uv
 
         new_bm.to_mesh(new_mesh)
         new_obj = bpy.data.objects.new(name=f"{obj.name}_face_{face_index:04d}", object_data=new_mesh)
@@ -291,7 +329,7 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
 
             new_objects = []
             for i, face in enumerate(bm.faces):
-                new_obj = self.duplicate_face(context, obj, face, uv_layer, i)
+                new_obj = self.duplicate_face(context, bm, obj, face, i)
                 if new_obj is not None:
                     new_objects.append(new_obj)
 
@@ -318,6 +356,7 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode=original_mode)
             self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
             return {'CANCELLED'}
+
 
 class ZENV_PT_MeshSeparateByUVIsland_Panel(bpy.types.Panel):
     """Panel for UV island separation tools"""
