@@ -2,7 +2,7 @@ bl_info = {
     "name": 'MESH Noise Surface Displacement',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250302',
+    "version": '20260418',
     "description": 'Apply world-space 3D noise patterns to mesh surfaces',
     "status": 'working',
     "approved": True,
@@ -22,14 +22,9 @@ import bmesh
 from mathutils import Vector, noise
 from bpy.props import FloatProperty, EnumProperty, BoolProperty
 from bpy.types import Panel, Operator, PropertyGroup
+
 import logging
-
-# ------------------------------------------------------------------------
-#    Setup Logging
-# ------------------------------------------------------------------------
-
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 class ZENV_NoiseDisplacementUtils:
     """Utility functions for noise displacement"""
@@ -43,11 +38,15 @@ class ZENV_NoiseDisplacementUtils:
     
     @staticmethod
     def get_world_matrix(obj):
-        """Get the world matrix considering the entire parent hierarchy."""
-        if obj.parent:
-            parent_matrix = ZENV_NoiseDisplacementUtils.get_world_matrix(obj.parent)
-            return parent_matrix @ obj.matrix_local
-        return obj.matrix_local
+        """Return the object's world matrix.
+
+        Thin wrapper around :attr:`obj.matrix_world` kept for backwards
+        compatibility with older callers. Blender already evaluates the
+        full parent chain, constraints, drivers, and delta transforms
+        into ``matrix_world``; the previous hand-rolled recursion missed
+        all of those.
+        """
+        return obj.matrix_world.copy()
 
     @staticmethod
     def get_mesh_bounds(bm):
@@ -150,42 +149,54 @@ class ZENV_OT_NoiseDisplace(Operator):
     bl_label = "Apply Effect"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # Max number of bisection planes for performance
+    _MAX_TOTAL_CUTS = 1500
+
     def execute(self, context):
         try:
             obj = context.active_object
             if not obj or obj.type != 'MESH':
                 self.report({'ERROR'}, "Please select a mesh object")
                 return {'CANCELLED'}
-            
+
             props = context.scene.zenv_noise_props
-            
+
             # Store original mode and ensure object mode
             original_mode = obj.mode
             bpy.ops.object.mode_set(mode='OBJECT')
-            
-            # Apply scale to ensure proper cutting
-            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-            
+
             # Create BMesh
             bm = bmesh.new()
             bm.from_mesh(obj.data)
             bm.faces.ensure_lookup_table()
-            
+
             # Get world matrix and bounds
             world_matrix = ZENV_NoiseDisplacementUtils.get_world_matrix(obj)
             bounds_min, bounds_max = ZENV_NoiseDisplacementUtils.get_mesh_bounds(bm)
-            
+
             # Calculate grid cuts
             cuts = ZENV_NoiseDisplacementUtils.calculate_grid_cuts(
                 bounds_min, bounds_max, props.grid_density
             )
-            
+
+            # Sanity-check how much bisection work , keep below max 
+            total_cuts = sum(len(axis_cuts) for axis_cuts in cuts)
+            if total_cuts > self._MAX_TOTAL_CUTS:
+                bm.free()
+                bpy.ops.object.mode_set(mode=original_mode)
+                self.report(
+                    {'ERROR'},
+                    f"Grid density too fine: would require {total_cuts} cut planes "
+                    f"(limit {self._MAX_TOTAL_CUTS}). Increase 'Grid Density'."
+                )
+                return {'CANCELLED'}
+
             # Perform cuts for each axis
             for axis in range(3):
                 for cut_pos in cuts[axis]:
                     plane_co = Vector([cut_pos if i == axis else 0 for i in range(3)])
                     plane_no = Vector([1 if i == axis else 0 for i in range(3)])
-                    
+
                     try:
                         bmesh.ops.bisect_plane(
                             bm,

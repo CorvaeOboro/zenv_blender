@@ -2,7 +2,7 @@ bl_info = {
     "name": 'MAT Set Textures by Material Name',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250215',
+    "version": '20260418',
     "description": 'Set textures to materials based on material names',
     "status": 'working',
     "approved": True,
@@ -66,22 +66,37 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
 
             processed_count = 0
             skipped_count = 0
-            
+
+            # List the texture directory ONCE pass the result through to process_material.
+            SUPPORTED_EXTS = ('.png', '.jpg', '.jpeg', '.tga', '.bmp', '.exr')
+            try:
+                texture_files = [
+                    f for f in os.listdir(texture_dir)
+                    if os.path.isfile(os.path.join(texture_dir, f))
+                    and f.lower().endswith(SUPPORTED_EXTS)
+                ]
+            except (PermissionError, FileNotFoundError) as e:
+                self.report({'ERROR'}, f"Cannot access texture directory: {str(e)}")
+                return {'CANCELLED'}
+
             for material in bpy.data.materials:
                 if not material.use_nodes:
                     continue
-                    
+
                 material_name = material.name.strip()
                 if not material_name:
                     self.report({'WARNING'}, "Skipping material with empty name")
                     skipped_count += 1
                     continue
-                    
-                if suffix and suffix in material_name:
-                    material_name = material_name.replace(suffix, '')
+
+                # Strip the configured suffix only when it is at the END
+                # of the material name. Using str.replace here would strip
+                # the substring anywhere, corrupting names like `_MI_panel`.
+                if suffix and material_name.endswith(suffix):
+                    material_name = material_name[:-len(suffix)]
 
                 # Process the material
-                if self.process_material(material, material_name, texture_dir):
+                if self.process_material(material, material_name, texture_dir, texture_files):
                     processed_count += 1
                 else:
                     skipped_count += 1
@@ -100,14 +115,17 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
             self.report({'ERROR'}, f"Error: {str(e)}")
             return {'CANCELLED'}
 
-    def process_material(self, material, material_name, texture_dir):
+    def process_material(self, material, material_name, texture_dir, texture_files):
         """Process a single material and set up its textures.
-        
+
         Args:
             material: The material to process
             material_name: Base name of the material (without suffix)
             texture_dir: Directory containing texture files
-            
+            texture_files: Pre-filtered list of candidate texture filenames
+                in ``texture_dir`` (cached by the caller to avoid per-material
+                I/O).
+
         Returns:
             bool: True if material was processed successfully
         """
@@ -120,17 +138,7 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
             'height': ['height', 'displacement', 'disp'],
             'ao': ['ao', 'ambient', 'occlusion']
         }
-        
-        # Get list of texture files
-        try:
-            texture_files = [f for f in os.listdir(texture_dir) 
-                           if os.path.isfile(os.path.join(texture_dir, f)) and 
-                           any(f.lower().endswith(ext) for ext in 
-                               ('.png', '.jpg', '.jpeg', '.tga', '.bmp', '.exr'))]
-        except (PermissionError, FileNotFoundError) as e:
-            self.report({'ERROR'}, f"Cannot access texture directory: {str(e)}")
-            return False
-        
+
         # Find matching textures
         matching_textures = {}
         for tex_file in texture_files:
@@ -167,6 +175,10 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
         # Link main nodes
         links.new(principled.outputs[0], output.inputs[0])
         
+        # Texture types that must be interpreted as Non-Color data so
+        # Blender does not apply sRGB -> linear to their pixels.
+        NON_COLOR_TYPES = {'normal', 'roughness', 'metallic', 'height', 'ao'}
+
         # Process each texture type
         for i, (tex_type, tex_file) in enumerate(matching_textures.items()):
             try:
@@ -176,7 +188,13 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
                 img = bpy.data.images.load(img_path, check_existing=True)
                 tex.image = img
                 tex.location = (-300, i * -300)
-                
+
+                if tex_type in NON_COLOR_TYPES:
+                    try:
+                        img.colorspace_settings.name = 'Non-Color'
+                    except Exception:
+                        pass
+
                 # Connect based on texture type
                 if tex_type == 'color':
                     links.new(tex.outputs['Color'], principled.inputs['Base Color'])
@@ -243,7 +261,7 @@ class ZENV_OT_AssignMaterialsByMeshName(Operator):
             skipped_count = 0
             
             for obj in mesh_objects:
-                # Remove suffix like .001, .002, etc. from mesh name
+                # Remove suffix like .001, .002, etc. from mesh name , these are duplicates generated by name collisions 
                 base_name = re.sub(r'\.\d{3,}$', '', obj.name)
                 
                 # Try to find a matching material

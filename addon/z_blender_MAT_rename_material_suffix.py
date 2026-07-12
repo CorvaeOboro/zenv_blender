@@ -2,7 +2,7 @@ bl_info = {
     "name": 'MAT Rename Material Suffix',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250302',
+    "version": '20260418',
     "description": 'Add or remove customizable prefix and suffix to material names',
     "status": 'working',
     "approved": True,
@@ -28,29 +28,38 @@ class ZENV_MaterialRename_Mixin:
         """Process materials based on settings"""
         settings = context.scene.zenv_rename_props
         processed = 0
-        
+
+        # Affix string required otherwise the "remove" phase reduce all names to empty string.
+        if self.affix_type == "prefix":
+            affix = settings.prefix
+        else:
+            affix = settings.suffix
+        if not affix:
+            self.report({'WARNING'}, f"{self.affix_type.capitalize()} is empty; nothing to do.")
+            return 0
+
         def process_material(material):
             if not material:
                 return False
-                
+
             name = material.name
             changed = False
-            
-            if self.type == "prefix":
-                if operation == "add" and not name.startswith(settings.prefix):
-                    material.name = settings.prefix + name
+
+            if self.affix_type == "prefix":
+                if operation == "add" and not name.startswith(affix):
+                    material.name = affix + name
                     changed = True
-                elif operation == "remove" and name.startswith(settings.prefix):
-                    material.name = name[len(settings.prefix):]
+                elif operation == "remove" and name.startswith(affix):
+                    material.name = name[len(affix):]
                     changed = True
             else:  # suffix
-                if operation == "add" and not name.endswith(settings.suffix):
-                    material.name = name + settings.suffix
+                if operation == "add" and not name.endswith(affix):
+                    material.name = name + affix
                     changed = True
-                elif operation == "remove" and name.endswith(settings.suffix):
-                    material.name = name[:-len(settings.suffix)]
+                elif operation == "remove" and name.endswith(affix):
+                    material.name = name[:-len(affix)]
                     changed = True
-                    
+
             return changed
         
         # Process materials based on scope
@@ -73,12 +82,12 @@ class ZENV_OT_AddAffix(Operator, ZENV_MaterialRename_Mixin):
     bl_label = "Add"
     bl_description = "Add prefix or suffix to material names"
     bl_options = {'REGISTER', 'UNDO'}
-    
-    type: StringProperty()  # "prefix" or "suffix"
-    
+
+    affix_type: StringProperty()  # "prefix" or "suffix"
+
     def execute(self, context):
         processed = self.process_materials(context, "add")
-        self.report({'INFO'}, f"Added {self.type} to {processed} materials")
+        self.report({'INFO'}, f"Added {self.affix_type} to {processed} materials")
         return {'FINISHED'}
 
 class ZENV_OT_RemoveAffix(Operator, ZENV_MaterialRename_Mixin):
@@ -87,12 +96,12 @@ class ZENV_OT_RemoveAffix(Operator, ZENV_MaterialRename_Mixin):
     bl_label = "Remove"
     bl_description = "Remove prefix or suffix from material names"
     bl_options = {'REGISTER', 'UNDO'}
-    
-    type: StringProperty()  # "prefix" or "suffix"
-    
+
+    affix_type: StringProperty()  # "prefix" or "suffix"
+
     def execute(self, context):
         processed = self.process_materials(context, "remove")
-        self.report({'INFO'}, f"Removed {self.type} from {processed} materials")
+        self.report({'INFO'}, f"Removed {self.affix_type} from {processed} materials")
         return {'FINISHED'}
 
 class ZENV_PG_RenameByMaterialProps(PropertyGroup):
@@ -137,9 +146,9 @@ class ZENV_PT_MaterialRenameSuffix(Panel):
         row.prop(props, "prefix", text="")
         row = box.row(align=True)
         op = row.operator("zenv.add_material_affix", text="Add")
-        op.type = "prefix"
+        op.affix_type = "prefix"
         op = row.operator("zenv.remove_material_affix", text="Remove")
-        op.type = "prefix"
+        op.affix_type = "prefix"
         
         # Suffix section
         box = layout.box()
@@ -148,9 +157,9 @@ class ZENV_PT_MaterialRenameSuffix(Panel):
         row.prop(props, "suffix", text="")
         row = box.row(align=True)
         op = row.operator("zenv.add_material_affix", text="Add")
-        op.type = "suffix"
+        op.affix_type = "suffix"
         op = row.operator("zenv.remove_material_affix", text="Remove")
-        op.type = "suffix"
+        op.affix_type = "suffix"
         
         # Settings
         box = layout.box()
