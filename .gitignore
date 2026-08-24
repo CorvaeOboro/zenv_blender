@@ -160,3 +160,17 @@ dev_output/
 
 *.blend1
 *.psd
+dev/ref/
+dev/textures/
+ref/
+BLENDER.code-workspace
+addon/addon_compliance_report.txt
+dev/metal_ingot_renders/
+dev/hdri/
+dev/ascii_clean_reports/
+dev/backup/
+dev/lighting_presets/
+dev/DEV_blender_addon_compliance.bat
+dev/addon_metadata_validation_report.txt
+*.txt
+addon/notes/
