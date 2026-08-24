@@ -4,11 +4,13 @@ ZENV Blender Addon Website Generator
 Generates the main website HTML page from addon bl_info metadata.
 
 Website is generated from bl_info data in each Addon .py files
- grouping by group_prefix , sorted by sort_priority within each group
+ grouping by group_prefix , sorted by group_order (groups) and
+ addon_order (addons within each group), falling back to sort_priority
+ when the new fields are absent.
 
 Output: docs/index.html 
 
-VERSION: 20251108
+VERSION: 20260821
 """
 
 import os
@@ -30,12 +32,18 @@ class AddonGroup:
     addons: List[AddonMetadata] = field(default_factory=list)
     
     @property
-    def sort_key(self) -> str:
-        """Get sort key for group ordering."""
-        # Use first addon's sort_priority or default
+    def sort_key(self) -> int:
+        """Get sort key for group ordering (lowest group_order among members)."""
         if self.addons:
-            return str(self.addons[0].bl_info.get('sort_priority', '999'))
-        return '999'
+            orders = []
+            for a in self.addons:
+                v = a.bl_info.get('group_order', 999)
+                try:
+                    orders.append(int(v))
+                except (TypeError, ValueError):
+                    orders.append(999)
+            return min(orders)
+        return 999
 
 class WebsiteGenerator:
     """Generates website HTML from addon metadata."""
@@ -87,9 +95,13 @@ class WebsiteGenerator:
             
             self.groups[prefix].addons.append(addon)
         
-        # Sort addons within each group by sort_priority
+        # Sort addons within each group by addon_order (fall back to sort_priority)
         for group in self.groups.values():
-            group.addons.sort(key=lambda a: int(a.bl_info.get('sort_priority', '999')))
+            group.addons.sort(key=lambda a: (
+                int(a.bl_info.get('addon_order',
+                    a.bl_info.get('sort_priority', 999)) or 999),
+                a.bl_info.get('name', '').lower(),
+            ))
         
         print(f"Organized into {len(self.groups)} groups")
     
@@ -373,11 +385,14 @@ class WebsiteGenerator:
         status = addon.bl_info.get('status', 'working')
         version = addon.bl_info.get('version', 'N/A')
         image_path = addon.bl_info.get('image_overview', '')
-        
-        # Handle image
+        addon_image = addon.bl_info.get('addon_image', '')
+
+        # Handle image: prefer image_overview, fall back to addon_image
         if image_path and os.path.exists(os.path.join(self.addon_dir, '..', image_path)):
             # Convert to relative path for web
             image_html = f'<img src="{image_path}" alt="{name}" class="addon-image">'
+        elif addon_image and os.path.exists(os.path.join(self.addon_dir, '..', addon_image)):
+            image_html = f'<img src="{addon_image}" alt="{name}" class="addon-image">'
         else:
             # Placeholder
             image_html = '<div class="addon-image-placeholder"></div>'

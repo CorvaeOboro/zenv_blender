@@ -9,6 +9,30 @@ It performs various checks including:
 - Checking Naming conventions , Namespace uniqueness , Group prefix
 """
 
+#region IMPORTS
+import os
+import ast
+import sys
+import re
+import logging
+from typing import List, Dict, Set, Tuple, Optional
+from dataclasses import dataclass
+from enum import Enum
+import datetime
+#endregion
+
+#region CONFIG
+__all__ = [
+    "BlenderAddonChecker",
+    "ComplianceIssue",
+    "IssueLevel",
+    "check_directory",
+    "write_report_to_file",
+    "get_full_name",
+]
+
+logger = logging.getLogger(__name__)
+
 PROJECT_PREFIX = "ZENV"  # used as category prefix and side panel group
 ADDON_PREFIX = "z_blender"  # filename prefix , using "blender" for distinction between other python files
 
@@ -27,25 +51,11 @@ REQUIRED_BL_INFO_KEYS = {'name', 'author', 'version', 'blender', 'location', 'de
 IGNORED_DIRECTORIES = {'backup', 'removed'}
 
 # Allowed global functions
-MENU_FUNC_PREFIXES = {'menu_func_export', 'menu_func_import', 'menu_func'}
+MENU_FUNC_PREFIXES = {'menu_func'}
 ALLOWED_GLOBAL_FUNCTIONS = {'register', 'unregister'} | MENU_FUNC_PREFIXES
+#endregion
 
-import os
-import ast
-import sys
-from typing import List, Dict, Set, Tuple
-from dataclasses import dataclass
-from enum import Enum
-import datetime
-
-def get_full_name(node: ast.AST) -> str:
-    """Recursively extract the full dotted name from an AST node."""
-    if isinstance(node, ast.Name):
-        return node.id
-    elif isinstance(node, ast.Attribute):
-        return get_full_name(node.value) + "." + node.attr
-    return ""
-
+#region DATAMODEL
 class IssueLevel(Enum):
     ERROR = "ERROR"
     WARNING = "WARNING"
@@ -57,18 +67,73 @@ class ComplianceIssue:
     message: str
     line: int
     file: str
+#endregion
 
+#region ASTHELPERS
+def get_full_name(node: ast.AST) -> str:
+    """Recursively extract the full dotted name from an AST node."""
+    if isinstance(node, ast.Name):
+        return node.id
+    elif isinstance(node, ast.Attribute):
+        return get_full_name(node.value) + "." + node.attr
+    return ""
+
+def has_return_statement(func_node: ast.AST) -> bool:
+    """Return True if `func_node` (a FunctionDef) has a return statement in its own
+    body, ignoring returns inside nested function/class definitions."""
+    for child in ast.iter_child_nodes(func_node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(child, ast.Return):
+            return True
+        for descendant in ast.iter_child_nodes(child):
+            if _contains_return(descendant):
+                return True
+    return False
+
+def _contains_return(node: ast.AST) -> bool:
+    """Recursively check for a Return, stopping at nested function/class boundaries."""
+    if isinstance(node, ast.Return):
+        return True
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return False
+    for child in ast.iter_child_nodes(node):
+        if _contains_return(child):
+            return True
+    return False
+
+def classify_base(base_node: ast.AST) -> Optional[str]:
+    """Classify a class base node by its final component.
+    Returns 'Operator', 'Panel', 'PropertyGroup', or None.
+    Uses the final dotted component so 'bpy.types.Operator' matches but
+    'MyCustomOperatorMixin' does not."""
+    full = get_full_name(base_node)
+    if not full:
+        return None
+    last = full.rsplit('.', 1)[-1]
+    if last == 'Operator':
+        return 'Operator'
+    if last == 'Panel':
+        return 'Panel'
+    if last == 'PropertyGroup':
+        return 'PropertyGroup'
+    return None
+#endregion
+
+#region CHECKER
 class BlenderAddonChecker:
+    """Per-file compliance checker. Parses a Blender addon .py file with the
+    AST module and records issues against the project's naming/metadata
+    conventions. Safe to reuse across files (state is reset in load_file)."""
+
+    #region INIT
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.issues: List[ComplianceIssue] = []
         self.tree = None
         self.global_functions: Set[str] = set()
-        self.allowed_global_functions = ALLOWED_GLOBAL_FUNCTIONS
-        self.required_bl_options = REQUIRED_BL_OPTIONS
-        # Track class and node names
-        self.class_names: List[Tuple[str, str, str]] = []  # (class_name, bl_idname, bl_label)
-        self.node_names: List[Tuple[str, str]] = []  # (class_name, bl_label)
+        # Track class info: (class_name, bl_idname, bl_label)
+        self.class_names: List[Tuple[str, Optional[str], Optional[str]]] = []
 
     def add_issue(self, level: IssueLevel, line: int, message: str):
         """Helper method to add an issue with consistent formatting."""
@@ -78,23 +143,33 @@ class BlenderAddonChecker:
             line,
             self.file_path
         ))
+    #endregion
 
+    #region LOAD
     def load_file(self) -> bool:
-        """Load and parse the Python file."""
+        """Load and parse the Python file. Resets accumulated state so the
+        checker can be safely reused across files."""
+        # Reset state from any previous run
+        self.issues.clear()
+        self.global_functions.clear()
+        self.class_names.clear()
+        self.tree = None
         try:
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             self.tree = ast.parse(content)
             return True
-        except Exception as e:
-            self.issues.append(ComplianceIssue(
+        except (SyntaxError, OSError, UnicodeDecodeError) as e:
+            logger.debug("Failed to parse %s: %s", self.file_path, e, exc_info=True)
+            self.add_issue(
                 IssueLevel.ERROR,
-                f"Failed to parse file: {str(e)}",
                 0,
-                self.file_path
-            ))
+                f"Failed to parse file: {type(e).__name__}: {e}"
+            )
             return False
+    #endregion
 
+    #region CHECKS
     def check_bl_info(self):
         """Check if bl_info dictionary is present and properly formatted."""
         found_bl_info = False
@@ -114,8 +189,8 @@ class BlenderAddonChecker:
                             # Check required bl_info keys
                             found_keys = set()
                             for key in node.value.keys:
-                                if isinstance(key, ast.Str):
-                                    found_keys.add(key.s)
+                                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                                    found_keys.add(key.value)
                             
                             missing_keys = REQUIRED_BL_INFO_KEYS - found_keys
                             if missing_keys:
@@ -138,9 +213,17 @@ class BlenderAddonChecker:
         """Check for global functions. Only register/unregister (and allowed menu functions) should be global."""
         self.global_functions.clear()  # Reset the set before checking
         for node in self.tree.body:
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Add all global functions to the set
                 self.global_functions.add(node.name)
+                # async def at module level is not supported by Blender's loader
+                if isinstance(node, ast.AsyncFunctionDef):
+                    self.add_issue(
+                        IssueLevel.ERROR,
+                        node.lineno,
+                        f"Global async function '{node.name}' is not supported by Blender's addon loader"
+                    )
+                    continue
                 # Skip register and unregister functions
                 if node.name in ['register', 'unregister']:
                     continue
@@ -148,19 +231,19 @@ class BlenderAddonChecker:
                 if any(node.name.startswith(prefix) for prefix in MENU_FUNC_PREFIXES):
                     continue
                 # All other global functions are flagged
-                self.issues.append(ComplianceIssue(
+                self.add_issue(
                     IssueLevel.ERROR,
-                    f"Global function '{node.name}' found. Only register/unregister (and allowed menu functions) should be global",
                     node.lineno,
-                    self.file_path
-                ))
+                    f"Global function '{node.name}' found. Only register/unregister (and allowed menu functions) should be global"
+                )
 
     def check_register_unregister(self):
         """Check if register and unregister functions are properly implemented."""
         has_register = False
         has_unregister = False
-        
-        # First check if they exist at module level
+
+        # First check if they exist at module level (sync defs only - Blender
+        # requires register/unregister to be regular functions).
         for node in self.tree.body:
             if isinstance(node, ast.FunctionDef):
                 if node.name == 'register':
@@ -189,28 +272,27 @@ class BlenderAddonChecker:
         # Get addon type from filename (e.g., 'TEX' from z_blender_TEX_remap.py)
         filename = os.path.basename(self.file_path)
         addon_type = None
-        if filename.startswith(f"{ADDON_PREFIX}_"):
-            parts = filename.split('_')
-            if len(parts) >= 3:
-                addon_type = parts[2]  # Get the type part (e.g., 'TEX', 'GEN', etc.)
+        match = re.match(rf'{re.escape(ADDON_PREFIX)}_([A-Z]+)_', filename)
+        if match:
+            addon_type = match.group(1)  # e.g., 'TEX', 'GEN'
 
         for node in ast.walk(self.tree):
             if isinstance(node, ast.ClassDef):
                 # Store class name for later analysis: [class_name, bl_idname, bl_label]
                 class_info = [node.name, None, None]
                 
-                # Determine class type using full dotted name extraction
+                # Determine class type using exact final-component matching
                 is_operator = False
                 is_panel = False
                 is_property_group = False
-                
+
                 for base in node.bases:
-                    base_name = get_full_name(base)
-                    if "Operator" in base_name:
+                    cls = classify_base(base)
+                    if cls == 'Operator':
                         is_operator = True
-                    elif "Panel" in base_name:
+                    elif cls == 'Panel':
                         is_panel = True
-                    elif "PropertyGroup" in base_name:
+                    elif cls == 'PropertyGroup':
                         is_property_group = True
 
                 # Check class prefix based on type
@@ -236,42 +318,22 @@ class BlenderAddonChecker:
                             f"Property Group class '{node.name}' must start with {PROJECT_PREFIX}{PROP_GROUP_PREFIX}"
                         )
 
-                # Check class attributes for bl_idname, bl_label, etc.
+                # Collect class attributes (bl_idname, bl_label) for later analysis.
+                # Value-format checks (prefix, bl_category) are handled in
+                # check_operator_requirements / check_panel_requirements to avoid
+                # duplicate reports.
                 for child in node.body:
                     if isinstance(child, ast.Assign):
                         for target in child.targets:
                             if isinstance(target, ast.Name):
                                 if target.id == 'bl_idname':
                                     if isinstance(child.value, ast.Constant):
-                                        bl_idname = child.value.value
-                                        class_info[1] = bl_idname
-                                        
-                                        # Check bl_idname format
-                                        if is_operator:
-                                            if bl_idname.startswith('object.'):
-                                                self.add_issue(
-                                                    IssueLevel.ERROR,
-                                                    child.lineno,
-                                                    f"Operator bl_idname '{bl_idname}' must use '{PROJECT_PREFIX.lower()}.' prefix instead of 'object.'"
-                                                )
-                                            elif not bl_idname.startswith(f'{PROJECT_PREFIX.lower()}.'):
-                                                self.add_issue(
-                                                    IssueLevel.ERROR,
-                                                    child.lineno,
-                                                    f"Operator bl_idname '{bl_idname}' must start with '{PROJECT_PREFIX.lower()}.'"
-                                                )
-                                        elif is_panel:
-                                            if not bl_idname.startswith(f'{PROJECT_PREFIX}_PT_'):
-                                                self.add_issue(
-                                                    IssueLevel.ERROR,
-                                                    child.lineno,
-                                                    f"Panel bl_idname '{bl_idname}' must start with '{PROJECT_PREFIX}_PT_'"
-                                                )
+                                        class_info[1] = child.value.value
                                 elif target.id == 'bl_label':
                                     if isinstance(child.value, ast.Constant):
                                         bl_label = child.value.value
                                         class_info[2] = bl_label
-                                        
+
                                         # For panels, check if bl_label starts with addon type
                                         if is_panel and addon_type:
                                             if not bl_label.startswith(addon_type):
@@ -280,17 +342,6 @@ class BlenderAddonChecker:
                                                     child.lineno,
                                                     f"Panel bl_label '{bl_label}' must start with '{addon_type}'"
                                                 )
-                                elif target.id == 'bl_category':
-                                    if isinstance(child.value, ast.Constant):
-                                        bl_category = child.value.value
-                                        
-                                        # For panels, check if bl_category matches PROJECT_PREFIX
-                                        if is_panel and bl_category != PROJECT_PREFIX:
-                                            self.add_issue(
-                                                IssueLevel.ERROR,
-                                                child.lineno,
-                                                f"Panel bl_category must be '{PROJECT_PREFIX}', found '{bl_category}'"
-                                            )
 
                 # Store the class info if it has a bl_idname or bl_label
                 if class_info[1] or class_info[2]:
@@ -303,8 +354,7 @@ class BlenderAddonChecker:
                 # Check if this is an operator class
                 is_operator = False
                 for base in node.bases:
-                    base_name = get_full_name(base)
-                    if "Operator" in base_name:
+                    if classify_base(base) == 'Operator':
                         is_operator = True
                         break
 
@@ -341,7 +391,8 @@ class BlenderAddonChecker:
                                     elif target.id == 'bl_options':
                                         found_bl_options = True
                                         if isinstance(child.value, ast.Set):
-                                            bl_options_set = {elt.s for elt in child.value.elts if isinstance(elt, ast.Str)}
+                                            bl_options_set = {elt.value for elt in child.value.elts
+                                                              if isinstance(elt, ast.Constant) and isinstance(elt.value, str)}
                                             missing_options = REQUIRED_BL_OPTIONS - bl_options_set
                                             if missing_options:
                                                 self.add_issue(
@@ -352,14 +403,6 @@ class BlenderAddonChecker:
                         elif isinstance(child, ast.FunctionDef):
                             if child.name == 'execute':
                                 has_execute = True
-                                def has_return_statement(node):
-                                    if isinstance(node, ast.Return):
-                                        return True
-                                    for child_node in ast.iter_child_nodes(node):
-                                        if has_return_statement(child_node):
-                                            return True
-                                    return False
-                                
                                 if not has_return_statement(child):
                                     self.add_issue(
                                         IssueLevel.ERROR,
@@ -405,8 +448,7 @@ class BlenderAddonChecker:
                 # Check if this is a panel class
                 is_panel = False
                 for base in node.bases:
-                    base_name = get_full_name(base)
-                    if "Panel" in base_name:
+                    if classify_base(base) == 'Panel':
                         is_panel = True
                         break
 
@@ -509,31 +551,30 @@ class BlenderAddonChecker:
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         if isinstance(node.value, ast.Call):
-                            if isinstance(node.value.func, ast.Name):
-                                if node.value.func.id.endswith('Property'):
-                                    has_name = False
-                                    has_description = False
-                                    for keyword in node.value.keywords:
-                                        if keyword.arg == 'name':
-                                            has_name = True
-                                        elif keyword.arg == 'description':
-                                            has_description = True
-                                    
-                                    if not has_name:
-                                        self.issues.append(ComplianceIssue(
-                                            IssueLevel.WARNING,
-                                            f"Property '{target.id}' missing 'name' parameter",
-                                            node.lineno,
-                                            self.file_path
-                                        ))
-                                    
-                                    if not has_description:
-                                        self.issues.append(ComplianceIssue(
-                                            IssueLevel.WARNING,
-                                            f"Property '{target.id}' missing 'description' parameter",
-                                            node.lineno,
-                                            self.file_path
-                                        ))
+                            func_name = get_full_name(node.value.func)
+                            # Match both bare StringProperty(...) and bpy.props.StringProperty(...)
+                            if func_name.endswith('Property'):
+                                has_name = False
+                                has_description = False
+                                for keyword in node.value.keywords:
+                                    if keyword.arg == 'name':
+                                        has_name = True
+                                    elif keyword.arg == 'description':
+                                        has_description = True
+
+                                if not has_name:
+                                    self.add_issue(
+                                        IssueLevel.WARNING,
+                                        node.lineno,
+                                        f"Property '{target.id}' missing 'name' parameter"
+                                    )
+
+                                if not has_description:
+                                    self.add_issue(
+                                        IssueLevel.WARNING,
+                                        node.lineno,
+                                        f"Property '{target.id}' missing 'description' parameter"
+                                    )
 
     def check_import_style(self):
         """Check import statements for style and organization."""
@@ -548,12 +589,14 @@ class BlenderAddonChecker:
                             self.file_path
                         ))
                         break
+    #endregion
 
-    def run_all_checks(self):
-        """Run all compliance checks."""
+    #region RUN
+    def run_all_checks(self) -> bool:
+        """Load the file and run all compliance checks. Returns True if file loaded successfully."""
         if not self.load_file():
-            return
-        
+            return False
+
         self.check_bl_info()
         self.check_global_functions()
         self.check_register_unregister()
@@ -562,54 +605,40 @@ class BlenderAddonChecker:
         self.check_panel_requirements()
         self.check_property_definitions()
         self.check_import_style()
+        return True
+    #endregion
+#endregion
 
-    def print_report(self):
-        """Generate a formatted report of all issues."""
-        report_lines = []
-        
-        if not self.issues:
-            report_lines.append(f"\n✅ No issues found in {os.path.basename(self.file_path)}")
-            return report_lines
-
-        report_lines.append(f"\nReport for {os.path.basename(self.file_path)}:")
-        report_lines.append("-" * 80)
-        
-        for level in IssueLevel:
-            level_issues = [issue for issue in self.issues if issue.level == level]
-            if level_issues:
-                report_lines.append(f"\n{level.value}S:")
-                for issue in level_issues:
-                    report_lines.append(f"  Line {issue.line}: {issue.message}")
-        
-        return report_lines
-
-def check_directory(directory: str):
-    """Check all .py files in a directory for addon compliance."""
+#region SCAN
+def check_directory(directory: str) -> int:
+    """Check all addon .py files in a directory for compliance.
+    Returns the number of files with errors (0 means clean)."""
     if not os.path.exists(directory):
         print(f"Directory not found: {directory}")
-        return
+        return 1
 
     report_lines = []
     all_class_info = []
     total_files = 0
     bl_idname_map = {}  # Maps bl_idname to (file_path, class_name) for duplicate checking
+    duplicate_bl_idnames: Set[str] = set()
+    # Track which files had errors / warnings for accurate summary stats
+    files_with_errors: Set[str] = set()
+    files_with_warnings: Set[str] = set()
 
     for root, dirs, files in os.walk(directory):
         # Skip ignored directories
         dirs[:] = [d for d in dirs if d not in IGNORED_DIRECTORIES]
-        
+
         for file in files:
-            if file.endswith('.py'):
+            # Only scan addon files (matching the addon filename prefix) so that
+            # helper modules, __init__.py, and this checker itself are not flagged.
+            if file.endswith('.py') and file.startswith(f"{ADDON_PREFIX}_"):
                 total_files += 1
                 file_path = os.path.join(root, file)
                 checker = BlenderAddonChecker(file_path)
-                
-                if checker.load_file():
-                    checker.check_bl_info()
-                    checker.check_global_functions()
-                    checker.check_register_unregister()
-                    checker.check_class_naming()
-                    
+
+                if checker.run_all_checks():
                     # Check for duplicate bl_idname values
                     for class_name, bl_idname, bl_label in checker.class_names:
                         if bl_idname:
@@ -618,25 +647,48 @@ def check_directory(directory: str):
                                 report_lines.append(os.path.basename(file_path))
                                 report_lines.append(f"  ERROR: Line 0: Duplicate bl_idname '{bl_idname}' in class '{class_name}' conflicts with '{prev_class}' in file '{os.path.basename(prev_file)}'")
                                 report_lines.append("")
+                                duplicate_bl_idnames.add(bl_idname)
+                                files_with_errors.add(os.path.basename(file_path))
                             else:
                                 bl_idname_map[bl_idname] = (file_path, class_name)
-                    
+
                     if checker.issues:
                         report_lines.append(os.path.basename(file_path))
                         for issue in checker.issues:
                             report_lines.append(f"  {issue.level.value}: Line {issue.line}: {issue.message}")
+                            if issue.level == IssueLevel.ERROR:
+                                files_with_errors.add(os.path.basename(file_path))
+                            elif issue.level == IssueLevel.WARNING:
+                                files_with_warnings.add(os.path.basename(file_path))
                         report_lines.append("")
-                    
+
                     # Collect class information
                     all_class_info.extend(checker.class_names)
 
     # Add duplicate bl_idname section to report
     output_file = os.path.join(directory, "addon_compliance_report.txt")
-    write_report_to_file(report_lines, output_file, total_files, all_class_info)
+    write_report_to_file(report_lines, output_file, total_files, all_class_info,
+                         files_with_errors, files_with_warnings, duplicate_bl_idnames)
     print(f"Report written to {output_file}")
+    return len(files_with_errors)
+#endregion
 
-def write_report_to_file(report_lines: List[str], output_file: str, total_files: int = 0, class_info: List[Tuple[str, str, str]] = None):
+#region REPORT
+def write_report_to_file(report_lines: List[str], output_file: str, total_files: int = 0,
+                         class_info: List[Tuple[str, str, str]] = None,
+                         files_with_errors: Set[str] = None,
+                         files_with_warnings: Set[str] = None,
+                         duplicate_bl_idnames: Set[str] = None):
     """Write the report lines to a file with improved formatting."""
+    if files_with_errors is None:
+        files_with_errors = set()
+    if files_with_warnings is None:
+        files_with_warnings = set()
+    if class_info is None:
+        class_info = []
+    if duplicate_bl_idnames is None:
+        duplicate_bl_idnames = set()
+
     with open(output_file, 'w', encoding='utf-8') as f:
         # Write header
         f.write("Blender Addon Compliance Report\n")
@@ -647,10 +699,10 @@ def write_report_to_file(report_lines: List[str], output_file: str, total_files:
         # Write summary
         f.write("Summary\n")
         f.write("----------------------------------------\n")
-        error_files = len(set(line.split(':')[0] for line in report_lines if "ERROR:" in line))
-        warning_files = len(set(line.split(':')[0] for line in report_lines if "WARNING:" in line))
+        error_files = len(files_with_errors)
+        warning_files = len(files_with_warnings - files_with_errors)
         passed_files = total_files - (error_files + warning_files)
-        
+
         f.write(f"Total Files Reviewed: {total_files}\n")
         f.write(f"Files with No Issues: {passed_files}\n")
         f.write(f"Files with Errors: {error_files}\n")
@@ -674,17 +726,9 @@ def write_report_to_file(report_lines: List[str], output_file: str, total_files:
             f.write("\n")
 
         # Write class information if available
-        if class_info and class_info:
-            # First collect all bl_idnames to check for duplicates
-            bl_idname_map = {}
-            duplicate_bl_idnames = set()
-            for name, idname, label in class_info:
-                if idname:
-                    if idname in bl_idname_map:
-                        duplicate_bl_idnames.add(idname)
-                    bl_idname_map[idname] = name
-
+        if class_info:
             # Write duplicate bl_idname section if any found
+            # (duplicate set is computed once in check_directory and passed in)
             if duplicate_bl_idnames:
                 f.write("\nDuplicate bl_idname Values\n")
                 f.write("========================================\n")
@@ -732,13 +776,20 @@ def write_report_to_file(report_lines: List[str], output_file: str, total_files:
                     if label:
                         f.write(f"  bl_label: {label}\n")
                     f.write("\n")
+#endregion
 
+#region CLI
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         directory = sys.argv[1]
         if os.path.isdir(directory):
-            check_directory(directory)
+            error_count = check_directory(directory)
+            # Exit non-zero if any files had errors (suitable for CI / pre-commit).
+            sys.exit(1 if error_count else 0)
         else:
             print(f"Error: {directory} is not a valid directory")
+            sys.exit(2)
     else:
         print("Please provide a directory path as an argument")
+        sys.exit(2)
+#endregion
