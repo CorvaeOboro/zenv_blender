@@ -1,14 +1,17 @@
+#region META
 bl_info = {
     "name": 'TEX Camera Projection',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260418',
+    "version": '20260822',
     "description": 'Create camera from current view and bake projected textures',
     "status": 'working',
     "approved": True,
-    "sort_priority": '1',
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 10,
+    "tags": ['texture', 'projection', 'camera', 'bake', 'uv', 'visibility', 'mask'],
     "description_short": 'Create camera from current view and bake projected textures',
     "description_medium": 'texture projection from camera - creates square orthographic camera from current view , and the camera projects image onto mesh baking to texture . workflow similar to "quick edits" in texture paint mode , now with permanent cameras',
     "description_long": """
@@ -16,26 +19,33 @@ TEXTURE PROJECTION FROM CAMERA
  create camera from current view and project textures
  bake textures using camera projection and visibility masks
 """,
+    "image_overview": 'zenv_blender_TEX_texture_proj_cam.png',
+    "addon_image": 'zenv_blender_TEX_texture_proj_cam.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 import shutil
+import math
+import time
+import json
+import random
+import logging
+import bmesh
 import numpy as np
 from datetime import datetime
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Matrix, Vector
-import math
-import logging
+from mathutils.bvhtree import BVHTree
 
 logger = logging.getLogger(__name__)
 _zenv_tex_proj_cam_console_handler = None
+#endregion
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
-
+#region PROPS
 class ZENV_TextureProj_Properties:
     """Property management for texture projection addon"""
     
@@ -199,29 +209,23 @@ class ZENV_TextureProj_Properties:
     @classmethod
     def unregister(cls):
         """Unregister all properties"""
-        del bpy.types.Scene.zenv_ortho_scale
-        del bpy.types.Scene.zenv_bake_margin
-        del bpy.types.Scene.zenv_texture_resolution
-        del bpy.types.Scene.zenv_texture_path
-        del bpy.types.Scene.zenv_debug_mode
-        del bpy.types.Scene.zenv_square_texture
-        del bpy.types.Scene.zenv_orthographic
-        del bpy.types.Scene.zenv_texture_resolution_x
-        del bpy.types.Scene.zenv_texture_resolution_y
-        del bpy.types.Scene.zenv_square_camera
-        del bpy.types.Scene.zenv_camera_resolution_x
-        del bpy.types.Scene.zenv_camera_resolution_y
-        del bpy.types.Scene.zenv_mask_margin
-        del bpy.types.Scene.zenv_mask_falloff
-        del bpy.types.Scene.zenv_mask_sample_count
-        del bpy.types.Scene.zenv_mask_sample_density
-        del bpy.types.Scene.zenv_use_mask_as_alpha
-        del bpy.types.Scene.zenv_mask_dilation
+        _props = (
+            'zenv_ortho_scale', 'zenv_bake_margin', 'zenv_texture_resolution',
+            'zenv_texture_path', 'zenv_debug_mode', 'zenv_square_texture',
+            'zenv_orthographic', 'zenv_texture_resolution_x',
+            'zenv_texture_resolution_y', 'zenv_square_camera',
+            'zenv_camera_resolution_x', 'zenv_camera_resolution_y',
+            'zenv_mask_margin', 'zenv_mask_falloff', 'zenv_mask_sample_count',
+            'zenv_mask_sample_density', 'zenv_use_mask_as_alpha',
+            'zenv_mask_dilation',
+        )
+        scene_type = bpy.types.Scene
+        for _name in _props:
+            if hasattr(scene_type, _name):
+                delattr(scene_type, _name)
+#endregion
 
-# ------------------------------------------------------------------------
-#    Utilities
-# ------------------------------------------------------------------------
-
+#region UTILS
 class ZENV_TextureProj_Utils:
     """Utility functions for texture projection"""
     
@@ -438,11 +442,9 @@ class ZENV_TextureProj_Utils:
             if obj.type == 'CAMERA':
                 return obj
         return None
+#endregion
 
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
-
+#region OP
 class ZENV_OT_TextureProj_CreateCamera(bpy.types.Operator):
     """Create orthographic camera from current view"""
     bl_idname = "zenv.textureproj_create_camera"
@@ -522,27 +524,31 @@ class ZENV_OT_TextureProj_CreateCamera(bpy.types.Operator):
         return False
     
     def setup_perspective_camera(self, camera, context):
-        """Set up perspective camera properties"""
+        """Set up perspective camera properties, matching viewport lens when possible."""
         camera.data.type = 'PERSP'
-        
+
         # Match FOV to current view if possible
         for area in context.screen.areas:
             if area.type == 'VIEW_3D':
                 space = area.spaces.active
                 region_3d = space.region_3d
-                
+
                 # Set clip distances
                 camera.data.clip_start = space.clip_start
                 camera.data.clip_end = space.clip_end
-                
-                # Try to match lens/FOV from viewport
+
+                # Match lens from the viewport when it is in perspective mode.
+                # ``region_3d.lens`` holds the focal length used by the
+                # viewport editor, so copying it gives a camera that
+                # matches what the user sees.
                 if region_3d.view_perspective == 'PERSP':
-                    # Calculate lens from view distance and perspective
-                    camera.data.lens = 50  # Default lens
+                    camera.data.lens = getattr(region_3d, 'lens', 50)
                 else:
-                    # Use default perspective settings
-                    camera.data.lens = 50
-                    
+                    # Ortho or camera view: use the viewport's stored lens
+                    # value (Blender keeps one even in ortho mode) or fall
+                    # back to 50 mm.
+                    camera.data.lens = getattr(region_3d, 'lens', 50)
+
                 return True
         return False
 
@@ -646,7 +652,7 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
             if context.scene.zenv_use_mask_as_alpha:
                 self.report({'INFO'}, "Auto-baking visibility mask...")
                 logger.info("Auto-baking visibility mask for alpha compositing...")
-                print("\n=== AUTO-BAKING VISIBILITY MASK ===")
+                logger.info("\n=== AUTO-BAKING VISIBILITY MASK ===")
                 mask_result = self.auto_bake_visibility_mask(context, state['original_obj'])
                 if not mask_result:
                     self.report({'WARNING'}, "Failed to auto-bake visibility mask, continuing without alpha")
@@ -679,8 +685,8 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
             if context.scene.zenv_use_mask_as_alpha:
                 self.report({'INFO'}, "Compositing visibility mask as alpha...")
                 logger.info("Compositing visibility mask as alpha...")
-                print("\n=== COMPOSITING MASK AS ALPHA ===")
-                print(f"Color texture path: {baked_path}")
+                logger.info("\n=== COMPOSITING MASK AS ALPHA ===")
+                logger.info(f"Color texture path: {baked_path}")
                 
                 composited_path = self.composite_mask_as_alpha(context, baked_path, state['original_obj'])
                 
@@ -968,30 +974,30 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
     def auto_bake_visibility_mask(self, context, target_obj):
         """Automatically bake visibility mask for the target object"""
         try:
-            print(f"Auto-bake visibility mask starting...")
-            print(f"  Target object: {target_obj.name}")
-            print(f"  Camera: {context.scene.camera}")
-            print(f"  Has UV layers: {len(target_obj.data.uv_layers) > 0 if target_obj.data.uv_layers else False}")
+            logger.info(f"Auto-bake visibility mask starting...")
+            logger.info(f"  Target object: {target_obj.name}")
+            logger.info(f"  Camera: {context.scene.camera}")
+            logger.info(f"  Has UV layers: {len(target_obj.data.uv_layers) > 0 if target_obj.data.uv_layers else False}")
             
             # Save current selection
             original_active = context.view_layer.objects.active
             original_selected = [obj for obj in context.selected_objects]
             
-            print(f"  Original active: {original_active.name if original_active else None}")
-            print(f"  Original selected: {[o.name for o in original_selected]}")
+            logger.info(f"  Original active: {original_active.name if original_active else None}")
+            logger.info(f"  Original selected: {[o.name for o in original_selected]}")
             
             # Select target object
             bpy.ops.object.select_all(action='DESELECT')
             target_obj.select_set(True)
             context.view_layer.objects.active = target_obj
             
-            print(f"  Set active to: {context.view_layer.objects.active.name}")
-            print(f"  Calling bake mask operator...")
+            logger.info(f"  Set active to: {context.view_layer.objects.active.name}")
+            logger.info(f"  Calling bake mask operator...")
             
             # Call the visibility mask bake operator
             result = bpy.ops.zenv.textureproj_bake_mask()
             
-            print(f"  Operator result: {result}")
+            logger.info(f"  Operator result: {result}")
             
             # Restore selection
             bpy.ops.object.select_all(action='DESELECT')
@@ -1001,40 +1007,38 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
             
             if result == {'FINISHED'}:
                 logger.info("Auto-baked visibility mask successfully")
-                print("  SUCCESS: Mask baked")
+                logger.info("  SUCCESS: Mask baked")
                 return True
             else:
                 logger.warning(f"Visibility mask bake returned: {result}")
-                print(f"  FAILED: Operator returned {result}")
+                logger.info(f"  FAILED: Operator returned {result}")
                 return False
                 
         except Exception as e:
             logger.exception(f"Error auto-baking visibility mask: {e}")
-            print(f"  EXCEPTION: {e}")
-            import traceback
+            logger.info(f"  EXCEPTION: {e}")
             traceback.print_exc()
             return False
     
     def composite_mask_as_alpha(self, context, color_texture_path, target_obj):
         """Composite visibility mask as alpha channel - brute force with JSON tracking"""
         try:
-            import json
             
-            print(f"Composite called with:")
-            print(f"  Color texture: {color_texture_path}")
-            print(f"  Target object: {target_obj.name}")
+            logger.info(f"Composite called with:")
+            logger.info(f"  Color texture: {color_texture_path}")
+            logger.info(f"  Target object: {target_obj.name}")
             
             # Find the visibility mask file
             mask_image_name = f"{target_obj.name}_visibility_mask"
             textures_folder = bpy.path.abspath("//textures/")
             mask_path = os.path.join(textures_folder, f"{mask_image_name}.png")
             
-            print(f"  Looking for mask: {mask_path}")
-            print(f"  Mask exists: {os.path.exists(mask_path)}")
+            logger.info(f"  Looking for mask: {mask_path}")
+            logger.info(f"  Mask exists: {os.path.exists(mask_path)}")
             
             if not os.path.exists(mask_path):
                 logger.warning(f"Visibility mask file not found: {mask_path}")
-                print(f"ERROR: Mask file not found!")
+                logger.info(f"ERROR: Mask file not found!")
                 return color_texture_path
             
             # Load color texture into Blender
@@ -1290,12 +1294,6 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
             for mat in mats:
                 obj.data.materials.append(mat)
 
-    def cleanup(self, context, state):
-        """Clean up temporary objects"""
-        if not context.scene.zenv_debug_mode:
-            bpy.data.objects.remove(bpy.data.objects.get("temp_camera_proj_mesh"), do_unlink=True)
-            bpy.data.objects.remove(bpy.data.objects.get("temp_bake_setup_mesh"), do_unlink=True)
-
 class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
     """Bake visibility mask using camera ray casting"""
     bl_idname = "zenv.textureproj_bake_mask"
@@ -1349,8 +1347,6 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         mesh_eval = target_obj.evaluated_get(depsgraph)
         
         # Create a temporary triangulated copy of the mesh
-        import bmesh
-        from mathutils.bvhtree import BVHTree
         bm = bmesh.new()
         bm.from_mesh(mesh_eval.data)
         
@@ -1370,32 +1366,40 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         # Use triangulated mesh for UV mapping
         mesh_data = temp_mesh
         
-        print(f"Triangulated mesh: {len(temp_mesh.polygons)} triangles (was {len(mesh_eval.data.polygons)} faces)")
+        logger.info(f"Triangulated mesh: {len(temp_mesh.polygons)} triangles (was {len(mesh_eval.data.polygons)} faces)")
         
         # Generate camera rays using shared function
         ray_samples, samples_per_axis = self.generate_camera_rays(camera, context, num_rays)
         
         # Cast rays and collect hit points with UVs
         actual_ray_count = len(ray_samples)
-        print(f"\n=== Baking visibility mask: {actual_ray_count} rays ({samples_per_axis}×{samples_per_axis} grid) ===")
+        logger.info(f"\n=== Baking visibility mask: {actual_ray_count} rays ({samples_per_axis}x{samples_per_axis} grid) ===")
         
         hit_points_uv = []  # List of (uv_x, uv_y, visibility) tuples
         uv_layer = mesh_data.uv_layers.active.data
         
-        import time
         start_time = time.time()
         last_report = start_time
         
-        for i, ray_direction in enumerate(ray_samples):
+        for i, ray_data in enumerate(ray_samples):
             # Progress reporting every 2 seconds
             current_time = time.time()
             if current_time - last_report > 2.0:
                 progress = (i / actual_ray_count) * 100
-                print(f"  Progress: {progress:.1f}% ({i}/{actual_ray_count} rays)")
+                logger.info(f"  Progress: {progress:.1f}% ({i}/{actual_ray_count} rays)")
                 last_report = current_time
-            
+
+            # Perspective rays are plain Vector directions; orthographic
+            # rays are (origin_offset, direction) tuples.
+            if isinstance(ray_data, tuple):
+                ray_origin_offset, ray_direction = ray_data
+                ray_origin = cam_location + ray_origin_offset
+            else:
+                ray_direction = ray_data
+                ray_origin = cam_location
+
             hit_location, hit_normal, hit_index, hit_distance = bvh.ray_cast(
-                cam_location, ray_direction, 10000.0
+                ray_origin, ray_direction, 10000.0
             )
             
             if hit_location and hit_index is not None:
@@ -1450,8 +1454,8 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
                         hit_points_uv.append((uv_center.x, uv_center.y, 1.0))
         
         elapsed = time.time() - start_time
-        print(f"Ray casting complete in {elapsed:.2f}s")
-        print(f"Found {len(hit_points_uv)} visible UV points ({100*len(hit_points_uv)/actual_ray_count:.1f}% hit rate)")
+        logger.info(f"Ray casting complete in {elapsed:.2f}s")
+        logger.info(f"Found {len(hit_points_uv)} visible UV points ({100*len(hit_points_uv)/actual_ray_count:.1f}% hit rate)")
         
         # Create fresh image (remove old one if exists)
         image_name = f"{target_obj.name}_visibility_mask"
@@ -1471,7 +1475,7 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
             splat_radius = 0
         else:
             splat_radius = max(1, int(avg_texture_size / (samples_per_axis * 2)))  # Adaptive radius
-        print(f"Using splat radius: {splat_radius} pixels (texture: {texture_width}x{texture_height})")
+        logger.info(f"Using splat radius: {splat_radius} pixels (texture: {texture_width}x{texture_height})")
         
         for uv_x, uv_y, visibility in hit_points_uv:
             # Convert UV to pixel coordinates (don't flip Y - Blender handles it)
@@ -1497,7 +1501,7 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         
         # Dilate mask - expand white pixels
         if dilation_amount > 0:
-            print(f"Dilating mask (expanding white pixels by {dilation_amount})...")
+            logger.info(f"Dilating mask (expanding white pixels by {dilation_amount})...")
             pixels_2d = pixels.reshape((texture_height, texture_width, 4))
             
             # Perform dilation multiple times for larger expansion
@@ -1531,7 +1535,7 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
             # Flatten back to 1D
             pixels = pixels_2d.flatten()
         else:
-            print("Mask dilation disabled (set to 0)")
+            logger.info("Mask dilation disabled (set to 0)")
         
         # Update image
         image.pixels[:] = pixels
@@ -1546,65 +1550,103 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         image.file_format = 'PNG'
         image.save()
         
-        print(f"Saved visibility mask to: {image_path}")
-        
+        logger.info(f"Saved visibility mask to: {image_path}")
+
+        # Apply gradient falloff / margin erosion if requested.
+        if context.scene.zenv_mask_falloff > 0 or context.scene.zenv_mask_margin > 0:
+            self.apply_mask_falloff(
+                image_path,
+                context.scene.zenv_mask_margin,
+                context.scene.zenv_mask_falloff
+            )
+
         # Clean up temporary mesh
         bpy.data.meshes.remove(temp_mesh)
-        
+
         self.report({'INFO'}, f"Baked visibility mask: {len(hit_points_uv)} visible points -> {image_path}")
         return {'FINISHED'}
     
     def generate_camera_rays(self, camera, context, num_rays):
-        """Generate ray directions through camera pixels"""
-        # Get render resolution
-        if camera.data.type == 'PERSP':
-            render = context.scene.render
-            res_x = render.resolution_x
-            res_y = render.resolution_y
-        else:
-            res_x = res_y = 1024
-        
+        """Generate ray directions through camera pixels.
+
+        For perspective cameras the rays fan out from the camera origin
+        using the field of view.  For orthographic cameras the rays are
+        parallel and evenly spaced across the orthographic scale, which
+        matches how an orthographic projection actually works.
+        """
+        render = context.scene.render
+        res_x = render.resolution_x
+        res_y = render.resolution_y
+
         samples_per_axis = int(num_rays ** 0.5)
-        
+
         # Get camera parameters
         sensor_width = camera.data.sensor_width
         sensor_height = camera.data.sensor_height
         focal_length = camera.data.lens
         aspect_ratio = res_x / res_y if res_y > 0 else 1.0
-        
+
         if camera.data.sensor_fit == 'AUTO':
             sensor_fit = 'HORIZONTAL' if aspect_ratio > 1.0 else 'VERTICAL'
         else:
             sensor_fit = camera.data.sensor_fit
-        
+
+        ray_samples = []
+        cam_matrix = camera.matrix_world
+
+        if camera.data.type == 'ORTHO':
+            # Orthographic: parallel rays, evenly spaced across the
+            # orthographic scale.  The ray origin is offset in the
+            # camera's local X/Y plane and the direction is straight
+            # forward (-Z in camera space).
+            ortho_scale = camera.data.ortho_scale
+            if aspect_ratio >= 1.0:
+                half_w = ortho_scale / 2.0
+                half_h = ortho_scale / (2.0 * aspect_ratio)
+            else:
+                half_w = ortho_scale * aspect_ratio / 2.0
+                half_h = ortho_scale / 2.0
+
+            forward_cam = Vector((0.0, 0.0, -1.0))
+            forward_world = (cam_matrix.to_3x3() @ forward_cam).normalized()
+            right_world = (cam_matrix.to_3x3() @ Vector((1.0, 0.0, 0.0))).normalized()
+            up_world = (cam_matrix.to_3x3() @ Vector((0.0, 1.0, 0.0))).normalized()
+
+            for y in range(samples_per_axis):
+                for x in range(samples_per_axis):
+                    ndc_x = (x + 0.5) / samples_per_axis * 2.0 - 1.0
+                    ndc_y = (y + 0.5) / samples_per_axis * 2.0 - 1.0
+                    offset = (right_world * ndc_x * half_w) + (up_world * ndc_y * half_h)
+                    # Store (origin_offset, direction) tuples for ortho
+                    ray_samples.append((offset, forward_world))
+            return ray_samples, samples_per_axis
+
+        # Perspective: rays fan out from the camera origin.
         if sensor_fit == 'HORIZONTAL':
             fov = 2.0 * math.atan(sensor_width / (2.0 * focal_length))
         else:
             fov = 2.0 * math.atan(sensor_height / (2.0 * focal_length))
-        
-        ray_samples = []
-        cam_matrix = camera.matrix_world
-        
+
         for y in range(samples_per_axis):
             for x in range(samples_per_axis):
                 pixel_x = (x + 0.5) / samples_per_axis
                 pixel_y = (y + 0.5) / samples_per_axis
-                
+
                 ndc_x = pixel_x * 2.0 - 1.0
                 ndc_y = pixel_y * 2.0 - 1.0
-                
+
                 if sensor_fit == 'HORIZONTAL':
                     ndc_x *= math.tan(fov / 2.0)
                     ndc_y *= math.tan(fov / 2.0) / aspect_ratio
                 else:
                     ndc_x *= math.tan(fov / 2.0) * aspect_ratio
                     ndc_y *= math.tan(fov / 2.0)
-                
+
                 ray_dir_cam = Vector((ndc_x, ndc_y, -1.0)).normalized()
                 ray_dir_world = (cam_matrix.to_3x3() @ ray_dir_cam).normalized()
-                
+
                 ray_samples.append(ray_dir_world)
-        
+
         return ray_samples, samples_per_axis
     
     def barycentric_coords_3d(self, p, a, b, c):
@@ -1612,414 +1654,64 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         v0 = b - a
         v1 = c - a
         v2 = p - a
-        
+
         d00 = v0.dot(v0)
         d01 = v0.dot(v1)
         d11 = v1.dot(v1)
         d20 = v2.dot(v0)
         d21 = v2.dot(v1)
-        
+
         denom = d00 * d11 - d01 * d01
         if abs(denom) < 1e-8:
             return None
-        
+
         v = (d11 * d20 - d01 * d21) / denom
         w = (d00 * d21 - d01 * d20) / denom
         u = 1.0 - v - w
-        
-        return (u, v, w)
-    
-    def transfer_camera_to_uv_space(self, context, mask_mesh, camera_mask_path, uv_mask_image):
-        """
-        UV-space sampling with geometric ray casting for visibility:
-        1. For each UV pixel, find its world position
-        2. Cast ray from camera to check visibility (not occluded, facing camera)
-        3. Write visibility to UV texture
-        """
-        import numpy as np
-        from mathutils import Vector
-        from mathutils.bvhtree import BVHTree
-        
-        # Get UV resolution
-        uv_width = uv_mask_image.size[0]
-        uv_height = uv_mask_image.size[1]
-        
-        # Create UV mask array
-        uv_array = np.zeros((uv_height, uv_width), dtype=np.float32)
-        
-        # Get camera and mesh data
-        camera = context.scene.camera
-        depsgraph = context.evaluated_depsgraph_get()
-        mesh_eval = mask_mesh.evaluated_get(depsgraph)
-        
-        # Get UV layer
-        if not mesh_eval.data.uv_layers:
-            self.report({'ERROR'}, "Mesh has no UV layers! Please unwrap the mesh first.")
-            logger.error("Mesh has no UV layers")
-            return
-        
-        uv_layer = mesh_eval.data.uv_layers.active.data
-        
-        # Validate UVs - check if they're all at the same position
-        logger.info("Validating UV layout...")
-        uv_positions = set()
-        for loop in mesh_eval.data.loops:
-            uv = uv_layer[loop.index].uv
-            uv_positions.add((round(uv.x, 4), round(uv.y, 4)))
-        
-        if len(uv_positions) < 10:
-            self.report({'ERROR'}, f"Invalid UV layout! Only {len(uv_positions)} unique UV positions found. Please unwrap the mesh properly.")
-            logger.error(f"Invalid UV layout - only {len(uv_positions)} unique positions")
-            return
-        
-        logger.info(f"UV validation passed - {len(uv_positions)} unique UV positions")
-        
-        # Build BVH tree for ray casting (occlusion testing)
-        logger.info("Building BVH tree for ray casting...")
-        bvh = BVHTree.FromObject(mask_mesh, context.evaluated_depsgraph_get())
-        
-        # Get camera world position
-        cam_location = camera.matrix_world.to_translation()
-        
-        # Optional: Create debug objects to visualize ray hits
-        if context.scene.zenv_debug_mode:
-            debug_hits = []
-        
-        # Build lookup: for each polygon, store its vertices and UVs
-        logger.info(f"Building UV-to-world lookup with spatial acceleration...")
-        
-        # Build spatial grid for fast UV lookup
-        grid_size = 32  # 32x32 grid
-        uv_grid = [[[] for _ in range(grid_size)] for _ in range(grid_size)]
-        
-        poly_data = []
-        for poly_idx, poly in enumerate(mesh_eval.data.polygons):
-            # Get UV coordinates for this polygon
-            poly_uvs = []
-            for loop_idx in poly.loop_indices:
-                uv = uv_layer[loop_idx].uv
-                poly_uvs.append(Vector((uv.x, uv.y)))
-            
-            # Get world space vertices for this polygon
-            poly_verts = [mesh_eval.matrix_world @ mesh_eval.data.vertices[v].co for v in poly.vertices]
-            
-            # Calculate polygon normal
-            if len(poly_verts) >= 3:
-                edge1 = poly_verts[1] - poly_verts[0]
-                edge2 = poly_verts[2] - poly_verts[0]
-                normal = edge1.cross(edge2).normalized()
-            else:
-                normal = Vector((0, 0, 1))
-            
-            poly_info = {
-                'uvs': poly_uvs,
-                'verts': poly_verts,
-                'normal': normal
-            }
-            poly_data.append(poly_info)
-            
-            # Add to spatial grid based on UV bounding box
-            if poly_uvs:
-                min_u = min(uv.x for uv in poly_uvs)
-                max_u = max(uv.x for uv in poly_uvs)
-                min_v = min(uv.y for uv in poly_uvs)
-                max_v = max(uv.y for uv in poly_uvs)
-                
-                # Add to all grid cells this polygon overlaps
-                grid_min_x = max(0, int(min_u * grid_size))
-                grid_max_x = min(grid_size - 1, int(max_u * grid_size))
-                grid_min_y = max(0, int(min_v * grid_size))
-                grid_max_y = min(grid_size - 1, int(max_v * grid_size))
-                
-                for gy in range(grid_min_y, grid_max_y + 1):
-                    for gx in range(grid_min_x, grid_max_x + 1):
-                        uv_grid[gy][gx].append(poly_idx)
-        
-        logger.info(f"Built spatial grid with {len(poly_data)} polygons")
-        
-        # Pre-compute UV coverage map to skip empty space
-        logger.info("Building UV coverage map...")
-        uv_coverage = np.zeros((uv_height, uv_width), dtype=bool)
-        
-        for poly_info in poly_data:
-            poly_uvs = poly_info['uvs']
-            if len(poly_uvs) >= 3:
-                # Rasterize polygon into coverage map
-                for i in range(1, len(poly_uvs) - 1):
-                    uv0, uv1, uv2 = poly_uvs[0], poly_uvs[i], poly_uvs[i+1]
-                    
-                    # Get bounding box of triangle in pixel space
-                    min_u = min(uv0.x, uv1.x, uv2.x)
-                    max_u = max(uv0.x, uv1.x, uv2.x)
-                    min_v = min(uv0.y, uv1.y, uv2.y)
-                    max_v = max(uv0.y, uv1.y, uv2.y)
-                    
-                    min_x = max(0, int(min_u * uv_width))
-                    max_x = min(uv_width - 1, int(max_u * uv_width))
-                    min_y = max(0, int((1.0 - max_v) * uv_height))
-                    max_y = min(uv_height - 1, int((1.0 - min_v) * uv_height))
-                    
-                    # Mark all pixels in bounding box as covered
-                    uv_coverage[min_y:max_y+1, min_x:max_x+1] = True
-        
-        covered_pixels = np.count_nonzero(uv_coverage)
-        total_uv_pixels = uv_width * uv_height
-        logger.info(f"UV coverage: {covered_pixels}/{total_uv_pixels} pixels ({100*covered_pixels/total_uv_pixels:.1f}%) inside UV islands")
-        
-        # Sample UV space with hard limits to prevent freezing
-        sample_density = context.scene.zenv_mask_sample_density
-        sample_step = int(1.0 / sample_density) if sample_density < 1.0 else 1
-        
-        # Calculate total samples and enforce maximum
-        estimated_samples = (uv_height // sample_step) * (uv_width // sample_step)
-        MAX_SAMPLES = 500000  # Hard limit to prevent freezing (10x increase)
-        
-        if estimated_samples > MAX_SAMPLES:
-            # Adjust sample step to stay under limit
-            sample_step = int(np.sqrt((uv_height * uv_width) / MAX_SAMPLES))
-            sample_step = max(1, sample_step)
-            estimated_samples = (uv_height // sample_step) * (uv_width // sample_step)
-            logger.warning(f"Reducing samples from {estimated_samples} to {MAX_SAMPLES} to prevent freezing")
-        
-        logger.info(f"Sampling UV space: {uv_width}x{uv_height} texture, step={sample_step}, ~{estimated_samples} samples")
-        
-        # Use random sampling to test different areas each time
-        import random
-        random.seed()  # Different seed each time
-        
-        # Collect all valid UV pixels
-        valid_pixels = []
-        for uv_y in range(0, uv_height, sample_step):
-            for uv_x in range(0, uv_width, sample_step):
-                if uv_coverage[uv_y, uv_x]:
-                    valid_pixels.append((uv_x, uv_y))
-        
-        # Randomly sample from valid pixels
-        num_samples = min(len(valid_pixels), estimated_samples)
-        sampled_pixels = random.sample(valid_pixels, num_samples)
-        
-        logger.info(f"Random sampling {num_samples} pixels from {len(valid_pixels)} valid UV pixels")
-        
-        total_pixels = 0
-        visible_pixels = 0
-        occluded_pixels = 0
-        backface_pixels = 0
-        no_world_pos = 0
-        
-        import time
-        start_time = time.time()
-        
-        # Iterate through sampled pixels
-        last_log_time = start_time
-        for sample_idx, (uv_x, uv_y) in enumerate(sampled_pixels):
-            # Log progress every 2 seconds
-            current_time = time.time()
-            if current_time - last_log_time > 2.0:
-                progress = (sample_idx / num_samples) * 100
-                elapsed = current_time - start_time
-                samples_per_sec = total_pixels / elapsed if elapsed > 0 else 0
-                eta = (num_samples - total_pixels) / samples_per_sec if samples_per_sec > 0 else 0
-                logger.info(f"Progress: {progress:.1f}% | {total_pixels}/{num_samples} samples | {samples_per_sec:.0f} samples/sec | ETA: {eta:.1f}s")
-                last_log_time = current_time
-            
-            total_pixels += 1
-            
-            # Convert pixel position to UV coordinate (0-1 range)
-            uv_u = uv_x / (uv_width - 1) if uv_width > 1 else 0.5
-            uv_v = 1.0 - (uv_y / (uv_height - 1)) if uv_height > 1 else 0.5
-            uv_coord = Vector((uv_u, uv_v))
-            
-            # Find which polygon triangle contains this UV coordinate
-            # Use spatial grid for fast lookup
-            grid_x = min(grid_size - 1, int(uv_u * grid_size))
-            grid_y = min(grid_size - 1, int(uv_v * grid_size))
-            
-            world_pos = None
-            world_normal = None
-            
-            # Only check polygons in this grid cell
-            candidate_polys = uv_grid[grid_y][grid_x]
-            
-            # Debug first few samples
-            if total_pixels <= 3:
-                logger.info(f"Sample {total_pixels}: UV({uv_x},{uv_y}) = ({uv_u:.3f},{uv_v:.3f}), grid cell has {len(candidate_polys)} polys")
-            
-            for poly_idx in candidate_polys:
-                poly_info = poly_data[poly_idx]
-                poly_uvs = poly_info['uvs']
-                poly_verts = poly_info['verts']
-                
-                if len(poly_uvs) >= 3:
-                    # Check each triangle in the polygon
-                    for i in range(1, len(poly_uvs) - 1):
-                        uv0, uv1, uv2 = poly_uvs[0], poly_uvs[i], poly_uvs[i+1]
-                        
-                        # Check if UV point is inside this triangle
-                        bary = self.barycentric_coords(uv_coord, uv0, uv1, uv2)
-                        
-                        if bary and all(b >= -0.001 for b in bary):
-                            # UV point is inside this triangle
-                            # Interpolate world position using barycentric coords
-                            v0, v1, v2 = poly_verts[0], poly_verts[i], poly_verts[i+1]
-                            world_pos = bary[0] * v0 + bary[1] * v1 + bary[2] * v2
-                            world_normal = poly_info['normal']
-                            break
-                
-                if world_pos:
-                    break
-            
-            # Initialize mask value
-            mask_value = 0.0
-            
-            # If we found a world position for this UV coordinate
-            if world_pos and world_normal:
-                # Debug first few world positions
-                if total_pixels <= 3:
-                    logger.info(f"  Found world_pos: {world_pos}, normal: {world_normal}")
-                
-                # Check if surface faces camera
-                to_camera = (cam_location - world_pos).normalized()
-                facing_dot = world_normal.dot(to_camera)
-                
-                if facing_dot <= 0:
-                    # Backface
-                    backface_pixels += 1
-                    mask_value = 0.0
-                    if total_pixels <= 3:
-                        logger.info(f"  Backface (dot={facing_dot:.3f})")
-                else:
-                    # Cast ray from camera to this world position
-                    ray_direction = (world_pos - cam_location).normalized()
-                    ray_distance = (world_pos - cam_location).length
-                    
-                    # Ray cast to check for occlusion - increased tolerance to 10cm
-                    hit_location, hit_normal, hit_index, hit_distance = bvh.ray_cast(cam_location, ray_direction, ray_distance * 1.1)
-                    
-                    if hit_location is None:
-                        # No hit
-                        mask_value = 0.0
-                        occluded_pixels += 1
-                        if total_pixels <= 3:
-                            logger.info(f"  Ray cast: NO HIT")
-                    else:
-                        # Check if the hit is close to our target position
-                        distance_to_target = (hit_location - world_pos).length
-                        
-                        if distance_to_target < 0.1:  # Increased to 10cm tolerance
-                            # Ray hit our surface - visible!
-                            mask_value = 1.0
-                            visible_pixels += 1
-                            if total_pixels <= 3:
-                                logger.info(f"  VISIBLE! dist={distance_to_target:.4f}m")
-                            
-                            # Debug visualization
-                            if context.scene.zenv_debug_mode and visible_pixels % 100 == 0:
-                                debug_hits.append(world_pos.copy())
-                        else:
-                            # Ray hit something else first - occluded
-                            mask_value = 0.0
-                            occluded_pixels += 1
-                            if total_pixels <= 3:
-                                logger.info(f"  Occluded, dist={distance_to_target:.4f}m")
-            else:
-                # No world position found
-                no_world_pos += 1
-                if total_pixels <= 3:
-                    logger.info(f"  No world position found for this UV coordinate")
-            
-            # Write to UV texture
-            for dy in range(sample_step):
-                for dx in range(sample_step):
-                    write_x = uv_x + dx
-                    write_y = uv_y + dy
-                    if 0 <= write_x < uv_width and 0 <= write_y < uv_height:
-                        uv_array[write_y, write_x] = mask_value
-        
-        end_time = time.time()
-        total_time = end_time - start_time
-        
-        logger.info(f"Ray casting complete in {total_time:.2f} seconds:")
-        logger.info(f"  Total UV pixels sampled: {total_pixels}")
-        logger.info(f"  Visible: {visible_pixels} ({100*visible_pixels/max(1,total_pixels):.1f}%)")
-        logger.info(f"  Occluded: {occluded_pixels} ({100*occluded_pixels/max(1,total_pixels):.1f}%)")
-        logger.info(f"  Backface: {backface_pixels} ({100*backface_pixels/max(1,total_pixels):.1f}%)")
-        logger.info(f"  Performance: {total_pixels/total_time:.0f} samples/sec")
-        logger.info(f"UV array shape: {uv_array.shape}, min: {uv_array.min():.3f}, max: {uv_array.max():.3f}")
-        
-        # Create debug visualization spheres
-        if context.scene.zenv_debug_mode and debug_hits:
-            logger.info(f"Creating {len(debug_hits)} debug spheres at visible ray hits...")
-            for i, hit_pos in enumerate(debug_hits):
-                bpy.ops.mesh.primitive_uv_sphere_add(radius=0.01, location=hit_pos)
-                sphere = context.active_object
-                sphere.name = f"DEBUG_RayHit_{i}"
-                # Make it bright green
-                mat = bpy.data.materials.new(name=f"DEBUG_MAT_{i}")
-                mat.diffuse_color = (0, 1, 0, 1)
-                sphere.data.materials.append(mat)
-        
-        # Write to Blender image
-        # Blender stores images bottom-up, so flip the array
-        uv_array_flipped = np.flipud(uv_array)
-        uv_flat = uv_array_flipped.flatten()
-        
-        # Create RGBA pixel array (Blender expects RGBA even for grayscale)
-        pixels_out = np.zeros(uv_width * uv_height * 4, dtype=np.float32)
-        pixels_out[0::4] = uv_flat  # R
-        pixels_out[1::4] = uv_flat  # G
-        pixels_out[2::4] = uv_flat  # B
-        pixels_out[3::4] = 1.0      # A (fully opaque)
-        
-        # Write pixels to image
-        uv_mask_image.pixels[:] = pixels_out
-        uv_mask_image.update()
-        
-        # Save to file
-        uv_mask_image.save_render(uv_mask_image.filepath_raw)
-        
-        logger.info(f"Mask saved to {uv_mask_image.filepath_raw}")
-        
-        logger.info(f"Camera-to-UV transfer complete")
 
-    def bake_visibility_mask(self, context, mask_mesh):
+        return (u, v, w)
+
+    def barycentric_coords(self, p, a, b, c):
+        """Calculate barycentric coordinates of 2D point p in 2D triangle abc.
+
+        Uses the Vector 2D cross-product approach.  Each argument may be a
+        ``mathutils.Vector`` or any sequence of two floats (UV coordinates).
+        Returns ``(u, v, w)`` or ``None`` for degenerate triangles.
         """
-        Apply post-processing to the transferred UV mask.
-        The camera-to-UV transfer is already complete at this point.
-        """
-        # The mask has already been transferred to UV space
-        # Just need to get the image path and apply post-processing
-        
-        # Find the mask image from the execute method
-        # It was passed to transfer_camera_to_uv_space
-        # We need to get it from the saved state
-        
-        # Get the image that was created in create_mask_image
-        mask_images = [img for img in bpy.data.images if img.name.startswith("mask_")]
-        if not mask_images:
-            logger.error("Could not find mask image")
+        # Extract x/y so we work with plain floats regardless of input type.
+        px, py = p[0], p[1]
+        ax, ay = a[0], a[1]
+        bx, by = b[0], b[1]
+        cx, cy = c[0], c[1]
+
+        # Vectors from a
+        v0x, v0y = bx - ax, by - ay   # ab
+        v1x, v1y = cx - ax, cy - ay   # ac
+        v2x, v2y = px - ax, py - ay   # ap
+
+        # 2D dot products
+        d00 = v0x * v0x + v0y * v0y
+        d01 = v0x * v1x + v0y * v1y
+        d11 = v1x * v1x + v1y * v1y
+        d20 = v2x * v0x + v2y * v0y
+        d21 = v2x * v1x + v2y * v1y
+
+        denom = d00 * d11 - d01 * d01
+        if abs(denom) < 1e-12:
             return None
-        
-        # Get the most recent one
-        mask_image = sorted(mask_images, key=lambda x: x.name)[-1]
-        mask_path = mask_image.filepath_raw
-        
-        # Apply gradient falloff if specified
-        if context.scene.zenv_mask_falloff > 0 or context.scene.zenv_mask_margin > 0:
-            self.apply_mask_falloff(
-                mask_path, 
-                context.scene.zenv_mask_margin,
-                context.scene.zenv_mask_falloff
-            )
-        
-        return mask_path
-    
+
+        v = (d11 * d20 - d01 * d21) / denom
+        w = (d00 * d21 - d01 * d20) / denom
+        u = 1.0 - v - w
+
+        return (u, v, w)
+
     def apply_mask_falloff(self, image_path, margin_pixels, falloff_pixels):
         """
         Apply gradient falloff from mask edges using distance transform.
         Creates smooth transition from white to black.
         """
         try:
-            import numpy as np
             from scipy import ndimage
             
             # Load image using Blender
@@ -2095,14 +1787,12 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         """Restore previous scene state"""
         context.scene.render.engine = state['render_engine']
         context.scene.view_settings.view_transform = state['view_transform']
+#endregion
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
-
-class ZENV_PT_TextureProj_Panel(bpy.types.Panel):
+#region PANEL
+class ZENV_PT_TextureProj(bpy.types.Panel):
     """Panel for texture projection tools"""
-    bl_label = "Texture Projection"
+    bl_label = "TEX Texture Projection"
     bl_idname = "ZENV_PT_textureproj"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -2196,56 +1886,45 @@ class ZENV_PT_TextureProj_Panel(bpy.types.Panel):
         box.prop(context.scene, "zenv_mask_sample_count")
         box.prop(context.scene, "zenv_mask_dilation")
         box.prop(context.scene, "zenv_debug_mode")
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#region REG
 classes = (
     ZENV_OT_TextureProj_CreateCamera,
     ZENV_OT_TextureProj_GetCameraResolution,
     ZENV_OT_TextureProj_DropImage,
     ZENV_OT_TextureProj_BakeTexture,
     ZENV_OT_TextureProj_BakeVisibilityMask,
-    ZENV_PT_TextureProj_Panel,
+    ZENV_PT_TextureProj,
 )
 
-def _install_logger():
-    """Attach a single StreamHandler to ``logger`` (idempotent)."""
-    global _zenv_tex_proj_cam_console_handler
-    if _zenv_tex_proj_cam_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_tex_proj_cam_console_handler = handler
-
-
-def _uninstall_logger():
-    """Remove the handler added by :func:`_install_logger`."""
+def register():
+    """Register the addon classes, properties, and logger."""
     global _zenv_tex_proj_cam_console_handler
     if _zenv_tex_proj_cam_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_tex_proj_cam_console_handler)
-    except ValueError:
-        pass
-    _zenv_tex_proj_cam_console_handler = None
-
-
-def register():
-    _install_logger()
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_tex_proj_cam_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     ZENV_TextureProj_Properties.register()
 
 def unregister():
+    """Unregister the addon classes, properties, and logger."""
+    global _zenv_tex_proj_cam_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     ZENV_TextureProj_Properties.unregister()
-    _uninstall_logger()
+    if _zenv_tex_proj_cam_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_tex_proj_cam_console_handler)
+        except ValueError:
+            pass
+        _zenv_tex_proj_cam_console_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion

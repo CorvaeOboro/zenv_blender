@@ -1,15 +1,19 @@
+#region META
 bl_info = {
     "name": 'TEX Bake Worldspace Bounds Gradients',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260309',
+    "version": '20260822',
     "description": 'Bake worldspace bounds gradient  for multiple selected mesh objects by temporarily merging them',
     "status": 'working',
     "approved": True,
-    "sort_priority": '1',
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 60,
+    "tags": ['texture', 'bake', 'gradient', 'worldspace', 'bounds', 'multi-object'],
     "description_short": 'multi-object worldspace gradients bake (XYZ RGB or vertical grayscale)',
+    "description_medium": 'select multiple mesh objects that share a UV layout - the addon duplicates, joins, computes combined worldspace bounds, and bakes a bounded gradient (XYZ RGB or vertical grayscale) via Cycles EMIT',
     "description_long": """
 TEX MULTI-OBJECT WORLDSPACE BOUNDS GRADIENT BAKER
 - Select multiple mesh objects that share a UV layout / texture space
@@ -21,9 +25,13 @@ Modes:
 - Vertical Only: grayscale from world Z (same value in RGB)
 Bakes EMIT for a lighting-independent result.
 """,
+    "image_overview": 'zenv_blender_TEX_bake_worldspace_bounds_gradient_multi.png',
+    "addon_image": 'zenv_blender_TEX_bake_worldspace_bounds_gradient_multi.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 from datetime import datetime
@@ -32,8 +40,10 @@ from mathutils import Vector
 
 logger = logging.getLogger(__name__)
 _zenv_worldspace_gradient_bake_console_handler = None
+#endregion
 
 
+#region PROPS
 class ZENV_WorldspaceGradientBake_Properties:
     @classmethod
     def register(cls):
@@ -71,13 +81,19 @@ class ZENV_WorldspaceGradientBake_Properties:
 
     @classmethod
     def unregister(cls):
-        del bpy.types.Scene.zenv_wsgrad_bake_resolution
-        del bpy.types.Scene.zenv_wsgrad_bake_samples
-        del bpy.types.Scene.zenv_wsgrad_bake_margin
-        del bpy.types.Scene.zenv_wsgrad_bake_use_gpu
-        del bpy.types.Scene.zenv_wsgrad_vertical_only
+        for attr in (
+            'zenv_wsgrad_bake_resolution',
+            'zenv_wsgrad_bake_samples',
+            'zenv_wsgrad_bake_margin',
+            'zenv_wsgrad_bake_use_gpu',
+            'zenv_wsgrad_vertical_only',
+        ):
+            if hasattr(bpy.types.Scene, attr):
+                delattr(bpy.types.Scene, attr)
+#endregion
 
 
+#region UTILS
 class ZENV_WorldspaceGradientBake_Utils:
     @staticmethod
     def ensure_texture_directory():
@@ -217,17 +233,18 @@ class ZENV_WorldspaceGradientBake_Utils:
             map_z.inputs['To Min'].default_value = 0.0
             map_z.inputs['To Max'].default_value = 1.0
 
-            comb = nodes.new('ShaderNodeCombineRGB')
+            comb = nodes.new('ShaderNodeCombineColor')
+            comb.mode = 'RGB'
 
             map_z.location = (-300, -150)
             comb.location = (0, 0)
 
             links.new(sep.outputs['Z'], map_z.inputs['Value'])
-            links.new(map_z.outputs['Result'], comb.inputs['R'])
-            links.new(map_z.outputs['Result'], comb.inputs['G'])
-            links.new(map_z.outputs['Result'], comb.inputs['B'])
+            links.new(map_z.outputs['Result'], comb.inputs[0])
+            links.new(map_z.outputs['Result'], comb.inputs[1])
+            links.new(map_z.outputs['Result'], comb.inputs[2])
 
-            links.new(comb.outputs['Image'], emission.inputs['Color'])
+            links.new(comb.outputs[0], emission.inputs['Color'])
 
         else:
             map_x = nodes.new('ShaderNodeMapRange')
@@ -246,7 +263,8 @@ class ZENV_WorldspaceGradientBake_Utils:
             map_z.inputs['From Min'].default_value = min_z
             map_z.inputs['From Max'].default_value = max_z
 
-            comb = nodes.new('ShaderNodeCombineRGB')
+            comb = nodes.new('ShaderNodeCombineColor')
+            comb.mode = 'RGB'
 
             map_x.location = (-300, 100)
             map_y.location = (-300, 0)
@@ -257,18 +275,26 @@ class ZENV_WorldspaceGradientBake_Utils:
             links.new(sep.outputs['Y'], map_y.inputs['Value'])
             links.new(sep.outputs['Z'], map_z.inputs['Value'])
 
-            links.new(map_x.outputs['Result'], comb.inputs['R'])
-            links.new(map_y.outputs['Result'], comb.inputs['G'])
-            links.new(map_z.outputs['Result'], comb.inputs['B'])
+            links.new(map_x.outputs['Result'], comb.inputs[0])
+            links.new(map_y.outputs['Result'], comb.inputs[1])
+            links.new(map_z.outputs['Result'], comb.inputs[2])
 
-            links.new(comb.outputs['Image'], emission.inputs['Color'])
+            links.new(comb.outputs[0], emission.inputs['Color'])
 
         links.new(emission.outputs['Emission'], output.inputs['Surface'])
 
         return mat
+#endregion
 
 
+#region OP
 class ZENV_OT_TEX_BakeWorldspaceBoundedGradientsMultiObject(bpy.types.Operator):
+    """Bake worldspace bounds gradients for multiple selected mesh objects.
+
+    Duplicates selected meshes, joins them into a temp object, computes
+    the combined worldspace bounds, and bakes a bounded gradient
+    (XYZ RGB or vertical grayscale) to a new image using Cycles EMIT.
+    """
     bl_idname = "zenv.tex_bake_ws_bounded_gradients_multi_object"
     bl_label = "Bake Worldspace Gradients (Multi-Object)"
     bl_description = "Temporarily merges selected meshes and bakes bounded worldspace gradients"
@@ -276,7 +302,8 @@ class ZENV_OT_TEX_BakeWorldspaceBoundedGradientsMultiObject(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return True
+        """Only enable when at least one mesh object is selected."""
+        return any(obj.type == 'MESH' for obj in context.selected_objects)
 
     def execute(self, context):
         scene = context.scene
@@ -396,9 +423,12 @@ class ZENV_OT_TEX_BakeWorldspaceBoundedGradientsMultiObject(bpy.types.Operator):
                     obj.select_set(True)
             if original_active and original_active.name in bpy.data.objects:
                 context.view_layer.objects.active = original_active
+#endregion
 
 
+#region PANEL
 class ZENV_PT_TEX_BakeWorldspaceBoundedGradientsMultiObject(bpy.types.Panel):
+    """Panel for the multi-object worldspace bounds gradient baker."""
     bl_label = "TEX Bake World Gradients"
     bl_idname = "ZENV_PT_tex_bake_world_gradients_multi"
     bl_space_type = 'VIEW_3D'
@@ -433,52 +463,45 @@ class ZENV_PT_TEX_BakeWorldspaceBoundedGradientsMultiObject(bpy.types.Panel):
             missing_uv = [obj for obj in mesh_selected if not obj.data.uv_layers]
             if missing_uv:
                 layout.label(text="Selected Mesh Missing UVs", icon='INFO')
+#endregion
 
 
+#region REG
 classes = (
     ZENV_OT_TEX_BakeWorldspaceBoundedGradientsMultiObject,
     ZENV_PT_TEX_BakeWorldspaceBoundedGradientsMultiObject,
 )
 
 
-def _install_logger():
-    """Attach a single StreamHandler to ``logger`` (idempotent)."""
-    global _zenv_worldspace_gradient_bake_console_handler
-    if _zenv_worldspace_gradient_bake_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_worldspace_gradient_bake_console_handler = handler
-
-
-def _uninstall_logger():
-    """Remove the handler added by :func:`_install_logger`."""
+def register():
+    """Register the addon classes, properties, and logger."""
     global _zenv_worldspace_gradient_bake_console_handler
     if _zenv_worldspace_gradient_bake_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_worldspace_gradient_bake_console_handler)
-    except ValueError:
-        pass
-    _zenv_worldspace_gradient_bake_console_handler = None
-
-
-def register():
-    _install_logger()
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_worldspace_gradient_bake_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     ZENV_WorldspaceGradientBake_Properties.register()
 
 
 def unregister():
+    """Unregister the addon classes, properties, and logger."""
+    global _zenv_worldspace_gradient_bake_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     ZENV_WorldspaceGradientBake_Properties.unregister()
-    _uninstall_logger()
+    if _zenv_worldspace_gradient_bake_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_worldspace_gradient_bake_console_handler)
+        except ValueError:
+            pass
+        _zenv_worldspace_gradient_bake_console_handler = None
 
 
 if __name__ == "__main__":
     register()
+#endregion

@@ -1,31 +1,42 @@
+#region META
 bl_info = {
     "name": 'TEX Texture Variant View',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260418',
+    "version": '20260822',
     "description": 'Quickly view and organize texture variants on a model',
     "status": 'working',
     "approved": True,
-    "sort_priority": '2',
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 20,
+    "tags": ['texture', 'variant', 'view', 'cycle', 'organize', 'rank'],
     "description_short": 'Quickly view and organize texture variants on a model',
+    "description_medium": 'specify a folder of textures, then with a mesh selected cycle through them applied to the mesh, ranking them into subfolders - useful for visualizing and choosing the best from many synthesized texture variants',
     "description_long": 'specify a folder of textures , then with a mesh selected can quickly cycle through them applied to the mesh , ranking them into subfolders . useful for visualizing and choosing the best from many synthesized texture variants , supports valid_exts = .png ,.jpg, .jpeg, .tga, .tif, .tiff, .bmp, .webp',
+    "image_overview": 'zenv_blender_TEX_texture_variant_view.png',
+    "addon_image": 'zenv_blender_TEX_texture_variant_view.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 import shutil
+import logging
 from bpy.props import StringProperty, PointerProperty, IntProperty, CollectionProperty
 from bpy.types import PropertyGroup, Panel, Operator
 
+logger = logging.getLogger(__name__)
+_zenv_texture_variant_view_console_handler = None
+
 _ZENV_TEX_NODE_NAME = "ZENV_TEX_variant"
+#endregion
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
 
+#region PROPS
 class ZENV_PG_TextureVariantFilePath(PropertyGroup):
     """One entry in the texture variant list.
     Using a CollectionProperty of path items trying to avoid the pitfall of
@@ -57,10 +68,10 @@ class ZENV_PG_TextureVariantViewRank_Properties(PropertyGroup):
         default=0
     )
 
-# ------------------------------------------------------------------------
-#    Utilities
-# ------------------------------------------------------------------------
+#endregion
 
+
+#region UTILS
 class ZENV_TextureVariantViewRank_Utils:
     """Utility functions for texture variant viewing"""
     
@@ -97,15 +108,17 @@ class ZENV_TextureVariantViewRank_Utils:
                     original_texture_path = bpy.path.abspath(img_tex_node.image.filepath)
                     if original_texture_path:
                         image_paths.append(original_texture_path)
+                        logger.info("Captured original texture: %s", original_texture_path)
 
         # Enumerate only actual files in the folder -- never subdirectories
-        # finding images of type extensions 
+        # finding images of type extensions
         if folder_path:
             abs_folder = bpy.path.abspath(folder_path)
             valid_exts = ('.png', '.jpg', '.jpeg', '.tga', '.tif', '.tiff', '.bmp', '.webp')
             try:
                 entries = os.listdir(abs_folder)
-            except (FileNotFoundError, PermissionError):
+            except (FileNotFoundError, PermissionError) as exc:
+                logger.warning("Could not list folder '%s': %s", abs_folder, exc)
                 entries = []
             for f in entries:
                 full = os.path.join(abs_folder, f)
@@ -115,6 +128,7 @@ class ZENV_TextureVariantViewRank_Utils:
                     image_paths.append(full)
 
         ZENV_TextureVariantViewRank_Utils._set_texture_list(props, image_paths)
+        logger.info("Loaded %d texture variants from '%s'", len(image_paths), folder_path)
 
     @staticmethod
     def assign_texture(context):
@@ -147,7 +161,25 @@ class ZENV_TextureVariantViewRank_Utils:
 
         img_tex_node.image = bpy.data.images.load(current_texture, check_existing=True)
         mat.node_tree.links.new(bsdf.inputs['Base Color'], img_tex_node.outputs['Color'])
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+
+        # Force the 3D viewport to pick up the new texture. Just swapping the
+        # image on an existing TexImage node does not always trigger a
+        # viewport redraw -- the user had to manually select the node in the
+        # Shader editor to make it appear. Replicate that here by:
+        #   1. making our node the active/selected node of the material tree
+        #   2. tagging the node tree + material for depsgraph update
+        #   3. forcing every 3D viewport region to redraw
+        for node in mat.node_tree.nodes:
+            node.select = False
+        img_tex_node.select = True
+        mat.node_tree.nodes.active = img_tex_node
+        mat.node_tree.update_tag()
+        mat.update_tag()
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    region.tag_redraw()
+        logger.info("Assigned texture: %s", current_texture)
 
     @staticmethod
     def cycle_texture(context, direction):
@@ -162,12 +194,12 @@ class ZENV_TextureVariantViewRank_Utils:
             props.material_index = (props.material_index + 1) % num_textures
         elif direction == 'PREVIOUS':
             props.material_index = (props.material_index - 1) % num_textures
+        logger.info("Cycled %s to index %d", direction, props.material_index)
         ZENV_TextureVariantViewRank_Utils.assign_texture(context)
+#endregion
 
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
 
+#region OP
 class ZENV_OT_TextureVariantViewRank_Load(Operator):
     """Load textures from the specified folder"""
     bl_idname = "zenv.texturevariant_load"
@@ -326,12 +358,11 @@ class ZENV_OT_TextureVariantViewRank_MoveToFolder(Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Failed to move texture: {str(e)}")
             return {'CANCELLED'}
+#endregion
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
 
-class ZENV_PT_TextureVariantViewRank_Panel(Panel):
+#region PANEL
+class ZENV_PT_TextureVariantViewRank(Panel):
     """Panel for texture variant viewing tools"""
     bl_label = "TEX Texture Variants"
     bl_idname = "ZENV_PT_texturevariant"
@@ -364,11 +395,10 @@ class ZENV_PT_TextureVariantViewRank_Panel(Panel):
             row = box.row(align=True)
             row.operator("zenv.texturevariant_copy_to_folder", icon='DUPLICATE')
             row.operator("zenv.texturevariant_move_to_folder", icon='FILE_PARENT')
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
 
+#region REG
 classes = (
     ZENV_PG_TextureVariantFilePath,
     ZENV_PG_TextureVariantViewRank_Properties,
@@ -378,18 +408,37 @@ classes = (
     ZENV_OT_TextureVariantViewRank_CycleNext,
     ZENV_OT_TextureVariantViewRank_CopyToFolder,
     ZENV_OT_TextureVariantViewRank_MoveToFolder,
-    ZENV_PT_TextureVariantViewRank_Panel,
+    ZENV_PT_TextureVariantViewRank,
 )
 
 def register():
+    """Register the addon classes, properties, and logger."""
+    global _zenv_texture_variant_view_console_handler
+    if _zenv_texture_variant_view_console_handler is None:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_texture_variant_view_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     bpy.types.Scene.zenv_TextureVariantViewRank_props = PointerProperty(type=ZENV_PG_TextureVariantViewRank_Properties)
 
 def unregister():
+    """Unregister the addon classes, properties, and logger."""
+    global _zenv_texture_variant_view_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
-    del bpy.types.Scene.zenv_TextureVariantViewRank_props
+    if hasattr(bpy.types.Scene, 'zenv_TextureVariantViewRank_props'):
+        delattr(bpy.types.Scene, 'zenv_TextureVariantViewRank_props')
+    if _zenv_texture_variant_view_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_texture_variant_view_console_handler)
+        except ValueError:
+            pass
+        _zenv_texture_variant_view_console_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion

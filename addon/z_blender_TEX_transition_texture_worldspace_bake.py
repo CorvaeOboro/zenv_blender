@@ -1,12 +1,41 @@
+#region META
 bl_info = {
     "name": "TEX Bake Transition Worldspace",
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260711',
+    "version": '20260822',
     "location": "View3D > Sidebar > ZENV",
     "description": "Bake a seamless transitional texture in world space",
+    "status": 'working',
+    "approved": True,
+    "group": 'Texture',
+    "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 80,
+    "tags": ['texture', 'bake', 'transition', 'worldspace', 'projection', 'uv'],
+    "description_short": 'bake worldspace transition texture between two meshes',
+    "description_medium": 'Projects the source mesh\'s material textures onto the target mesh\'s UV layout by finding the nearest point on the source for each target texel, sampling the source texture, and applying a smooth distance-based falloff. Supports bidirectional baking, mirror/unfold sampling, UV margin dilation, bilinear/nearest filtering, and automatic filename generation.',
+    "description_long": """
+TEX Bake Transition Worldspace
+Bakes a seamless transition texture in world space between two mesh objects.
+For each texel in the target mesh's UV layout, finds the nearest point on the
+source mesh, samples the source material's texture at that point, and writes
+the color with a smooth falloff based on the 3D distance between the two
+surfaces. Useful for creating blend masks where two surfaces meet.
+Supports:
+- Bidirectional baking (forward + reverse in one operation)
+- Mirror / unfold sampling to reduce seam artifacts
+- Configurable falloff power and transition distance
+- Bilinear or nearest-neighbor source texture filtering
+- UV margin dilation to fill gaps between UV islands
+- Automatic filename generation from source/target texture names
+""",
+    "image_overview": 'zenv_blender_TEX_transition_texture_worldspace_bake.png',
+    "addon_image": 'zenv_blender_TEX_transition_texture_worldspace_bake.png',
 }
+#endregion
 
+#region IMPORT
 import math
 import os
 import traceback
@@ -18,8 +47,10 @@ from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, Po
 from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
+#endregion
 
 
+#region HELPERS
 __all__ = ('bl_info', 'register', 'unregister')
 
 
@@ -32,8 +63,10 @@ def _log(message):
 
 def _mesh_poll(self, obj):
     return obj is not None and obj.type == 'MESH'
+#endregion
 
 
+#region PROPS
 class ZENV_PG_WorldspaceTransition(PropertyGroup):
     source: PointerProperty(name="Source", type=bpy.types.Object, poll=_mesh_poll)
     target: PointerProperty(name="Target", type=bpy.types.Object, poll=_mesh_poll)
@@ -54,8 +87,15 @@ class ZENV_PG_WorldspaceTransition(PropertyGroup):
     output_name: StringProperty(name="Image Name", default="Worldspace_Transition")
     output_file: StringProperty(name="File Name", default="worldspace_transition.png")
     output_directory: StringProperty(name="Output Directory", default="//textures/", subtype='DIR_PATH')
+    linear_output: BoolProperty(
+        name="Linear (Non-Color) Output",
+        description="Save the output texture as Non-Color instead of sRGB. Enable for blend masks / data textures; disable for color textures.",
+        default=True,
+    )
+#endregion
 
 
+#region MESH
 class _MeshSurface:
     def __init__(self, obj, depsgraph, uv_name):
         self.object = obj
@@ -99,8 +139,10 @@ class _MeshSurface:
         if getattr(self, 'mesh', None) is not None:
             bpy.data.meshes.remove(self.mesh)
             self.mesh = None
+#endregion
 
 
+#region SAMPLER
 class _ImageSampler:
     def __init__(self, image, extension='REPEAT', filtering='BILINEAR'):
         self.image = image
@@ -155,8 +197,10 @@ class _ImageSampler:
             + (c01[i] * (1.0 - tx) + c11[i] * tx) * ty
             for i in range(4)
         )
+#endregion
 
 
+#region UTILS
 class _TransitionUtils:
     """Private utility methods for the world-space transition bake."""
 
@@ -266,14 +310,21 @@ class _TransitionUtils:
         occupied = bytearray(width * height)
         for index in range(width * height):
             occupied[index] = 1 if pixels[index * 4 + 3] > 0.0 else 0
+        # Double-buffer pattern: alternate between two pre-allocated
+        # buffers instead of copying the entire pixel array each pass.
+        buffer_a = pixels
+        buffer_b = array('f', [0.0]) * (width * height * 4)
+        occupied_a = occupied
+        occupied_b = bytearray(width * height)
         for _ in range(iterations):
-            source = pixels[:]
-            source_occupied = occupied[:]
             changed = False
             for y in range(height):
                 for x in range(width):
                     index = y * width + x
-                    if source_occupied[index]:
+                    if occupied_a[index]:
+                        base = index * 4
+                        buffer_b[base:base + 4] = buffer_a[base:base + 4]
+                        occupied_b[index] = 1
                         continue
                     neighbours = []
                     if x > 0:
@@ -284,14 +335,23 @@ class _TransitionUtils:
                         neighbours.append(index - width)
                     if y + 1 < height:
                         neighbours.append(index + width)
-                    donor = next((item for item in neighbours if source_occupied[item]), None)
+                    donor = next((item for item in neighbours if occupied_a[item]), None)
                     if donor is None:
+                        occupied_b[index] = 0
                         continue
-                    pixels[index * 4:index * 4 + 4] = source[donor * 4:donor * 4 + 4]
-                    occupied[index] = 1
+                    base = index * 4
+                    src = donor * 4
+                    buffer_b[base:base + 4] = buffer_a[src:src + 4]
+                    occupied_b[index] = 1
                     changed = True
             if not changed:
                 break
+            # Swap buffers for the next iteration.
+            buffer_a, buffer_b = buffer_b, buffer_a
+            occupied_a, occupied_b = occupied_b, occupied_a
+        # Ensure the final result is in the original `pixels` array.
+        if buffer_a is not pixels:
+            pixels[:] = buffer_a
 
     @staticmethod
     def underlying_image(obj):
@@ -378,7 +438,7 @@ class _TransitionUtils:
                 f"Output image buffer is incompatible: expected {expected_values} RGBA values, "
                 f"got {actual_values} values across {image.channels} channels"
             )
-        image.colorspace_settings.name = 'sRGB'
+        image.colorspace_settings.name = 'Non-Color' if settings.linear_output else 'sRGB'
         image.alpha_mode = 'STRAIGHT'
         image.pixels.foreach_set(pixels)
         image.update()
@@ -392,8 +452,10 @@ class _TransitionUtils:
         _log(f"Saving PNG to '{filepath}'")
         image.save()
         return image, filepath
+#endregion
 
 
+#region OP
 class ZENV_OT_TransitionSetSource(Operator):
     bl_idname = "zenv.transition_set_source"
     bl_label = "Set Active as Source"
@@ -442,7 +504,6 @@ class ZENV_OT_BakeWorldspaceTransition(Operator):
         source_surface = None
         target_surface = None
         stage = "initialization"
-        context.window_manager.progress_begin(0, 1)
         try:
             _log(
                 f"Bake started: source='{source_obj.name}', target='{target_obj.name}', "
@@ -471,11 +532,12 @@ class ZENV_OT_BakeWorldspaceTransition(Operator):
             skipped_distance = 0
             total_candidates = 0
             triangles = target_surface.triangles
-            context.window_manager.progress_end()
             context.window_manager.progress_begin(0, max(1, len(triangles)))
             stage = "target texel projection"
             for triangle_index, target_triangle in enumerate(triangles):
                 context.window_manager.progress_update(triangle_index)
+                if triangle_index % 64 == 0 and getattr(context.window_manager, 'is_interrupting', False):
+                    raise RuntimeError("Bake cancelled by user")
                 uv0, uv1, uv2 = target_triangle['uv']
                 raw_width = (max(uv0.x, uv1.x, uv2.x) - min(uv0.x, uv1.x, uv2.x)) * width
                 raw_height = (max(uv0.y, uv1.y, uv2.y) - min(uv0.y, uv1.y, uv2.y)) * height
@@ -495,7 +557,7 @@ class ZENV_OT_BakeWorldspaceTransition(Operator):
                             continue
                         total_candidates += 1
                         target_point = world0 * weights[0] + world1 * weights[1] + world2 * weights[2]
-                        source_hit, source_normal, source_triangle_index, distance = source_surface.nearest(target_point)
+                        source_hit, _, source_triangle_index, distance = source_surface.nearest(target_point)
                         if source_hit is None or distance > settings.max_distance:
                             skipped_distance += 1
                             continue
@@ -503,7 +565,7 @@ class ZENV_OT_BakeWorldspaceTransition(Operator):
                         sample_triangle_index = source_triangle_index
                         if settings.mirror_sampling and settings.mirror_scale > 0.0:
                             reflected = source_hit - (target_point - source_hit) * settings.mirror_scale
-                            mirror_hit, mirror_normal, mirror_triangle_index, mirror_distance = source_surface.nearest(reflected)
+                            mirror_hit, _, mirror_triangle_index, mirror_distance = source_surface.nearest(reflected)
                             if mirror_hit is not None:
                                 sample_hit = mirror_hit
                                 sample_triangle_index = mirror_triangle_index
@@ -605,8 +667,10 @@ class ZENV_OT_BakeWorldspaceTransition(Operator):
                 source_surface.free()
             if target_surface is not None:
                 target_surface.free()
+#endregion
 
 
+#region PANEL
 class ZENV_PT_WorldspaceTransition(Panel):
     bl_label = "TEX Worldspace Transition"
     bl_idname = "ZENV_PT_worldspace_transition"
@@ -629,6 +693,7 @@ class ZENV_PT_WorldspaceTransition(Panel):
         box.label(text="Worldspace Projection", icon='MOD_SHRINKWRAP')
         box.prop(settings, "max_distance")
         box.prop(settings, "falloff_power")
+        box.prop(settings, "filtering")
         box.prop(settings, "mirror_sampling")
         if settings.mirror_sampling:
             box.prop(settings, "mirror_scale")
@@ -639,6 +704,7 @@ class ZENV_PT_WorldspaceTransition(Panel):
         row.prop(settings, "height")
         box.prop(settings, "margin")
         box.prop(settings, "bidirectional")
+        box.prop(settings, "linear_output")
         box.prop(settings, "auto_filename")
         if settings.auto_filename:
             box.label(text="target_transition_source_YYYYMMDDhhmmss.png", icon='INFO')
@@ -647,8 +713,10 @@ class ZENV_PT_WorldspaceTransition(Panel):
             box.prop(settings, "output_file")
         box.prop(settings, "output_directory")
         layout.operator("zenv.bake_worldspace_transition", icon='RENDER_STILL')
+#endregion
 
 
+#region REG
 classes = (
     ZENV_PG_WorldspaceTransition,
     ZENV_OT_TransitionSetSource,
@@ -673,3 +741,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+#endregion

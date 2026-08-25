@@ -1,25 +1,32 @@
+#region META
 bl_info = {
     "name": 'TEX Bake Ambient Occlusion',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260309',
+    "version": '20260822',
     "description": 'Texture Bake ambient occlusion of all selected mesh objects as one',
     "status": 'working',
     "approved": True,
-    "sort_priority": '1',
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 30,
+    "tags": ['texture', 'bake', 'ambient-occlusion', 'ao', 'multi-object', 'cycles'],
     "description_short": 'bake AO to texture , selected temp merge',
-    "description_medium": 'Texture Bake ambient occlusion of all selected mesh objects as one',
+    "description_medium": 'bake ambient occlusion for multiple selected mesh objects - supports EMIT shader AO (with double-sided, strength, contrast) and Cycles AO bake, with hide-originals to avoid double-geometry occlusion',
     "description_long": """
 TEX MULTI-OBJECT AMBIENT OCCLUSION BAKER
 - Select multiple mesh objects that share a UV layout / texture space
 - Addon duplicates them, joins into a temp object, bakes AO to a new image, saves to //textures/
 - Restores scene settings and keeps original objects intact
 """,
+    "image_overview": 'zenv_blender_TEX_bake_ambient_occlusion_multi.png',
+    "addon_image": 'zenv_blender_TEX_bake_ambient_occlusion_multi.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 from datetime import datetime
@@ -27,8 +34,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 _zenv_ao_bake_console_handler = None
+#endregion
 
 
+#region PROPS
 class ZENV_AO_Bake_Properties:
     @classmethod
     def register(cls):
@@ -125,21 +134,27 @@ class ZENV_AO_Bake_Properties:
 
     @classmethod
     def unregister(cls):
-        del bpy.types.Scene.zenv_ao_bake_resolution
-        del bpy.types.Scene.zenv_ao_bake_samples
-        del bpy.types.Scene.zenv_ao_bake_margin
-        del bpy.types.Scene.zenv_ao_bake_use_gpu
-        del bpy.types.Scene.zenv_ao_bake_method
-        del bpy.types.Scene.zenv_ao_bake_ao_distance
-        del bpy.types.Scene.zenv_ao_bake_double_sided
-        del bpy.types.Scene.zenv_ao_bake_strength
-        del bpy.types.Scene.zenv_ao_bake_contrast
-        del bpy.types.Scene.zenv_ao_bake_uv_map
-        del bpy.types.Scene.zenv_ao_bake_recalc_normals
-        del bpy.types.Scene.zenv_ao_bake_apply_scale
-        del bpy.types.Scene.zenv_ao_bake_hide_originals
+        for attr in (
+            'zenv_ao_bake_resolution',
+            'zenv_ao_bake_samples',
+            'zenv_ao_bake_margin',
+            'zenv_ao_bake_use_gpu',
+            'zenv_ao_bake_method',
+            'zenv_ao_bake_ao_distance',
+            'zenv_ao_bake_double_sided',
+            'zenv_ao_bake_strength',
+            'zenv_ao_bake_contrast',
+            'zenv_ao_bake_uv_map',
+            'zenv_ao_bake_recalc_normals',
+            'zenv_ao_bake_apply_scale',
+            'zenv_ao_bake_hide_originals',
+        ):
+            if hasattr(bpy.types.Scene, attr):
+                delattr(bpy.types.Scene, attr)
+#endregion
 
 
+#region UTILS
 class ZENV_AO_Bake_Utils:
     @staticmethod
     def ensure_texture_directory():
@@ -211,10 +226,11 @@ class ZENV_AO_Bake_Utils:
             ao_b = nodes.new('ShaderNodeAmbientOcclusion')
             ao_b.inputs['Distance'].default_value = ao_distance
 
-            ao_darken = nodes.new('ShaderNodeMixRGB')
+            ao_darken = nodes.new('ShaderNodeMix')
+            ao_darken.data_type = 'RGBA'
             ao_darken.blend_type = 'LIGHTEN'
-            ao_darken.use_clamp = True
-            ao_darken.inputs['Fac'].default_value = 1.0
+            ao_darken.clamp_result = True
+            ao_darken.inputs['Factor'].default_value = 1.0
 
             invert1 = nodes.new('ShaderNodeInvert')
             occl_mul = nodes.new('ShaderNodeMath')
@@ -228,7 +244,8 @@ class ZENV_AO_Bake_Utils:
             contrast_pow.use_clamp = True
             contrast_pow.inputs[1].default_value = ao_contrast
 
-            combine = nodes.new('ShaderNodeCombineRGB')
+            combine = nodes.new('ShaderNodeCombineColor')
+            combine.mode = 'RGB'
 
             emission = nodes.new('ShaderNodeEmission')
             emission.inputs['Strength'].default_value = 1.0
@@ -251,23 +268,23 @@ class ZENV_AO_Bake_Utils:
             links.new(normal_inv.outputs[0], ao_b.inputs['Normal'])
 
             if double_sided:
-                links.new(ao_a.outputs['Color'], ao_darken.inputs['Color1'])
-                links.new(ao_b.outputs['Color'], ao_darken.inputs['Color2'])
+                links.new(ao_a.outputs['Color'], ao_darken.inputs['A'])
+                links.new(ao_b.outputs['Color'], ao_darken.inputs['B'])
             else:
-                links.new(ao_a.outputs['Color'], ao_darken.inputs['Color1'])
-                links.new(ao_a.outputs['Color'], ao_darken.inputs['Color2'])
+                links.new(ao_a.outputs['Color'], ao_darken.inputs['A'])
+                links.new(ao_a.outputs['Color'], ao_darken.inputs['B'])
 
-            links.new(ao_darken.outputs['Color'], invert1.inputs['Color'])
+            links.new(ao_darken.outputs['Result'], invert1.inputs['Color'])
             links.new(invert1.outputs['Color'], occl_mul.inputs[0])
             links.new(occl_mul.outputs[0], invert2.inputs['Color'])
 
             links.new(invert2.outputs['Color'], contrast_pow.inputs[0])
 
-            links.new(contrast_pow.outputs[0], combine.inputs['R'])
-            links.new(contrast_pow.outputs[0], combine.inputs['G'])
-            links.new(contrast_pow.outputs[0], combine.inputs['B'])
+            links.new(contrast_pow.outputs[0], combine.inputs[0])
+            links.new(contrast_pow.outputs[0], combine.inputs[1])
+            links.new(contrast_pow.outputs[0], combine.inputs[2])
 
-            links.new(combine.outputs['Image'], emission.inputs['Color'])
+            links.new(combine.outputs[0], emission.inputs['Color'])
             links.new(emission.outputs['Emission'], out.inputs['Surface'])
         else:
             bsdf = nodes.new('ShaderNodeBsdfPrincipled')
@@ -339,9 +356,18 @@ class ZENV_AO_Bake_Utils:
             scene.render.bake.target = settings['bake_target']
         if hasattr(scene.render.bake, 'use_selected_to_active') and 'bake_use_selected_to_active' in settings:
             scene.render.bake.use_selected_to_active = settings['bake_use_selected_to_active']
+#endregion
 
 
+#region OP
 class ZENV_OT_TEX_BakeAmbientOcclusionMultiObject(bpy.types.Operator):
+    """Bake Ambient Occlusion for multiple selected mesh objects.
+
+    Duplicates selected meshes, joins into a temp object, optionally hides
+    the originals to avoid double-geometry occlusion, bakes AO via either
+    Cycles AO bake or a shader-based EMIT bake (with optional double-sided
+    AO, strength, and contrast controls), and saves to //textures/.
+    """
     bl_idname = "zenv.tex_bake_ao_multi_object"
     bl_label = "Bake AO (Multi-Object)"
     bl_description = "Temporarily merges selected meshes and bakes Ambient Occlusion to a new texture"
@@ -349,7 +375,8 @@ class ZENV_OT_TEX_BakeAmbientOcclusionMultiObject(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return True
+        """Only enable when at least one mesh object is selected."""
+        return any(obj.type == 'MESH' for obj in context.selected_objects)
 
     def execute(self, context):
         scene = context.scene
@@ -521,9 +548,12 @@ class ZENV_OT_TEX_BakeAmbientOcclusionMultiObject(bpy.types.Operator):
                     obj.select_set(True)
             if original_active and original_active.name in bpy.data.objects:
                 context.view_layer.objects.active = original_active
+#endregion
 
 
+#region PANEL
 class ZENV_PT_TEX_BakeAmbientOcclusionMultiObject(bpy.types.Panel):
+    """Panel for the multi-object Ambient Occlusion baker."""
     bl_label = "TEX Bake AO Multi"
     bl_idname = "ZENV_PT_tex_bake_ao_multi"
     bl_space_type = 'VIEW_3D'
@@ -567,52 +597,45 @@ class ZENV_PT_TEX_BakeAmbientOcclusionMultiObject(bpy.types.Panel):
             missing_uv = [obj for obj in mesh_selected if not obj.data.uv_layers]
             if missing_uv:
                 layout.label(text="Selected Mesh Missing UVs", icon='INFO')
+#endregion
 
 
+#region REG
 classes = (
     ZENV_OT_TEX_BakeAmbientOcclusionMultiObject,
     ZENV_PT_TEX_BakeAmbientOcclusionMultiObject,
 )
 
 
-def _install_logger():
-    """Attach a single StreamHandler to ``logger`` (idempotent)."""
-    global _zenv_ao_bake_console_handler
-    if _zenv_ao_bake_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_ao_bake_console_handler = handler
-
-
-def _uninstall_logger():
-    """Remove the handler added by :func:`_install_logger`."""
+def register():
+    """Register the addon classes, properties, and logger."""
     global _zenv_ao_bake_console_handler
     if _zenv_ao_bake_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_ao_bake_console_handler)
-    except ValueError:
-        pass
-    _zenv_ao_bake_console_handler = None
-
-
-def register():
-    _install_logger()
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_ao_bake_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     ZENV_AO_Bake_Properties.register()
 
 
 def unregister():
+    """Unregister the addon classes, properties, and logger."""
+    global _zenv_ao_bake_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     ZENV_AO_Bake_Properties.unregister()
-    _uninstall_logger()
+    if _zenv_ao_bake_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_ao_bake_console_handler)
+        except ValueError:
+            pass
+        _zenv_ao_bake_console_handler = None
 
 
 if __name__ == "__main__":
     register()
+#endregion

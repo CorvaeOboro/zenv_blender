@@ -1,16 +1,19 @@
+#region META
 bl_info = {
     "name": 'TEX Bake Curvature Edge Highlight',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260309',
+    "version": '20260822',
     "description": 'Bake curvature edge highlight overlay for multiple selected mesh objects by temporarily merging them',
     "status": 'working',
     "approved": True,
-    "sort_priority": '1',
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 40,
+    "tags": ['texture', 'bake', 'curvature', 'edge', 'highlight', 'multi-object', 'wireframe'],
     "description_short": 'bake Curvature to texture , selected temp merge',
-    "description_medium": 'curvature overlay bake for 0.5-gray base / white edges / dark crevices',
+    "description_medium": 'curvature overlay bake for 0.5-gray base / white edges / dark crevices - with optional wireframe edge overlay, bevel, and subdivision on the temp joined mesh',
     "description_long": """
 TEX MULTI-OBJECT CURVATURE EDGE HIGHLIGHT BAKER
 - Select multiple mesh objects that share a UV layout / texture space
@@ -24,9 +27,13 @@ Implementation uses a Cycles shader and bakes EMIT for a lighting-independent re
 - convex response: Geometry Pointiness
 - concave response: Ambient Occlusion (inverted)
 """,
+    "image_overview": 'zenv_blender_TEX_bake_curvature_edge_highlight_multi.png',
+    "addon_image": 'zenv_blender_TEX_bake_curvature_edge_highlight_multi.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 from datetime import datetime
@@ -38,8 +45,10 @@ import bmesh
 
 logger = logging.getLogger(__name__)
 _zenv_curvature_bake_console_handler = None
+#endregion
 
 
+#region PROPS
 class ZENV_CurvatureBake_Properties:
     @classmethod
     def register(cls):
@@ -209,31 +218,37 @@ class ZENV_CurvatureBake_Properties:
 
     @classmethod
     def unregister(cls):
-        del bpy.types.Scene.zenv_curv_bake_resolution
-        del bpy.types.Scene.zenv_curv_bake_samples
-        del bpy.types.Scene.zenv_curv_bake_margin
-        del bpy.types.Scene.zenv_curv_bake_use_gpu
-        del bpy.types.Scene.zenv_curv_edge_strength
-        del bpy.types.Scene.zenv_curv_crevice_strength
-        del bpy.types.Scene.zenv_curv_edge_low
-        del bpy.types.Scene.zenv_curv_edge_high
-        del bpy.types.Scene.zenv_curv_crevice_low
-        del bpy.types.Scene.zenv_curv_crevice_high
-        del bpy.types.Scene.zenv_curv_ao_distance
-        del bpy.types.Scene.zenv_curv_wireframe_enable
-        del bpy.types.Scene.zenv_curv_wireframe_px
-        del bpy.types.Scene.zenv_curv_wireframe_strength
-        del bpy.types.Scene.zenv_curv_wireframe_sharp_only
-        del bpy.types.Scene.zenv_curv_wireframe_sharp_angle
-        del bpy.types.Scene.zenv_curv_wireframe_falloff_px
-        del bpy.types.Scene.zenv_curv_temp_subdiv_levels
-        del bpy.types.Scene.zenv_curv_temp_bevel_width
-        del bpy.types.Scene.zenv_curv_temp_bevel_segments
-        del bpy.types.Scene.zenv_curv_temp_bevel_angle
-        del bpy.types.Scene.zenv_curv_temp_apply_scale
-        del bpy.types.Scene.zenv_curv_temp_recalc_normals
+        for attr in (
+            'zenv_curv_bake_resolution',
+            'zenv_curv_bake_samples',
+            'zenv_curv_bake_margin',
+            'zenv_curv_bake_use_gpu',
+            'zenv_curv_edge_strength',
+            'zenv_curv_crevice_strength',
+            'zenv_curv_edge_low',
+            'zenv_curv_edge_high',
+            'zenv_curv_crevice_low',
+            'zenv_curv_crevice_high',
+            'zenv_curv_ao_distance',
+            'zenv_curv_wireframe_enable',
+            'zenv_curv_wireframe_px',
+            'zenv_curv_wireframe_strength',
+            'zenv_curv_wireframe_sharp_only',
+            'zenv_curv_wireframe_sharp_angle',
+            'zenv_curv_wireframe_falloff_px',
+            'zenv_curv_temp_subdiv_levels',
+            'zenv_curv_temp_bevel_width',
+            'zenv_curv_temp_bevel_segments',
+            'zenv_curv_temp_bevel_angle',
+            'zenv_curv_temp_apply_scale',
+            'zenv_curv_temp_recalc_normals',
+        ):
+            if hasattr(bpy.types.Scene, attr):
+                delattr(bpy.types.Scene, attr)
+#endregion
 
 
+#region UTILS
 class ZENV_CurvatureBake_Utils:
     @staticmethod
     def ensure_texture_directory():
@@ -518,7 +533,8 @@ class ZENV_CurvatureBake_Utils:
         ramp_edge = nodes.new('ShaderNodeValToRGB')
         rgb_to_bw = nodes.new('ShaderNodeRGBToBW')
         math_edge_strength = nodes.new('ShaderNodeMath')
-        combine = nodes.new('ShaderNodeCombineRGB')
+        combine = nodes.new('ShaderNodeCombineColor')
+        combine.mode = 'RGB'
 
         emission = nodes.new('ShaderNodeEmission')
         output = nodes.new('ShaderNodeOutputMaterial')
@@ -556,17 +572,26 @@ class ZENV_CurvatureBake_Utils:
         links.new(ramp_edge.outputs['Color'], rgb_to_bw.inputs['Color'])
         links.new(rgb_to_bw.outputs['Val'], math_edge_strength.inputs[0])
 
-        links.new(math_edge_strength.outputs[0], combine.inputs['R'])
-        links.new(math_edge_strength.outputs[0], combine.inputs['G'])
-        links.new(math_edge_strength.outputs[0], combine.inputs['B'])
+        links.new(math_edge_strength.outputs[0], combine.inputs[0])
+        links.new(math_edge_strength.outputs[0], combine.inputs[1])
+        links.new(math_edge_strength.outputs[0], combine.inputs[2])
 
-        links.new(combine.outputs['Image'], emission.inputs['Color'])
+        links.new(combine.outputs[0], emission.inputs['Color'])
         links.new(emission.outputs['Emission'], output.inputs['Surface'])
 
         return mat
+#endregion
 
 
+#region OP
 class ZENV_OT_TEX_BakeCurvatureEdgeHighlightMultiObject(bpy.types.Operator):
+    """Bake a curvature edge highlight overlay for multiple selected mesh objects.
+
+    Duplicates selected meshes, joins into a temp object, optionally applies
+    bevel + subdivision modifiers, bakes a curvature overlay (0.5 gray base,
+    white convex edges, dark concave crevices) via Cycles EMIT, optionally
+    composites a wireframe edge mask, and saves to //textures/.
+    """
     bl_idname = "zenv.tex_bake_curvature_edge_multi_object"
     bl_label = "Bake Curvature Overlay (Multi-Object)"
     bl_description = "Temporarily merges selected meshes and bakes a curvature overlay (0.5 base, white edges, dark crevices)"
@@ -574,7 +599,8 @@ class ZENV_OT_TEX_BakeCurvatureEdgeHighlightMultiObject(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return True
+        """Only enable when at least one mesh object is selected."""
+        return any(obj.type == 'MESH' for obj in context.selected_objects)
 
     def execute(self, context):
         scene = context.scene
@@ -738,9 +764,12 @@ class ZENV_OT_TEX_BakeCurvatureEdgeHighlightMultiObject(bpy.types.Operator):
                     obj.select_set(True)
             if original_active and original_active.name in bpy.data.objects:
                 context.view_layer.objects.active = original_active
+#endregion
 
 
+#region PANEL
 class ZENV_PT_TEX_BakeCurvatureEdgeHighlightMultiObject(bpy.types.Panel):
+    """Panel for the multi-object curvature edge highlight baker."""
     bl_label = "TEX Bake Curvature Multi"
     bl_idname = "ZENV_PT_tex_bake_curvature_multi"
     bl_space_type = 'VIEW_3D'
@@ -800,52 +829,45 @@ class ZENV_PT_TEX_BakeCurvatureEdgeHighlightMultiObject(bpy.types.Panel):
             missing_uv = [obj for obj in mesh_selected if not obj.data.uv_layers]
             if missing_uv:
                 layout.label(text="Selected Mesh Missing UVs", icon='INFO')
+#endregion
 
 
+#region REG
 classes = (
     ZENV_OT_TEX_BakeCurvatureEdgeHighlightMultiObject,
     ZENV_PT_TEX_BakeCurvatureEdgeHighlightMultiObject,
 )
 
 
-def _install_logger():
-    """Attach a single StreamHandler to ``logger`` (idempotent)."""
-    global _zenv_curvature_bake_console_handler
-    if _zenv_curvature_bake_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_curvature_bake_console_handler = handler
-
-
-def _uninstall_logger():
-    """Remove the handler added by :func:`_install_logger`."""
+def register():
+    """Register the addon classes, properties, and logger."""
     global _zenv_curvature_bake_console_handler
     if _zenv_curvature_bake_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_curvature_bake_console_handler)
-    except ValueError:
-        pass
-    _zenv_curvature_bake_console_handler = None
-
-
-def register():
-    _install_logger()
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_curvature_bake_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     ZENV_CurvatureBake_Properties.register()
 
 
 def unregister():
+    """Unregister the addon classes, properties, and logger."""
+    global _zenv_curvature_bake_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     ZENV_CurvatureBake_Properties.unregister()
-    _uninstall_logger()
+    if _zenv_curvature_bake_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_curvature_bake_console_handler)
+        except ValueError:
+            pass
+        _zenv_curvature_bake_console_handler = None
 
 
 if __name__ == "__main__":
     register()
+#endregion

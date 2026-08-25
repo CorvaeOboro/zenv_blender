@@ -1,14 +1,17 @@
+#region META
 bl_info = {
     "name": 'TEX Texture Export Dated',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260519',
+    "version": '20260822',
     "description": 'Save current painted texture(s) with a dated suffix into the matching project subfolder',
     "status": 'working',
     "approved": True,
-    "sort_priority": '2',
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 70,
+    "tags": ['texture', 'export', 'dated', 'paint', 'backup', 'versioned'],
     "description_short": 'Export painted textures to dated copies inside the matching project folder',
     "description_medium": 'one click export of currently painted textures with a YYYYMMDD_HHMMSS suffix into the texture/material folder discovered next to the current .blend file - intended for projects (e.g. EverQuest) where every material/texture has a matching folder in the blend base dir',
     "description_long": """\
@@ -22,9 +25,13 @@ TEXTURE EXPORT DATED
  Includes a one-click "Export All Modified" for the active object so any
  dirty image used by its materials gets a versioned copy in one go.
 """,
+    "image_overview": 'zenv_blender_TEX_texture_export_dated.png',
+    "addon_image": 'zenv_blender_TEX_texture_export_dated.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 import re
@@ -34,12 +41,10 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 _zenv_tex_export_dated_console_handler = None
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Utilities
-# ------------------------------------------------------------------------
-
+#region UTILS
 class ZENV_TexExportDated_Utils:
     """Helpers for finding destination folders and writing dated copies."""
 
@@ -288,11 +293,52 @@ class ZENV_TexExportDated_Utils:
             prev_settings.color_mode = prev_color_mode
             prev_settings.color_depth = prev_color_depth
 
+    @staticmethod
+    def find_active_paint_image(context):
+        """Find the image the user is currently painting on, plus its material (if any).
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
+        Priority:
+          1. Image Editor's active image (if visible)
+          2. Active object's active material -> active TEX_IMAGE node
+          3. Texture Paint slots on the active object
+        """
+        # 1. image editor
+        for area in context.screen.areas:
+            if area.type == 'IMAGE_EDITOR':
+                for space in area.spaces:
+                    if space.type == 'IMAGE_EDITOR' and space.image is not None:
+                        return space.image, None
 
+        obj = context.active_object
+        if obj is None or obj.type != 'MESH':
+            return None, None
+
+        mat = obj.active_material
+        if mat is not None and mat.use_nodes:
+            # active node first
+            active = mat.node_tree.nodes.active
+            if active is not None and active.type == 'TEX_IMAGE' and active.image is not None:
+                return active.image, mat
+            # selected image node
+            for node in mat.node_tree.nodes:
+                if node.type == 'TEX_IMAGE' and node.select and node.image is not None:
+                    return node.image, mat
+            # any image node
+            for node in mat.node_tree.nodes:
+                if node.type == 'TEX_IMAGE' and node.image is not None:
+                    return node.image, mat
+
+        # 3. texture paint slots
+        if obj.mode == 'TEXTURE_PAINT' or context.scene.tool_settings.image_paint:
+            ips = context.scene.tool_settings.image_paint
+            if ips and ips.canvas is not None:
+                return ips.canvas, mat
+
+        return None, mat
+#endregion
+
+
+#region PROPS
 class ZENV_TexExportDated_Properties:
 
     @classmethod
@@ -328,59 +374,10 @@ class ZENV_TexExportDated_Properties:
         ):
             if hasattr(bpy.types.Scene, attr):
                 delattr(bpy.types.Scene, attr)
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Active image discovery
-# ------------------------------------------------------------------------
-
-def _find_active_paint_image(context):
-    """Find the image the user is currently painting on, plus its material (if any).
-
-    Priority:
-      1. Image Editor's active image (if visible)
-      2. Active object's active material -> active TEX_IMAGE node
-      3. Texture Paint slots on the active object
-    """
-    # 1. image editor
-    for area in context.screen.areas:
-        if area.type == 'IMAGE_EDITOR':
-            for space in area.spaces:
-                if space.type == 'IMAGE_EDITOR' and space.image is not None:
-                    return space.image, None
-
-    obj = context.active_object
-    if obj is None or obj.type != 'MESH':
-        return None, None
-
-    mat = obj.active_material
-    if mat is not None and mat.use_nodes:
-        # active node first
-        active = mat.node_tree.nodes.active
-        if active is not None and active.type == 'TEX_IMAGE' and active.image is not None:
-            return active.image, mat
-        # selected image node
-        for node in mat.node_tree.nodes:
-            if node.type == 'TEX_IMAGE' and node.select and node.image is not None:
-                return node.image, mat
-        # any image node
-        for node in mat.node_tree.nodes:
-            if node.type == 'TEX_IMAGE' and node.image is not None:
-                return node.image, mat
-
-    # 3. texture paint slots
-    if obj.mode == 'TEXTURE_PAINT' or context.scene.tool_settings.image_paint:
-        ips = context.scene.tool_settings.image_paint
-        if ips and ips.canvas is not None:
-            return ips.canvas, mat
-
-    return None, mat
-
-
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
-
+#region OP
 class ZENV_OT_TexExportDated_ExportActive(bpy.types.Operator):
     """Export the currently active painted texture as a dated copy"""
     bl_idname = "zenv.texexp_export_active"
@@ -388,7 +385,7 @@ class ZENV_OT_TexExportDated_ExportActive(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        image, mat = _find_active_paint_image(context)
+        image, mat = ZENV_TexExportDated_Utils.find_active_paint_image(context)
         if image is None:
             self.report({'ERROR'}, "No active paint image found. Open one in the Image Editor or in the active material.")
             return {'CANCELLED'}
@@ -471,10 +468,10 @@ class ZENV_OT_TexExportDated_OpenFolder(bpy.types.Operator):
     """Open the destination folder for the active texture in the system file browser"""
     bl_idname = "zenv.texexp_open_folder"
     bl_label = "Open Destination Folder"
-    bl_options = {'REGISTER'}
+    bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        image, mat = _find_active_paint_image(context)
+        image, mat = ZENV_TexExportDated_Utils.find_active_paint_image(context)
         if image is None:
             self.report({'ERROR'}, "No active paint image found.")
             return {'CANCELLED'}
@@ -496,15 +493,13 @@ class ZENV_OT_TexExportDated_OpenFolder(bpy.types.Operator):
             self.report({'ERROR'}, f"Could not open folder: {exc}")
             return {'CANCELLED'}
         return {'FINISHED'}
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
-
-class ZENV_PT_TexExportDated_Panel(bpy.types.Panel):
+#region PANEL
+class ZENV_PT_TexExportDated(bpy.types.Panel):
     """Panel for dated texture exports"""
-    bl_label = "Texture Export Dated"
+    bl_label = "TEX Texture Export Dated"
     bl_idname = "ZENV_PT_texexp_dated"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -514,7 +509,7 @@ class ZENV_PT_TexExportDated_Panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        image, mat = _find_active_paint_image(context)
+        image, mat = ZENV_TexExportDated_Utils.find_active_paint_image(context)
 
         # 1) Active texture name (top)
         row = layout.row(align=True)
@@ -538,56 +533,47 @@ class ZENV_PT_TexExportDated_Panel(bpy.types.Panel):
             box.prop(scene, "zenv_texexp_prefer_blend_root")
             box.operator("zenv.texexp_export_object", text="Export Object Textures", icon='OUTLINER_OB_MESH')
             box.operator("zenv.texexp_open_folder", text="Open Folder", icon='FILE_FOLDER')
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#region REG
 classes = (
     ZENV_OT_TexExportDated_ExportActive,
     ZENV_OT_TexExportDated_ExportObject,
     ZENV_OT_TexExportDated_OpenFolder,
-    ZENV_PT_TexExportDated_Panel,
+    ZENV_PT_TexExportDated,
 )
 
 
-def _install_logger():
-    global _zenv_tex_export_dated_console_handler
-    if _zenv_tex_export_dated_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_tex_export_dated_console_handler = handler
-
-
-def _uninstall_logger():
+def register():
+    """Register the addon classes, properties, and logger."""
     global _zenv_tex_export_dated_console_handler
     if _zenv_tex_export_dated_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_tex_export_dated_console_handler)
-    except ValueError:
-        pass
-    _zenv_tex_export_dated_console_handler = None
-
-
-def register():
-    _install_logger()
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_tex_export_dated_console_handler = handler
     for cls in classes:
         bpy.utils.register_class(cls)
     ZENV_TexExportDated_Properties.register()
 
 
 def unregister():
+    """Unregister the addon classes, properties, and logger."""
+    global _zenv_tex_export_dated_console_handler
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
     ZENV_TexExportDated_Properties.unregister()
-    _uninstall_logger()
+    if _zenv_tex_export_dated_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_tex_export_dated_console_handler)
+        except ValueError:
+            pass
+        _zenv_tex_export_dated_console_handler = None
 
 
 if __name__ == "__main__":
     register()
+#endregion

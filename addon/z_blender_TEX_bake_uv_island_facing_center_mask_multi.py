@@ -1,16 +1,19 @@
+#region META
 bl_info = {
     "name": 'TEX Bake UV Island Facing-Center Mask',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260309',
+    "version": '20260822',
     "description": 'Bake a black/white mask where 1 face per connected UV island is chosen based on facing a world center',
     "status": 'working',
     "approved": True,
-    "sort_priority": '1',
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 10,
+    "addon_order": 50,
+    "tags": ['texture', 'bake', 'mask', 'uv-island', 'facing', 'center', 'multi-object'],
     "description_short": 'per UV island pick 1 face facing a center point; bake mask via EMIT',
-    "description_medium": 'Bake Directional Facing mask per object , via DotProduct face normal , Inward , Outward , and Upward',
+    "description_medium": 'Bake directional facing mask per object via dot-product face normal - Inward, Outward, Up, and Down modes with UV island or mesh connectivity grouping',
     "description_long": """
 TEX MULTI-OBJECT UV ISLAND FACING-CENTER MASK BAKER
 - Select multiple mesh objects that share a UV layout / texture space
@@ -20,9 +23,13 @@ TEX MULTI-OBJECT UV ISLAND FACING-CENTER MASK BAKER
 - Writes a face-attribute mask and bakes it to a black/white texture via EMIT
 - Saves to //textures/ and restores scene settings
 """,
+    "image_overview": 'zenv_blender_TEX_bake_uv_island_facing_center_mask_multi.png',
+    "addon_image": 'zenv_blender_TEX_bake_uv_island_facing_center_mask_multi.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 from datetime import datetime
@@ -33,8 +40,10 @@ from mathutils import Vector
 
 logger = logging.getLogger(__name__)
 _zenv_uv_island_facing_center_mask_console_handler = None
+#endregion
 
 
+#region PROPS
 class ZENV_UVIslandFacingCenterMask_Properties:
     @classmethod
     def register(cls):
@@ -136,21 +145,27 @@ class ZENV_UVIslandFacingCenterMask_Properties:
 
     @classmethod
     def unregister(cls):
-        del bpy.types.Scene.zenv_islandmask_bake_resolution
-        del bpy.types.Scene.zenv_islandmask_bake_samples
-        del bpy.types.Scene.zenv_islandmask_bake_margin
-        del bpy.types.Scene.zenv_islandmask_bake_use_gpu
-        del bpy.types.Scene.zenv_islandmask_uv_map
-        del bpy.types.Scene.zenv_islandmask_grouping_mode
-        del bpy.types.Scene.zenv_islandmask_uv_epsilon
-        del bpy.types.Scene.zenv_islandmask_center
-        del bpy.types.Scene.zenv_islandmask_center_height_offset
-        del bpy.types.Scene.zenv_islandmask_sharp_only
-        del bpy.types.Scene.zenv_islandmask_sharp_angle
-        del bpy.types.Scene.zenv_islandmask_match_threshold_enable
-        del bpy.types.Scene.zenv_islandmask_match_threshold_angle
+        for attr in (
+            'zenv_islandmask_bake_resolution',
+            'zenv_islandmask_bake_samples',
+            'zenv_islandmask_bake_margin',
+            'zenv_islandmask_bake_use_gpu',
+            'zenv_islandmask_uv_map',
+            'zenv_islandmask_grouping_mode',
+            'zenv_islandmask_uv_epsilon',
+            'zenv_islandmask_center',
+            'zenv_islandmask_center_height_offset',
+            'zenv_islandmask_sharp_only',
+            'zenv_islandmask_sharp_angle',
+            'zenv_islandmask_match_threshold_enable',
+            'zenv_islandmask_match_threshold_angle',
+        ):
+            if hasattr(bpy.types.Scene, attr):
+                delattr(bpy.types.Scene, attr)
+#endregion
 
 
+#region UTILS
 class ZENV_UVIslandFacingCenterMask_Utils:
     MASK_ATTR_NAME = "zenv_island_facing_mask"
 
@@ -287,8 +302,8 @@ class ZENV_UVIslandFacingCenterMask_Utils:
         return False
 
     @staticmethod
-    def build_connected_uv_islands(mesh: bpy.types.Mesh, uv_map_name: str):
-        return ZENV_UVIslandFacingCenterMask_Utils.build_connected_uv_islands_with_epsilon(mesh, uv_map_name, 1e-5)
+    def build_connected_uv_islands(mesh: bpy.types.Mesh, uv_map_name: str, uv_epsilon: float = 1e-5):
+        return ZENV_UVIslandFacingCenterMask_Utils.build_connected_uv_islands_with_epsilon(mesh, uv_map_name, uv_epsilon)
 
     @staticmethod
     def build_connected_uv_islands_with_epsilon(mesh: bpy.types.Mesh, uv_map_name: str, uv_epsilon: float):
@@ -565,7 +580,8 @@ class ZENV_UVIslandFacingCenterMask_Utils:
         attr = nodes.new('ShaderNodeAttribute')
         attr.attribute_name = ZENV_UVIslandFacingCenterMask_Utils.MASK_ATTR_NAME
 
-        comb = nodes.new('ShaderNodeCombineRGB')
+        comb = nodes.new('ShaderNodeCombineColor')
+        comb.mode = 'RGB'
 
         emission = nodes.new('ShaderNodeEmission')
         emission.inputs['Strength'].default_value = 1.0
@@ -578,16 +594,25 @@ class ZENV_UVIslandFacingCenterMask_Utils:
         emission.location = (-100, 0)
         out.location = (200, 0)
 
-        links.new(attr.outputs['Fac'], comb.inputs['R'])
-        links.new(attr.outputs['Fac'], comb.inputs['G'])
-        links.new(attr.outputs['Fac'], comb.inputs['B'])
-        links.new(comb.outputs['Image'], emission.inputs['Color'])
+        links.new(attr.outputs['Fac'], comb.inputs[0])
+        links.new(attr.outputs['Fac'], comb.inputs[1])
+        links.new(attr.outputs['Fac'], comb.inputs[2])
+        links.new(comb.outputs[0], emission.inputs['Color'])
         links.new(emission.outputs['Emission'], out.inputs['Surface'])
 
         return mat
+#endregion
 
 
+#region OP
 class ZENV_OT_TEX_BakeUVIslandFacingCenterMaskMultiObject(bpy.types.Operator):
+    """Bake a facing-center mask picking 1 face per UV island for multiple objects.
+
+    Duplicates selected meshes, finds connected UV islands (or mesh-connected
+    components), picks 1 face per island whose normal best points toward a
+    configurable world-space center or direction (Inward/Outward/Up/Down),
+    writes a face-attribute mask, and bakes it to a B/W texture via EMIT.
+    """
     bl_idname = "zenv.tex_bake_uv_island_facing_center_mask_multi_object"
     bl_label = "Bake UV Island Facing Mask (Multi-Object)"
     bl_description = "Pick 1 face per connected UV island (best facing a center) and bake a B/W mask via EMIT"
@@ -607,7 +632,8 @@ class ZENV_OT_TEX_BakeUVIslandFacingCenterMaskMultiObject(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return True
+        """Only enable when at least one mesh object is selected."""
+        return any(obj.type == 'MESH' for obj in context.selected_objects)
 
     def execute(self, context):
         scene = context.scene
@@ -772,9 +798,12 @@ class ZENV_OT_TEX_BakeUVIslandFacingCenterMaskMultiObject(bpy.types.Operator):
                     obj.select_set(True)
             if original_active and original_active.name in bpy.data.objects:
                 context.view_layer.objects.active = original_active
+#endregion
 
 
+#region PANEL
 class ZENV_PT_TEX_BakeUVIslandFacingCenterMaskMultiObject(bpy.types.Panel):
+    """Panel for the multi-object UV island facing-center mask baker."""
     bl_label = "TEX Bake UV Island Facing Mask"
     bl_idname = "ZENV_PT_tex_bake_uv_island_facing_mask"
     bl_space_type = 'VIEW_3D'
@@ -840,52 +869,45 @@ class ZENV_PT_TEX_BakeUVIslandFacingCenterMaskMultiObject(bpy.types.Panel):
             missing_uv = [obj for obj in mesh_selected if not obj.data.uv_layers]
             if missing_uv:
                 layout.label(text="Selected Mesh Missing UVs", icon='INFO')
+#endregion
 
 
+#region REG
 classes = (
     ZENV_OT_TEX_BakeUVIslandFacingCenterMaskMultiObject,
     ZENV_PT_TEX_BakeUVIslandFacingCenterMaskMultiObject,
 )
 
 
-def _install_logger():
-    """Attach a single StreamHandler to ``logger`` (idempotent)."""
-    global _zenv_uv_island_facing_center_mask_console_handler
-    if _zenv_uv_island_facing_center_mask_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_uv_island_facing_center_mask_console_handler = handler
-
-
-def _uninstall_logger():
-    """Remove the handler added by :func:`_install_logger`."""
+def register():
+    """Register the addon classes, properties, and logger."""
     global _zenv_uv_island_facing_center_mask_console_handler
     if _zenv_uv_island_facing_center_mask_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_uv_island_facing_center_mask_console_handler)
-    except ValueError:
-        pass
-    _zenv_uv_island_facing_center_mask_console_handler = None
-
-
-def register():
-    _install_logger()
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_uv_island_facing_center_mask_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     ZENV_UVIslandFacingCenterMask_Properties.register()
 
 
 def unregister():
+    """Unregister the addon classes, properties, and logger."""
+    global _zenv_uv_island_facing_center_mask_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     ZENV_UVIslandFacingCenterMask_Properties.unregister()
-    _uninstall_logger()
+    if _zenv_uv_island_facing_center_mask_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_uv_island_facing_center_mask_console_handler)
+        except ValueError:
+            pass
+        _zenv_uv_island_facing_center_mask_console_handler = None
 
 
 if __name__ == "__main__":
     register()
+#endregion

@@ -1,38 +1,51 @@
+#region META
 bl_info = {
     "name": 'RENDER Unlit Color',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260418',
+    "version": '20260822',
     "description": 'Renders unlit texture images with datetime suffix',
     "status": 'working',
     "approved": True,
-    "sort_priority": '1',
     "group": 'Render',
     "group_prefix": 'RENDER',
+    "group_order": 90,
+    "addon_order": 10,
+    "tags": ['render', 'color', 'unlit', 'eevee', 'emission', 'basecolor'],
     "description_short": 'quick renders color unlit image with datetime suffix',
+    "description_medium": 'render an unlit basecolor image from the scene camera using EEVEE with temporary emission materials that sample each object base color texture - saves with datetime suffix',
     "description_long": """
 RENDER Unlit Color
  render unlit basecolor images from camera
 """,
+    "image_overview": 'zenv_blender_RENDER_color.png',
+    "addon_image": 'zenv_blender_RENDER_color.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
 from datetime import datetime
 import logging
 logger = logging.getLogger(__name__)
+_zenv_color_console_handler = None
+#endregion
 
-# ------------------------------------------------------------------------
-#    Operator
-# ------------------------------------------------------------------------
 
+#region OP
 class ZENV_OT_RenderColorOnly(bpy.types.Operator):
     """Operator for rendering unlit color images"""
     bl_idname = "zenv.render_color_datetime"
     bl_label = "Render Unlit Color"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
+    @classmethod
+    def poll(cls, context):
+        """Only enable when the scene has an active camera."""
+        return context.scene.camera is not None
+
     # Subset of EEVEE attributes that we may disable to get a flat unlit
     # render. Each one is guarded because Blender 4.2+ removed
     # ``use_bloom`` / ``use_ssr`` entirely.
@@ -63,13 +76,14 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
 
         original_state = self.store_original_render_state(context)
         original_materials = self.store_original_materials()
+        temp_materials = []
 
         try:
             # Setup rendering
             self.setup_rendering(context)
 
             # Create temporary materials
-            self.setup_flat_color_rendering(context)
+            self.setup_flat_color_rendering(context, temp_materials)
 
             # Render and save
             render_filepath = self.render_color_image(context)
@@ -88,6 +102,7 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
             # Always restore the scene, even if rendering failed.
             self.restore_original_render_state(context, original_state)
             self.restore_materials(original_materials)
+            self.cleanup_temp_materials(temp_materials)
 
     def store_original_render_state(self, context):
         """Capture every render setting we are going to modify."""
@@ -168,8 +183,12 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
                 if hasattr(eevee, flag):
                     setattr(eevee, flag, False)
 
-    def setup_flat_color_rendering(self, context):
-        """Create and assign temporary materials for unlit color rendering"""
+    def setup_flat_color_rendering(self, context, temp_materials=None):
+        """Create and assign temporary materials for unlit color rendering.
+
+        If ``temp_materials`` is a list, every created temporary material is
+        appended to it so the caller can remove them after rendering.
+        """
         for obj in bpy.data.objects:
             if obj.type == 'MESH' and obj.data.materials:
                 for slot in obj.material_slots:
@@ -211,6 +230,20 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
                         
                         # Assign temporary material
                         slot.material = temp_mat
+                        if temp_materials is not None:
+                            temp_materials.append(temp_mat)
+
+    def cleanup_temp_materials(self, temp_materials):
+        """Remove temporary materials created during rendering."""
+        for temp_mat in temp_materials:
+            try:
+                if temp_mat is None:
+                    continue
+                # Force-remove with do_unlink so any stale slot references
+                # are cleared before the material is deleted.
+                bpy.data.materials.remove(temp_mat, do_unlink=True)
+            except (ReferenceError, RuntimeError):
+                pass
 
     def render_color_image(self, context):
         """Render and save the color image"""
@@ -243,15 +276,14 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
             raise Exception("Failed to save rendered color image")
             
         return render_filepath
+#endregion
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
 
-class ZENV_PT_RenderColor_Panel(bpy.types.Panel):
+#region PANEL
+class ZENV_PT_RenderColor(bpy.types.Panel):
     """Creates a Panel in the 3D Viewport for unlit color rendering"""
     bl_label = "RENDER Unlit Color"
-    bl_idname = "ZENV_PT_render_color"
+    bl_idname = "ZENV_PT_RenderColor"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
@@ -259,23 +291,40 @@ class ZENV_PT_RenderColor_Panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator("zenv.render_color_datetime")
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
 
+#region REG
 classes = (
-    ZENV_PT_RenderColor_Panel,
     ZENV_OT_RenderColorOnly,
+    ZENV_PT_RenderColor,
 )
 
 def register():
+    """Register the addon classes and attach the console logger handler."""
+    global _zenv_color_console_handler
+    if _zenv_color_console_handler is None:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_color_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
 
 def unregister():
+    """Unregister the addon classes and remove the console logger handler."""
+    global _zenv_color_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
+    if _zenv_color_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_color_console_handler)
+        except ValueError:
+            pass
+        _zenv_color_console_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion
