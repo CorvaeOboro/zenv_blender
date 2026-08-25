@@ -1,25 +1,38 @@
+#region META
 bl_info = {
     "name": 'MAT Remove Unused Materials',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250403',
+    "version": '20260822',
     "description": 'Remove unused materials and materials with no faces',
     "status": 'working',
     "approved": True,
-    "sort_priority": '1',
     "group": 'Material',
     "group_prefix": 'MAT',
+    "group_order": 40,
+    "addon_order": 10,
+    "tags": ['material', 'unused', 'remove', 'cleanup', 'slots', 'optimize'],
     "description_short": 'remove unused materials',
+    "description_medium": 'Performs two operations: (1) For each mesh object, removes material slots not referenced by any polygon, remapping polygon material indices in a single pass so the result is consistent even when slot 0 itself is removed. (2) After slot cleanup, removes materials from bpy.data.materials that are not used by any object faces and have zero users (no fake user). Linked and override materials are skipped.',
     "description_long": """
 MAT Remove Unused Materials - A Blender addon for cleaning up materials.
-1. Unassigns the materials from the objects material slotsthat are not used on faces.
+1. Unassigns the materials from the objects material slots that are not used on faces.
 2. Removes materials from scene that are not assigned to any objects.
 """,
+    "image_overview": 'zenv_blender_MAT_remove_unused_materials.png',
+    "addon_image": 'addon_remove_unused_mat_diagram.jpg',
     "location": 'View3D > Sidebar > ZENV > MAT Remove Unused Materials',
 }
+#endregion
 
+#region IMPORT
 import bpy
 from bpy.types import Operator, Panel
+#endregion
+
+
+#region OP
+# Operator that removes unused material slots and unreferenced materials.
 
 class ZENV_OT_RemoveUnusedMaterials(Operator):
     """Remove materials that are not used by any objects or faces."""
@@ -27,7 +40,8 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
     bl_label = "Remove Unused Materials"
     bl_options = {'REGISTER', 'UNDO'}
 
-    def get_materials_in_use(self, obj):
+    @classmethod
+    def get_materials_in_use(cls, obj):
         """Get set of materials actually used by faces in this object."""
         materials_in_use = set()
         if not obj or obj.type != 'MESH' or not obj.data.materials:
@@ -44,16 +58,20 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
         for polygon in mesh.polygons:
             if polygon.material_index < len(mesh.materials):
                 mat = mesh.materials[polygon.material_index]
-                if mat:  # Only add non-None materials
-                    # If material is linked, consider it in use
-                    if mat.library or mat.override_library:
-                        materials_in_use.add(mat)
-                    else:
-                        materials_in_use.add(mat)
+                if mat:
+                    materials_in_use.add(mat)
         return materials_in_use
 
-    def clean_mesh_materials(self, obj):
-        """Clean up material slots for a mesh object."""
+    @classmethod
+    def clean_mesh_materials(cls, obj):
+        """Clean up material slots for a mesh object.
+
+        Removes slots that are not referenced by any polygon. Blender's
+        ``mesh.materials.pop()`` automatically adjusts polygon
+        ``material_index`` values when a slot is removed, so no explicit
+        remapping is needed. Slots are popped from highest index to
+        lowest to avoid index shifting during iteration.
+        """
         if not obj or obj.type != 'MESH' or not obj.data.materials:
             return 0
 
@@ -62,32 +80,28 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
             return 0
 
         mesh = obj.data
-        removed_count = 0
-        
-        # Find which material slots are actually used by faces
+        slot_count = len(mesh.materials)
+
+        # Single pass over polygons to find which slot indices are in use.
         used_slot_indices = set()
         for polygon in mesh.polygons:
-            if polygon.material_index < len(mesh.materials):
+            if 0 <= polygon.material_index < slot_count:
                 used_slot_indices.add(polygon.material_index)
-        
-        # Only remove slots that are empty or unused
-        slots_to_remove = []
-        for i, mat in enumerate(mesh.materials):
-            if i not in used_slot_indices and (mat is None or mat not in self.get_materials_in_use(obj)):
-                slots_to_remove.append(i)
-                removed_count += 1
-        
-        # Remove unused slots from highest index to lowest to maintain proper indexing
+
+        # A slot is removable if no polygon references it. (Any material
+        # data-block that is still only present via a now-unused slot will
+        # get its user-count dropped by `materials.pop` below.)
+        slots_to_remove = [i for i in range(slot_count) if i not in used_slot_indices]
+        if not slots_to_remove:
+            return 0
+
+        # Remove the unused slots from highest index to lowest.
+        # Blender's materials.pop() automatically adjusts polygon
+        # material_index values, so no explicit remapping is needed.
         for slot_idx in sorted(slots_to_remove, reverse=True):
             mesh.materials.pop(index=slot_idx)
-            # Update face indices that are higher than the removed slot
-            for polygon in mesh.polygons:
-                if polygon.material_index > slot_idx:
-                    polygon.material_index -= 1
-                elif polygon.material_index == slot_idx:
-                    polygon.material_index = 0
-        
-        return removed_count
+
+        return len(slots_to_remove)
 
     def execute(self, context):
         """Execute the material removal operation."""
@@ -97,8 +111,9 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
             total_slots_removed = 0
             objects_cleaned = 0
             
-            # First pass: Clean up material slots in meshes and collect truly used materials
-            # Include objects from all scenes to handle linked data
+            # First pass: Clean up material slots in meshes and collect truly used materials.
+            # Iterating all scenes covers all scene objects (which includes all
+            # collection objects), so a separate collection traversal is not needed.
             for scene in bpy.data.scenes:
                 for obj in scene.objects:
                     if obj.type == 'MESH':
@@ -107,21 +122,10 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
                         if slots_removed > 0:
                             objects_cleaned += 1
                             total_slots_removed += slots_removed
-                        
+
                         # Add materials that are actually used by faces
                         used_materials.update(self.get_materials_in_use(obj))
-            
-            # Also check objects in all collections (including nested ones)
-            def process_collection(collection):
-                for obj in collection.objects:
-                    if obj.type == 'MESH':
-                        used_materials.update(self.get_materials_in_use(obj))
-                for child in collection.children:
-                    process_collection(child)
 
-            for collection in bpy.data.collections:
-                process_collection(collection)
-            
             # Remove unused materials from the scene
             initial_mat_count = len(bpy.data.materials)
             materials_to_remove = []
@@ -156,8 +160,13 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Error removing materials: {str(e)}")
             return {'CANCELLED'}
+#endregion
 
-class ZENV_PT_RemoveUnusedMaterials_Panel(Panel):
+
+#region PANEL
+# Sidebar panel in the ZENV category of the 3D Viewport.
+
+class ZENV_PT_RemoveUnusedMaterials(Panel):
     """Panel for removing unused materials."""
     bl_label = "MAT Remove Unused Materials"
     bl_idname = "ZENV_PT_remove_unused_materials"
@@ -169,14 +178,13 @@ class ZENV_PT_RemoveUnusedMaterials_Panel(Panel):
         """Draw the panel layout."""
         layout = self.layout
         layout.operator(ZENV_OT_RemoveUnusedMaterials.bl_idname)
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
 
+#region REG
 classes = (
     ZENV_OT_RemoveUnusedMaterials,
-    ZENV_PT_RemoveUnusedMaterials_Panel,
+    ZENV_PT_RemoveUnusedMaterials,
 )
 
 def register():
@@ -191,3 +199,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+#endregion

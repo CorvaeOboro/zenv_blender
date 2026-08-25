@@ -1,29 +1,42 @@
+#region META
 bl_info = {
     "name": 'MESH to UV Space',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250302',
+    "version": '20260822',
     "description": 'Transform mesh between 3D and UV space with vertex separation and merging',
     "status": 'working',
     "approved": True,
-    "sort_priority": '50',
     "group": 'Mesh',
     "group_prefix": 'MESH',
+    "group_order": 20,
+    "addon_order": 80,
+    "tags": ['mesh', 'uv', 'transform', 'bmesh', 'uv-space', 'vertex'],
     "description_short": 'transform mesh to match UV layout in 3D space',
+    "description_medium": 'transform a mesh between 3D and UV space by triangulating, separating vertices, mapping to UV coordinates, and optionally merging back - stores original positions for round-trip restoration',
     "description_long": """
 Mesh to UV Space
 Transform mesh between 3D and UV space with vertex separation and merging
 """,
+    "image_overview": 'zenv_blender_MESH_to_UV_space.png',
+    "addon_image": 'zenv_blender_MESH_to_UV_space.png',
     "location": 'View3D > Sidebar > ZENV',
-    "warning": '',
-    "doc_url": '',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import bmesh
+import logging
 from mathutils import Vector
 from bpy.types import Panel, Operator, PropertyGroup
 
+logger = logging.getLogger(__name__)
+_zenv_mesh_uv_console_handler = None
+#endregion
+
+
+#region PROPS
 class ZENV_PG_MeshToUVSpace(PropertyGroup):
     do_phase_0: bpy.props.BoolProperty(
         name="Phase 0: Prepare Mesh",
@@ -45,7 +58,10 @@ class ZENV_PG_MeshToUVSpace(PropertyGroup):
         default=False,
         description="Merge vertices and UVs at very small distances to reconstruct the mesh"
     )
+#endregion
 
+
+#region OP
 class ZENV_OT_MeshToUVSpace(Operator):
     """Transform mesh between 3D and UV space with vertex separation and merging.
     
@@ -58,10 +74,16 @@ class ZENV_OT_MeshToUVSpace(Operator):
     bl_idname = "zenv.mesh_to_uv_space"
     bl_label = "Apply UV Transform"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
+    @classmethod
+    def poll(cls, context):
+        """Only enable when there is an active mesh object."""
+        obj = context.active_object
+        return obj is not None and obj.type == 'MESH'
+
     def log_msg(self, message):
-        """Print a message to console and Blender's info area"""
-        print(message)
+        """Log a message via the logger and report it to Blender's info area."""
+        logger.info(message)
         self.report({'INFO'}, message)
 
     def log_bmesh_stats(self, bm, label=""):
@@ -70,114 +92,6 @@ class ZENV_OT_MeshToUVSpace(Operator):
         n_e = len(bm.edges)
         n_f = len(bm.faces)
         self.log_msg(f"BMesh stats {label}: {n_v} verts, {n_e} edges, {n_f} faces.")
-
-    def auto_mark_uv_seams_from_islands(self, bm, uv_layer):
-        """
-        Detect edges that should be seams by comparing UV coordinates
-        of adjacent faces along shared edges.
-        """
-        def get_edge_uvs(edge, face, uv_layer):
-            """Get UV coordinates for an edge in the context of a face"""
-            uvs = []
-            loop_start = None
-            # Find the loop that starts at one of the edge verts
-            for loop in face.loops:
-                if loop.vert in edge.verts:
-                    loop_start = loop
-                    break
-            
-            if loop_start is None:
-                return None
-                
-            # Get both UV coordinates for the edge
-            current = loop_start
-            uvs.append(current[uv_layer].uv.copy())
-            
-            # Find the next loop that uses the edge
-            for loop in face.loops:
-                if loop.vert in edge.verts and loop != loop_start:
-                    uvs.append(loop[uv_layer].uv.copy())
-                    break
-                    
-            return uvs if len(uvs) == 2 else None
-
-        def uvs_match(uvs1, uvs2, threshold=0.0001):
-            """Compare two sets of UV coordinates"""
-            if not uvs1 or not uvs2:
-                return False
-                
-            # Check both possible orderings of UV pairs
-            return (all((uvs1[i] - uvs2[i]).length < threshold for i in range(2)) or
-                    all((uvs1[i] - uvs2[1-i]).length < threshold for i in range(2)))
-
-        mark_count = 0
-        edges_processed = set()
-
-        for edge in bm.edges:
-            if edge in edges_processed:
-                continue
-                
-            if len(edge.link_faces) != 2:
-                # Boundary edges should be seams
-                if not edge.seam:
-                    edge.seam = True
-                    mark_count += 1
-                edges_processed.add(edge)
-                continue
-                
-            # Get UV coordinates for the edge in both faces
-            uvs1 = get_edge_uvs(edge, edge.link_faces[0], uv_layer)
-            uvs2 = get_edge_uvs(edge, edge.link_faces[1], uv_layer)
-            
-            # If UV coordinates don't match, mark as seam
-            if not uvs_match(uvs1, uvs2):
-                if not edge.seam:
-                    edge.seam = True
-                    mark_count += 1
-                    
-            edges_processed.add(edge)
-
-        self.log_msg(f"Marked {mark_count} new edges as seams.")
-
-    def split_vertices_along_seams(self, bm, uv_layer):
-        """
-        Split vertices that are connected by seam edges to create separate vertices
-        for each UV island.
-        """
-        split_count = 0
-        edges_to_split = [e for e in bm.edges if e.seam]
-        
-        # First, split all seam edges
-        for edge in edges_to_split:
-            # Get UV coordinates for both ends of the edge in each face
-            faces = edge.link_faces
-            if len(faces) != 2:
-                continue
-                
-            # Get loops for this edge in both faces
-            loops1 = [l for l in faces[0].loops if l.edge == edge]
-            loops2 = [l for l in faces[1].loops if l.edge == edge]
-            
-            if not loops1 or not loops2:
-                continue
-                
-            # Get UV coordinates
-            uvs1 = [l[uv_layer].uv for l in loops1]
-            uvs2 = [l[uv_layer].uv for l in loops2]
-            
-            # Check if UVs are different
-            if any((uvs1[i] - uvs2[i]).length > 0.0001 for i in range(len(uvs1))):
-                # Split the edge
-                result = bmesh.ops.split_edges(bm, edges=[edge], verts=[edge.verts[0], edge.verts[1]])
-                split_count += 1
-        
-        # Update mesh indices
-        bm.verts.index_update()
-        bm.edges.index_update()
-        bm.faces.index_update()
-        
-        self.log_msg(f"Split {split_count} edges along seams")
-        return split_count
 
     def phase_0_prepare_and_store(self, obj):
         """
@@ -386,27 +300,29 @@ class ZENV_OT_MeshToUVSpace(Operator):
 
         if props.do_phase_0:
             result = self.phase_0_prepare_and_store(obj)
-            if result != {'FINISHED'}:
+            if 'CANCELLED' in result:
                 return result
 
         if props.do_phase_2:
             result = self.phase_2_transform_to_uv(obj)
-            if result != {'FINISHED'}:
+            if 'CANCELLED' in result:
                 return result
 
         if props.do_phase_3:
             result = self.phase_3_transform_back(obj)
-            if result != {'FINISHED'}:
+            if 'CANCELLED' in result:
                 return result
 
         if props.do_phase_4:
             result = self.phase_4_merge_by_distance(obj)
-            if result != {'FINISHED'}:
+            if 'CANCELLED' in result:
                 return result
 
         return {'FINISHED'}
+#endregion
 
 
+#region PANEL
 class ZENV_PT_MeshToUVSpace(Panel):
     """Panel for controlling mesh to UV space transformations.
     
@@ -433,8 +349,10 @@ class ZENV_PT_MeshToUVSpace(Panel):
         col.prop(props, "do_phase_4")
         
         layout.operator("zenv.mesh_to_uv_space")
+#endregion
 
-# Registration
+
+#region REG
 classes = (
     ZENV_PG_MeshToUVSpace,
     ZENV_OT_MeshToUVSpace,
@@ -442,14 +360,34 @@ classes = (
 )
 
 def register():
+    """Register the addon classes, scene property, and logger handler."""
+    global _zenv_mesh_uv_console_handler
+    if _zenv_mesh_uv_console_handler is None:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_mesh_uv_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.zenv_mesh_to_uv_props = bpy.props.PointerProperty(type=ZENV_PG_MeshToUVSpace)
+    if not hasattr(bpy.types.Scene, 'zenv_mesh_to_uv_props'):
+        bpy.types.Scene.zenv_mesh_to_uv_props = bpy.props.PointerProperty(type=ZENV_PG_MeshToUVSpace)
 
 def unregister():
-    del bpy.types.Scene.zenv_mesh_to_uv_props
+    """Unregister the addon classes, scene property, and logger handler."""
+    global _zenv_mesh_uv_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
+    if hasattr(bpy.types.Scene, 'zenv_mesh_to_uv_props'):
+        delattr(bpy.types.Scene, 'zenv_mesh_to_uv_props')
+    if _zenv_mesh_uv_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_mesh_uv_console_handler)
+        except ValueError:
+            pass
+        _zenv_mesh_uv_console_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion

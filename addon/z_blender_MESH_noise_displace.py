@@ -1,22 +1,30 @@
+#region META
 bl_info = {
     "name": 'MESH Noise Surface Displacement',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260418',
+    "version": '20260822',
     "description": 'Apply world-space 3D noise patterns to mesh surfaces',
     "status": 'working',
     "approved": True,
-    "sort_priority": '70',
     "group": 'Mesh',
     "group_prefix": 'MESH',
+    "group_order": 20,
+    "addon_order": 60,
+    "tags": ['mesh', 'noise', 'displace', 'surface', 'texture', 'procedural'],
     "description_short": '3D noise-based surface displacement with presets',
+    "description_medium": 'Applies world-space 3D noise patterns to mesh surfaces using Blender mathutils.noise. First cuts the mesh along a world-space grid to increase geometry density, then displaces vertices using one of four preset noise types: Wood Grain, Cracks, Chipped Paint, or Rock Surface. Supports normal-based and Z-axis displacement.',
     "description_long": """
 MESH Noise Surface Displacement - A Blender addon for realistic surface effects.
 Applies world-space 3D noise patterns using bricker-style resolution.
 """,
+    "image_overview": 'zenv_blender_MESH_noise_displace.png',
+    "addon_image": 'zenv_blender_MESH_noise_displace.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import bmesh
 from mathutils import Vector, noise
@@ -25,6 +33,10 @@ from bpy.types import Panel, Operator, PropertyGroup
 
 import logging
 logger = logging.getLogger(__name__)
+#endregion
+
+#region UTILS
+# Utility class with noise calculation, grid cutting, and bounding-box helpers.
 
 class ZENV_NoiseDisplacementUtils:
     """Utility functions for noise displacement"""
@@ -51,8 +63,10 @@ class ZENV_NoiseDisplacementUtils:
     @staticmethod
     def get_mesh_bounds(bm):
         """Calculate mesh bounds in world space."""
-        bounds_min = Vector([min(v.co[i] for v in bm.verts) for i in range(3)])
-        bounds_max = Vector([max(v.co[i] for v in bm.verts) for i in range(3)])
+        import numpy as np
+        coords = np.array([v.co[:] for v in bm.verts])
+        bounds_min = Vector(coords.min(axis=0))
+        bounds_max = Vector(coords.max(axis=0))
         return bounds_min, bounds_max
 
     @staticmethod
@@ -62,7 +76,8 @@ class ZENV_NoiseDisplacementUtils:
         for axis in range(3):
             start = density * (bounds_min[axis] // density)
             num_cuts = int((bounds_max[axis] - start) / density) + 1
-            axis_cuts = [start + (i * density) for i in range(num_cuts)]
+            axis_cuts = [start + (i * density) for i in range(num_cuts)
+                         if start + (i * density) <= bounds_max[axis] + density * 0.5]
             cuts.append(axis_cuts)
         return cuts
 
@@ -99,7 +114,12 @@ class ZENV_NoiseDisplacementUtils:
             small = noise.noise(world_coord * 5.0)
             return (large * 0.5 + medium * 0.3 + small * 0.2) * 0.05  # 50mm max depth
             
+        logger.warning(f"Unknown noise type: {noise_type}, returning 0")
         return 0
+#endregion
+
+#region PROPS
+# Property group for noise displacement settings, registered on the Scene.
 
 class ZENV_PG_NoiseDisplaceProps(PropertyGroup):
     """Properties for noise displacement"""
@@ -142,6 +162,10 @@ class ZENV_PG_NoiseDisplaceProps(PropertyGroup):
         description="Displace along vertex normals for more natural effect",
         default=True
     )
+#endregion
+
+#region OP
+# Operator that applies noise displacement to the active mesh.
 
 class ZENV_OT_NoiseDisplace(Operator):
     """Apply realistic surface effects using world-space 3D noise"""
@@ -153,96 +177,102 @@ class ZENV_OT_NoiseDisplace(Operator):
     _MAX_TOTAL_CUTS = 1500
 
     def execute(self, context):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "Please select a mesh object")
+            return {'CANCELLED'}
+
+        props = context.scene.zenv_noise_props
+
+        # Store original mode and ensure object mode
+        original_mode = obj.mode
         try:
-            obj = context.active_object
-            if not obj or obj.type != 'MESH':
-                self.report({'ERROR'}, "Please select a mesh object")
-                return {'CANCELLED'}
-
-            props = context.scene.zenv_noise_props
-
-            # Store original mode and ensure object mode
-            original_mode = obj.mode
             bpy.ops.object.mode_set(mode='OBJECT')
 
             # Create BMesh
             bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            bm.faces.ensure_lookup_table()
+            try:
+                bm.from_mesh(obj.data)
+                bm.faces.ensure_lookup_table()
 
-            # Get world matrix and bounds
-            world_matrix = ZENV_NoiseDisplacementUtils.get_world_matrix(obj)
-            bounds_min, bounds_max = ZENV_NoiseDisplacementUtils.get_mesh_bounds(bm)
+                # Get world matrix and bounds
+                world_matrix = ZENV_NoiseDisplacementUtils.get_world_matrix(obj)
+                bounds_min, bounds_max = ZENV_NoiseDisplacementUtils.get_mesh_bounds(bm)
 
-            # Calculate grid cuts
-            cuts = ZENV_NoiseDisplacementUtils.calculate_grid_cuts(
-                bounds_min, bounds_max, props.grid_density
-            )
+                # Calculate grid cuts
+                cuts = ZENV_NoiseDisplacementUtils.calculate_grid_cuts(
+                    bounds_min, bounds_max, props.grid_density
+                )
 
-            # Sanity-check how much bisection work , keep below max 
-            total_cuts = sum(len(axis_cuts) for axis_cuts in cuts)
-            if total_cuts > self._MAX_TOTAL_CUTS:
+                # Sanity-check how much bisection work , keep below max
+                total_cuts = sum(len(axis_cuts) for axis_cuts in cuts)
+                if total_cuts > self._MAX_TOTAL_CUTS:
+                    self.report(
+                        {'ERROR'},
+                        f"Grid density too fine: would require {total_cuts} cut planes "
+                        f"(limit {self._MAX_TOTAL_CUTS}). Increase 'Grid Density'."
+                    )
+                    return {'CANCELLED'}
+
+                # Perform cuts for each axis
+                for axis in range(3):
+                    for cut_pos in cuts[axis]:
+                        plane_co = Vector([cut_pos if i == axis else 0 for i in range(3)])
+                        plane_no = Vector([1 if i == axis else 0 for i in range(3)])
+
+                        try:
+                            bmesh.ops.bisect_plane(
+                                bm,
+                                geom=bm.edges[:] + bm.faces[:],
+                                dist=0.0001,
+                                plane_co=plane_co,
+                                plane_no=plane_no
+                            )
+                        except Exception as e:
+                            logger.error(f"Error during cut: {str(e)}")
+
+                # Apply noise displacement
+                for vert in bm.verts:
+                    # Get world space position
+                    world_pos = world_matrix @ vert.co
+
+                    # Calculate noise value
+                    noise_val = ZENV_NoiseDisplacementUtils.get_noise_value(
+                        world_pos, props.noise_type, props.scale
+                    )
+
+                    # Apply displacement
+                    displacement = (
+                        vert.normal if props.use_normal else Vector((0, 0, 1))
+                    ) * noise_val * props.strength
+
+                    vert.co += displacement
+
+                # Update mesh
+                bm.to_mesh(obj.data)
+            finally:
                 bm.free()
-                bpy.ops.object.mode_set(mode=original_mode)
-                self.report(
-                    {'ERROR'},
-                    f"Grid density too fine: would require {total_cuts} cut planes "
-                    f"(limit {self._MAX_TOTAL_CUTS}). Increase 'Grid Density'."
-                )
-                return {'CANCELLED'}
 
-            # Perform cuts for each axis
-            for axis in range(3):
-                for cut_pos in cuts[axis]:
-                    plane_co = Vector([cut_pos if i == axis else 0 for i in range(3)])
-                    plane_no = Vector([1 if i == axis else 0 for i in range(3)])
-
-                    try:
-                        bmesh.ops.bisect_plane(
-                            bm,
-                            geom=bm.edges[:] + bm.faces[:],
-                            dist=0.0001,
-                            plane_co=plane_co,
-                            plane_no=plane_no
-                        )
-                    except Exception as e:
-                        logger.error(f"Error during cut: {str(e)}")
-            
-            # Apply noise displacement
-            for vert in bm.verts:
-                # Get world space position
-                world_pos = world_matrix @ vert.co
-                
-                # Calculate noise value
-                noise_val = ZENV_NoiseDisplacementUtils.get_noise_value(
-                    world_pos, props.noise_type, props.scale
-                )
-                
-                # Apply displacement
-                displacement = (
-                    vert.normal if props.use_normal else Vector((0, 0, 1))
-                ) * noise_val * props.strength
-                
-                vert.co += displacement
-            
-            # Update mesh
-            bm.to_mesh(obj.data)
-            bm.free()
-            
-            # Restore original mode
-            bpy.ops.object.mode_set(mode=original_mode)
-            
             self.report({'INFO'}, "Successfully applied surface effect")
             return {'FINISHED'}
-            
+
         except Exception as e:
             logger.error(f"Error applying surface effect: {str(e)}")
             self.report({'ERROR'}, f"Failed to apply surface effect: {str(e)}")
-            if obj.mode != 'OBJECT':
-                bpy.ops.object.mode_set(mode='OBJECT')
             return {'CANCELLED'}
+        finally:
+            # Restore original mode
+            try:
+                if obj.mode != original_mode:
+                    bpy.ops.object.mode_set(mode=original_mode)
+            except Exception:
+                pass
+#endregion
 
-class ZENV_PT_NoiseDisplacePanel(Panel):
+#region PANEL
+# Sidebar panel in the ZENV category of the 3D Viewport.
+
+class ZENV_PT_NoiseDisplace(Panel):
     """Panel for surface effect settings"""
     bl_label = "MESH Surface Effects"
     bl_idname = "ZENV_PT_noise_displace"
@@ -269,15 +299,13 @@ class ZENV_PT_NoiseDisplacePanel(Panel):
         col.prop(props, "use_normal")
         
         box.operator(ZENV_OT_NoiseDisplace.bl_idname)
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#region REG
 classes = (
     ZENV_PG_NoiseDisplaceProps,
     ZENV_OT_NoiseDisplace,
-    ZENV_PT_NoiseDisplacePanel,
+    ZENV_PT_NoiseDisplace,
 )
 
 def register():
@@ -292,7 +320,9 @@ def unregister():
     """Unregister the addon classes."""
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
-    del bpy.types.Scene.zenv_noise_props
+    if hasattr(bpy.types.Scene, "zenv_noise_props"):
+        del bpy.types.Scene.zenv_noise_props
 
 if __name__ == "__main__":
     register()
+#endregion

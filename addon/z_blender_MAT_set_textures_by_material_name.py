@@ -1,31 +1,42 @@
+#region META
 bl_info = {
     "name": 'MAT Set Textures by Material Name',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260418',
+    "version": '20260822',
     "description": 'Set textures to materials based on material names',
     "status": 'working',
     "approved": True,
-    "sort_priority": '99',
     "group": 'Material',
     "group_prefix": 'MAT',
+    "group_order": 40,
+    "addon_order": 90,
+    "tags": ['material', 'texture', 'assign', 'nodes', 'principled', 'pbr'],
     "description_short": 'assign textures based on material names',
+    "description_medium": 'Scans all materials, strips a configurable suffix (e.g. _MI) from each material name, looks in a user-specified texture directory for matching texture files (by base name + PBR suffix keywords), and recreates the material node tree with Principled BSDF, Image Texture, Normal Map, Displacement, and AO MixRGB nodes as appropriate. Also provides an operator to assign materials to mesh objects by matching mesh names to material names.',
     "description_long": """
-MAT Set Textures by Material Name 
+MAT Set Textures by Material Name
 - A Blender addon for fixing texture paths in materials.
 Recreates material nodes with correct texture paths based on material names.
 """,
+    "image_overview": 'zenv_blender_MAT_set_textures_by_material_name.png',
+    "addon_image": 'zenv_blender_MAT_set_textures_by_material_name.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import os
+import re
 from bpy.types import Operator, Panel, PropertyGroup
 from bpy.props import StringProperty, BoolProperty, PointerProperty
+#endregion
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
+
+#region PROPS
+# Property group for texture directory and material suffix, registered
+# on the Scene.
 
 class ZENV_PG_SetTextureByMaterialName_Properties(PropertyGroup):
     """Properties for setting textures by material name."""
@@ -42,10 +53,12 @@ class ZENV_PG_SetTextureByMaterialName_Properties(PropertyGroup):
         description="Suffix to remove from material names _MI",
         default="_MI"
     )
+#endregion
 
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
+
+#region OP
+# Operators for setting textures by material name and assigning
+# materials to meshes by name.
 
 class ZENV_OT_SetTextureByMaterialName(Operator):
     """Set textures to materials based on material names."""
@@ -53,13 +66,78 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
     bl_label = "Set Textures by Material Name"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # Texture type keyword mappings (class-level constant so it is
+    # built once, not per material).
+    TEXTURE_TYPES = {
+        'color': ['color', 'albedo', 'diffuse', 'basecolor'],
+        'normal': ['normal', 'nrm', 'norm'],
+        'roughness': ['rough', 'roughness', 'rgh'],
+        'metallic': ['metal', 'metallic', 'metalness'],
+        'height': ['height', 'displacement', 'disp'],
+        'ao': ['ao', 'ambient', 'occlusion'],
+    }
+
+    # Texture types that must be interpreted as Non-Color data so
+    # Blender does not apply sRGB -> linear to their pixels.
+    NON_COLOR_TYPES = {'normal', 'roughness', 'metallic', 'height', 'ao'}
+
+    # Processing order: color must be linked before AO so the AO
+    # MixRGB node can re-route the existing Base Color link.
+    PROCESSING_ORDER = ['color', 'normal', 'roughness', 'metallic',
+                        'height', 'ao']
+
+    @classmethod
+    def find_matching_textures(cls, material_name, texture_files):
+        """Find and classify textures matching a material name.
+
+        Args:
+            material_name: Base name of the material (without suffix).
+            texture_files: Pre-filtered list of candidate texture
+                filenames in the texture directory.
+
+        Returns:
+            dict mapping texture type (e.g. ``'color'``) to filename.
+            Empty dict if no matches.
+        """
+        matching_textures = {}
+        untyped_files = []
+
+        for tex_file in texture_files:
+            tex_base = os.path.splitext(tex_file)[0].lower()
+
+            # Check for exact match or prefixed match
+            if tex_base != material_name.lower() and not tex_base.startswith(material_name.lower() + '_'):
+                continue
+
+            # Determine texture type
+            tex_type = None
+            for type_name, keywords in cls.TEXTURE_TYPES.items():
+                if any(keyword in tex_base for keyword in keywords):
+                    tex_type = type_name
+                    break
+
+            if tex_type:
+                matching_textures[tex_type] = tex_file
+            else:
+                # Collect untyped files; the first one will be
+                # assigned as color after the loop (independent of
+                # file ordering).
+                untyped_files.append(tex_file)
+
+        # Assign the first untyped file as color if no explicit color
+        # texture was found. This is independent of file ordering.
+        if 'color' not in matching_textures and untyped_files:
+            matching_textures['color'] = untyped_files[0]
+
+        return matching_textures
+
     def execute(self, context):
         """Execute the texture set operation."""
         try:
             props = context.scene.zenv_set_textures_props
             texture_dir = os.path.normpath(props.texture_dir)
             suffix = props.material_suffix
-            
+
             if not texture_dir or not os.path.exists(texture_dir):
                 self.report({'ERROR'}, f"Texture directory does not exist: {texture_dir}")
                 return {'CANCELLED'}
@@ -110,7 +188,7 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
             else:
                 self.report({'WARNING'}, f"No materials were processed, {skipped_count} skipped")
                 return {'CANCELLED'}
-                
+
         except Exception as e:
             self.report({'ERROR'}, f"Error: {str(e)}")
             return {'CANCELLED'}
@@ -129,58 +207,35 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
         Returns:
             bool: True if material was processed successfully
         """
-        # Define texture type mappings
-        TEXTURE_TYPES = {
-            'color': ['color', 'albedo', 'diffuse', 'basecolor'],
-            'normal': ['normal', 'nrm', 'norm'],
-            'roughness': ['rough', 'roughness', 'rgh'],
-            'metallic': ['metal', 'metallic', 'metalness'],
-            'height': ['height', 'displacement', 'disp'],
-            'ao': ['ao', 'ambient', 'occlusion']
-        }
+        # Find matching textures using the extracted classmethod
+        matching_textures = self.find_matching_textures(material_name, texture_files)
 
-        # Find matching textures
-        matching_textures = {}
-        for tex_file in texture_files:
-            tex_base = os.path.splitext(tex_file)[0].lower()
-            
-            # Check for exact match or prefixed match
-            if tex_base == material_name.lower() or tex_base.startswith(material_name.lower() + '_'):
-                # Determine texture type
-                tex_type = None
-                for type_name, keywords in TEXTURE_TYPES.items():
-                    if any(keyword in tex_base for keyword in keywords):
-                        tex_type = type_name
-                        break
-                
-                if tex_type:
-                    matching_textures[tex_type] = tex_file
-                elif len(matching_textures) == 0:  # If no type detected and no textures yet, assume color
-                    matching_textures['color'] = tex_file
-        
         if not matching_textures:
             return False
-        
+
         # Clear and recreate nodes
         nodes = material.node_tree.nodes
         links = material.node_tree.links
         nodes.clear()
-        
+
         # Create main nodes
         output = nodes.new('ShaderNodeOutputMaterial')
         principled = nodes.new('ShaderNodeBsdfPrincipled')
         output.location = (300, 0)
         principled.location = (0, 0)
-        
+
         # Link main nodes
         links.new(principled.outputs[0], output.inputs[0])
-        
-        # Texture types that must be interpreted as Non-Color data so
-        # Blender does not apply sRGB -> linear to their pixels.
-        NON_COLOR_TYPES = {'normal', 'roughness', 'metallic', 'height', 'ao'}
 
-        # Process each texture type
-        for i, (tex_type, tex_file) in enumerate(matching_textures.items()):
+        # Process textures in a deterministic order so that color is
+        # linked before AO (AO MixRGB re-routes the Base Color link).
+        ordered_items = [
+            (t, matching_textures[t])
+            for t in self.PROCESSING_ORDER
+            if t in matching_textures
+        ]
+
+        for i, (tex_type, tex_file) in enumerate(ordered_items):
             try:
                 # Create texture node
                 tex = nodes.new('ShaderNodeTexImage')
@@ -189,7 +244,7 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
                 tex.image = img
                 tex.location = (-300, i * -300)
 
-                if tex_type in NON_COLOR_TYPES:
+                if tex_type in self.NON_COLOR_TYPES:
                     try:
                         img.colorspace_settings.name = 'Non-Color'
                     except Exception:
@@ -225,12 +280,13 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
                         links.new(base_color, mix.inputs[1])
                         links.new(tex.outputs['Color'], mix.inputs[2])
                         links.new(mix.outputs['Color'], principled.inputs['Base Color'])
-            
+
             except Exception as e:
                 self.report({'WARNING'}, f"Failed to process texture {tex_file}: {str(e)}")
                 continue
-        
+
         return True
+
 
 class ZENV_OT_AssignMaterialsByMeshName(Operator):
     """Assign materials to meshes based on matching names."""
@@ -241,8 +297,6 @@ class ZENV_OT_AssignMaterialsByMeshName(Operator):
     def execute(self, context):
         """Execute the material assignment operation."""
         try:
-            import re
-            
             # Get all mesh objects in the scene
             mesh_objects = [obj for obj in bpy.data.objects if obj.type == 'MESH']
             
@@ -298,12 +352,13 @@ class ZENV_OT_AssignMaterialsByMeshName(Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Error: {str(e)}")
             return {'CANCELLED'}
+#endregion
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
 
-class ZENV_PT_SetTextureByMaterialNamePanel(Panel):
+#region PANEL
+# Sidebar panel in the ZENV category of the 3D Viewport.
+
+class ZENV_PT_SetTextureByMaterialName(Panel):
     """Panel for fixing texture paths."""
     bl_label = "MAT Set Textures by Material Name"
     bl_idname = "ZENV_PT_set_textures_by_material_name"
@@ -325,16 +380,15 @@ class ZENV_PT_SetTextureByMaterialNamePanel(Panel):
         
         box.separator()
         box.operator(ZENV_OT_AssignMaterialsByMeshName.bl_idname)
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
 
+#region REG
 classes = (
     ZENV_PG_SetTextureByMaterialName_Properties,
     ZENV_OT_SetTextureByMaterialName,
     ZENV_OT_AssignMaterialsByMeshName,
-    ZENV_PT_SetTextureByMaterialNamePanel,
+    ZENV_PT_SetTextureByMaterialName,
 )
 
 def register():
@@ -353,3 +407,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+#endregion

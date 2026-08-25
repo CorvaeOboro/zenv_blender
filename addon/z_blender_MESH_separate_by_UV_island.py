@@ -1,32 +1,54 @@
+#region META
 bl_info = {
     "name": 'MESH Separate by UV Islands',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260418',
+    "version": '20260823',
     "description": 'Separates mesh into individual objects based on UV islands',
     "status": 'working',
     "approved": True,
-    "sort_priority": '2',
     "group": 'Mesh',
     "group_prefix": 'MESH',
+    "group_order": 20,
+    "addon_order": 20,
+    "tags": ['UV split', 'mesh separate', 'islands'],
     "description_short": 'for each uv island detach mesh into parts',
+    "description_medium": 'Separates a mesh into individual objects based on UV islands. Also provides a per-face separation mode with a confirmation dialog for large face counts.',
     "description_long": """
 MESH SEPARATE BY UV
  separates mesh into individual objects based on UV islands
  useful for splitting objects that share UV space into separate objects
 """,
     "location": 'View3D > ZENV',
+    "image_overview": 'zenv_blender_MESH_separate_by_UV_island.png',
+    "addon_image": 'zenv_blender_MESH_separate_by_UV_island.png',
 }
 
+#region IMPORT
 import bpy
 import bmesh
+import logging
 from mathutils import Vector
 
+logger = logging.getLogger(__name__)
+_logger_handler = None
+
+#endregion
+#region OP
 class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
     """Separate the mesh by UV islands - splits mesh into individual objects based on UV borders"""
     bl_idname = "zenv.separatebyuv_islands"
     bl_label = "Separate by UV Islands"
     bl_options = {'REGISTER', 'UNDO'}
+
+    # UV coordinate comparison tolerance for island detection.
+    _UV_EPSILON = 1e-5
+
+    @classmethod
+    def poll(cls, context):
+        """Only enable when the active object is a mesh."""
+        obj = context.active_object
+        return obj is not None and obj.type == 'MESH'
 
     def get_linked_faces_uv(self, start_face, uv_layer, processed_faces):
         """Find all faces connected in UV space"""
@@ -45,33 +67,34 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
             for edge in current_face.edges:
                 # Get connected faces through this edge
                 connected_faces = set(f for f in edge.link_faces if f != current_face)
-                
+
                 for connected_face in connected_faces:
                     if connected_face in processed_faces:
                         continue
 
-                    # Check if faces share UV coordinates along the edge
-                    shares_uv = False
+                    # Check if faces share UV coordinates along the edge.
+                    # Build vert -> UV dicts for both faces restricted to the
+                    # shared edge's vertices, then compare them directly.
                     edge_verts = set(edge.verts)
-                    
-                    # Get UV coordinates for the edge in current face
                     current_uvs = {}
                     for loop in current_face.loops:
                         if loop.vert in edge_verts:
                             current_uvs[loop.vert] = loop[uv_layer].uv
-                    
-                    # Check UV coordinates in connected face
+                    connected_uvs = {}
                     for loop in connected_face.loops:
                         if loop.vert in edge_verts:
-                            connected_uv = loop[uv_layer].uv
-                            if loop.vert in current_uvs:
-                                # Compare UVs
-                                if (connected_uv - current_uvs[loop.vert]).length < 0.00001:
-                                    shares_uv = True
-                                else:
-                                    shares_uv = False
-                                    break
-                    
+                            connected_uvs[loop.vert] = loop[uv_layer].uv
+
+                    # Faces share UV along this edge only if every shared vert
+                    # has matching UVs within epsilon.
+                    shares_uv = False
+                    common_verts = set(current_uvs) & set(connected_uvs)
+                    if common_verts:
+                        shares_uv = all(
+                            (connected_uvs[v] - current_uvs[v]).length < self._UV_EPSILON
+                            for v in common_verts
+                        )
+
                     if shares_uv:
                         faces_to_process.add(connected_face)
 
@@ -116,11 +139,6 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
                          for i in range(len(src_uv_layers))]
         new_uv_layers = [new_bm.loops.layers.uv.new(name) for name in src_uv_names]
 
-        # The UV layer used for island detection must still be present and
-        # matched to its new-bmesh counterpart.
-        topo_layer_index = src_uv_layers.index(uv_layer) if uv_layer in src_uv_layers else 0
-        topo_new_layer = new_uv_layers[topo_layer_index]
-
         skipped_faces = 0
         for face in island_faces:
             new_verts = [vert_map[v] for v in face.verts]
@@ -160,6 +178,7 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
         return new_obj
 
     def execute(self, context):
+        original_mode = None
         try:
             obj = context.active_object
             if not obj or obj.type != 'MESH':
@@ -184,6 +203,7 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
 
             # Find UV islands
             islands = self.find_uv_islands(bm, uv_layer)
+            logger.info("Found %d UV island(s) on '%s'", len(islands), obj.name)
             
             if not islands:
                 bm.free()
@@ -218,8 +238,12 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
         except Exception as e:
             if 'bm' in locals():
                 bm.free()
-            if 'obj' in locals() and obj:
-                bpy.ops.object.mode_set(mode=original_mode)
+            if original_mode is not None and context.view_layer.objects.active is not None:
+                try:
+                    bpy.ops.object.mode_set(mode=original_mode)
+                except RuntimeError:
+                    pass
+            logger.exception("Failed to separate mesh by UV islands")
             self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
             return {'CANCELLED'}
 
@@ -229,6 +253,12 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
     bl_idname = "zenv.separatebyuv_faces"
     bl_label = "Separate All Faces"
     bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        """Only enable when the active object is a mesh."""
+        obj = context.active_object
+        return obj is not None and obj.type == 'MESH'
 
     # Above this face count show an info dialog before proceeding.
     _CONFIRM_THRESHOLD = 7000
@@ -307,6 +337,7 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
         return new_obj
 
     def execute(self, context):
+        original_mode = None
         try:
             obj = context.active_object
             if not obj or obj.type != 'MESH':
@@ -327,11 +358,18 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
 
             uv_layer = bm.loops.layers.uv.verify()
 
+            face_count = len(bm.faces)
+            logger.info("Separating '%s' into %d face object(s)", obj.name, face_count)
+            wm = context.window_manager
+            wm.progress_begin(0, face_count)
             new_objects = []
             for i, face in enumerate(bm.faces):
                 new_obj = self.duplicate_face(context, bm, obj, face, i)
                 if new_obj is not None:
                     new_objects.append(new_obj)
+                if i % 100 == 0:
+                    wm.progress_update(i)
+            wm.progress_end()
 
             if new_objects:
                 bpy.data.objects.remove(obj, do_unlink=True)
@@ -352,13 +390,19 @@ class ZENV_OT_MeshSeparateByUVFace(bpy.types.Operator):
         except Exception as e:
             if 'bm' in locals():
                 bm.free()
-            if 'obj' in locals() and obj:
-                bpy.ops.object.mode_set(mode=original_mode)
+            if original_mode is not None and context.view_layer.objects.active is not None:
+                try:
+                    bpy.ops.object.mode_set(mode=original_mode)
+                except RuntimeError:
+                    pass
+            logger.exception("Failed to separate mesh by faces")
             self.report({'ERROR'}, f"Error separating mesh: {str(e)}")
             return {'CANCELLED'}
 
 
-class ZENV_PT_MeshSeparateByUVIsland_Panel(bpy.types.Panel):
+#endregion
+#region PANEL
+class ZENV_PT_MeshSeparateByUVIsland(bpy.types.Panel):
     """Panel for UV island separation tools"""
     bl_label = "MESH Separate by UV Islands"
     bl_idname = "ZENV_PT_separate_by_uv"
@@ -371,19 +415,35 @@ class ZENV_PT_MeshSeparateByUVIsland_Panel(bpy.types.Panel):
         layout.operator("zenv.separatebyuv_islands", icon='OUTLINER_OB_MESH')
         layout.operator("zenv.separatebyuv_faces", icon='OUTLINER_OB_MESH')
 
+#endregion
+#region REG
 classes = (
     ZENV_OT_MeshSeparateByUVIsland,
     ZENV_OT_MeshSeparateByUVFace,
-    ZENV_PT_MeshSeparateByUVIsland_Panel,
+    ZENV_PT_MeshSeparateByUVIsland,
 )
 
 def register():
+    """Register all addon classes and configure the module logger handler."""
+    global _logger_handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
+    if _logger_handler is None:
+        _logger_handler = logging.StreamHandler()
+        _logger_handler.setFormatter(logging.Formatter('%(name)s: %(levelname)s: %(message)s'))
+        logger.addHandler(_logger_handler)
+    if not logger.level:
+        logger.setLevel(logging.INFO)
 
 def unregister():
+    """Unregister all addon classes and remove the module logger handler."""
+    global _logger_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
+    if _logger_handler is not None:
+        logger.removeHandler(_logger_handler)
+        _logger_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion

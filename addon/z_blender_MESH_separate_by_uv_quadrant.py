@@ -1,14 +1,16 @@
+#region META
 bl_info = {
     "name": 'MESH Separate by UV Quadrants',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250809',
+    "version": '20260822',
     "description": 'Separate mesh into sliced objects based on UV space quadrants',
     "status": 'working',
     "approved": True,
-    "sort_priority": '3',
     "group": 'Mesh',
     "group_prefix": 'MESH',
+    "group_order": 20,
+    "addon_order": 30,
     "tags": ['UV split'],
     "description_short": 'split mesh along UV seams and transform',
     "description_medium": 'Separate mesh into sliced objects based on UV space quadrants , useful to cut a tiling landscape texture into its texture "tiles" for painting or transition baking',
@@ -18,17 +20,27 @@ the selected mesh is sliced and separated into objects based on UV space quadran
 stores original positions , transforms the mesh to UV space to slice
 then transforms back to original positions and localizes UV to zero to one space
 """,
+    "image_overview": 'zenv_blender_MESH_separate_by_uv_quadrant.png',
+    "addon_image": 'zenv_blender_MESH_separate_by_uv_quadrant.png',
     "location": 'View3D > Sidebar > ZENV',
-    "doc_url": '',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import bmesh
+import logging
 from mathutils import Vector, Matrix
 from bpy.types import Panel, Operator, PropertyGroup
 import math
 
-class ZENV_PG_MeshSeparateByUVQuadrant_Properties(PropertyGroup):
+logger = logging.getLogger(__name__)
+_zenv_uv_quad_console_handler = None
+#endregion
+
+
+#region PROPS
+class ZENV_PG_MeshSeparateByUVQuadrant(PropertyGroup):
     do_phase_0: bpy.props.BoolProperty(
         name="Phase 0: Prepare Mesh",
         default=True,
@@ -62,7 +74,10 @@ class ZENV_PG_MeshSeparateByUVQuadrant_Properties(PropertyGroup):
         max=10.0,
         step=1
     )
+#endregion
 
+
+#region OP
 class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
     """Separate mesh into separate objects based on UV quadrants.
     
@@ -75,10 +90,16 @@ class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
     bl_idname = "zenv.split_uv_quadrant"
     bl_label = "Separate UV Quadrants"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
+    @classmethod
+    def poll(cls, context):
+        """Only enable when there is an active mesh object."""
+        obj = context.active_object
+        return obj is not None and obj.type == 'MESH'
+
     def log_msg(self, message):
-        """Print a message to console and Blender's info area"""
-        print(message)
+        """Log a message via the logger and report it to Blender's info area."""
+        logger.info(message)
         self.report({'INFO'}, message)
 
     def phase_0_prepare_and_store(self, obj):
@@ -468,12 +489,6 @@ class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
         self.log_msg("Transformed objects back to 3D space")
         return {'FINISHED'}
 
-    def phase_4_merge_by_distance(self, context):
-        """(DISABLED) Merge vertices and UVs at very small distances to reconstruct the meshes (no-op as per user request)"""
-        self.log_msg("=== PHASE 4: Merging Vertices and UVs (DISABLED) ===")
-        # No operation performed to avoid collapsing meshes
-        return {'FINISHED'}
-
     def phase_4_move_uvs_to_01(self, context):
         """Offset each mesh's UVs so their original tile/quadrant is mapped to 0-1, preserving texture mapping."""
         self.log_msg("=== PHASE 5: Move UVs to 0-1 Space (per tile offset)===" )
@@ -523,27 +538,27 @@ class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
             props = context.scene.zenv_split_uv_props
             if props.do_phase_0:
                 result = self.phase_0_prepare_and_store(obj)
-                if result != {'FINISHED'}:
+                if 'CANCELLED' in result:
                     return result
 
             if props.do_phase_1:
                 result = self.phase_1_to_uv_space(obj)
-                if result != {'FINISHED'}:
+                if 'CANCELLED' in result:
                     return result
 
             if props.do_phase_2:
                 result = self.phase_2_separate_quadrants(obj)
-                if result != {'FINISHED'}:
+                if 'CANCELLED' in result:
                     return result
 
             if props.do_phase_3:
                 result = self.phase_3_to_3d_space(context)
-                if result != {'FINISHED'}:
+                if 'CANCELLED' in result:
                     return result
 
             if props.do_phase_4:
                 result = self.phase_4_move_uvs_to_01(context)
-                if result != {'FINISHED'}:
+                if 'CANCELLED' in result:
                     return result
 
             self.report({'INFO'}, "Successfully separated mesh by UV quadrants")
@@ -557,8 +572,11 @@ class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
             except Exception:
                 pass
             return {'CANCELLED'}
+#endregion
 
-class ZENV_PT_MeshSeparateByUVQuadrant_Panel(Panel):
+
+#region PANEL
+class ZENV_PT_MeshSeparateByUVQuadrant(Panel):
     """Panel for controlling UV quadrant separating operations.
     
     Provides controls for:
@@ -589,23 +607,45 @@ class ZENV_PT_MeshSeparateByUVQuadrant_Panel(Panel):
         box.prop(props, "quadrant_size")
         
         layout.operator("zenv.split_uv_quadrant")
+#endregion
 
-# Registration
+
+#region REG
 classes = (
-    ZENV_PG_MeshSeparateByUVQuadrant_Properties,
+    ZENV_PG_MeshSeparateByUVQuadrant,
     ZENV_OT_MeshSeparateByUVQuadrant,
-    ZENV_PT_MeshSeparateByUVQuadrant_Panel,
+    ZENV_PT_MeshSeparateByUVQuadrant,
 )
 
 def register():
+    """Register the addon classes, scene property, and logger handler."""
+    global _zenv_uv_quad_console_handler
+    if _zenv_uv_quad_console_handler is None:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_uv_quad_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.zenv_split_uv_props = bpy.props.PointerProperty(type=ZENV_PG_MeshSeparateByUVQuadrant_Properties)
+    if not hasattr(bpy.types.Scene, 'zenv_split_uv_props'):
+        bpy.types.Scene.zenv_split_uv_props = bpy.props.PointerProperty(type=ZENV_PG_MeshSeparateByUVQuadrant)
 
 def unregister():
-    del bpy.types.Scene.zenv_split_uv_props
+    """Unregister the addon classes, scene property, and logger handler."""
+    global _zenv_uv_quad_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
+    if hasattr(bpy.types.Scene, 'zenv_split_uv_props'):
+        delattr(bpy.types.Scene, 'zenv_split_uv_props')
+    if _zenv_uv_quad_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_uv_quad_console_handler)
+        except ValueError:
+            pass
+        _zenv_uv_quad_console_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion

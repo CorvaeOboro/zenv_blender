@@ -1,23 +1,31 @@
+#region META
 bl_info = {
     "name": 'MESH Angular Planarize',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250809',
+    "version": '20260822',
     "description": 'Converts smooth meshes into angular forms using normal-based clustering',
     "status": 'working',
     "approved": True,
-    "sort_priority": '90',
     "group": 'Mesh',
     "group_prefix": 'MESH',
+    "group_order": 20,
+    "addon_order": 90,
+    "tags": ['mesh', 'planarize', 'angular', 'kmeans', 'cluster', 'normal'],
     "description_short": 'planarize mesh faces by random k-means angle cluster , useful for rock like sharpening with flat areas',
+    "description_medium": 'Converts smooth meshes into angular forms by clustering vertex normals with k-means, computing an average plane for each cluster, and displacing vertices toward their cluster plane. Optional boundary smoothing blends vertices at cluster boundaries. Useful for rock-like sharpening with flat areas.',
     "description_long": """
 MESH Angular Planarize - Normal-based clustering approach
 Converts smooth meshes into angular forms using k-means clustering
 of vertex normals and planar displacement.
 """,
+    "image_overview": 'zenv_blender_MESH_angular_planarize.png',
+    "addon_image": 'zenv_blender_MESH_angular_planarize.png',
     "location": 'View3D > ZENV',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import bmesh
 import numpy as np
@@ -33,11 +41,11 @@ from bpy.types import Panel, Operator, PropertyGroup
 
 logger = logging.getLogger(__name__)
 _zenv_angular_planarize_console_handler = None
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Property Group
-# ------------------------------------------------------------------------
+#region PROPS
+# Property group for angular planarize settings, registered on the Scene.
 
 class ZENV_PG_MeshAngularPlanarize_Props(PropertyGroup):
     """Properties for angular planarization"""
@@ -58,61 +66,65 @@ class ZENV_PG_MeshAngularPlanarize_Props(PropertyGroup):
         max=1.0
     )
     
-    preserve_volume: BoolProperty(
-        name="Preserve Volume",
-        description="Try to maintain the original mesh volume",
-        default=True
-    )
-    
     smooth_boundaries: BoolProperty(
         name="Smooth Boundaries",
         description="Apply light smoothing at cluster boundaries",
         default=True
     )
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Planarization Utility Functions
-# ------------------------------------------------------------------------
+#region UTILS
+# Utility class with k-means clustering and mesh planarization helpers.
 
 class ZENV_MeshAngularPlanarizeUtils:
     """Utility functions for mesh planarization and clustering"""
-    
+
     @staticmethod
     def _euclidean_distance(x1, x2):
         """Calculate Euclidean distance between two points"""
         return np.sqrt(np.sum((x1 - x2) ** 2))
 
     @staticmethod
-    def _init_centroids(data, k):
+    def _init_centroids(data, k, rng=None):
         """Initialize k centroids using k-means++ method"""
+        if rng is None:
+            rng = np.random
         n_samples = len(data)
-        centroids = [data[np.random.randint(n_samples)]]
-        
+        centroids = [data[rng.randint(n_samples)]]
+
         for _ in range(k - 1):
             # Calculate distances from points to nearest centroid
-            distances = np.array([
-                min([ZENV_MeshAngularPlanarizeUtils._euclidean_distance(x, c) for c in centroids])
-                for x in data
-            ])
-            
+            # using vectorized numpy operations.
+            diff = data[:, None, :] - np.array(centroids)[None, :, :]
+            dists = np.sqrt(np.sum(diff ** 2, axis=2))
+            distances = dists.min(axis=1)
+
             # Choose next centroid with probability proportional to distance squared
             probs = distances ** 2
-            probs /= probs.sum()
+            total = probs.sum()
+            if total == 0:
+                # All points coincide with centroids; pick random.
+                centroids.append(data[rng.randint(n_samples)])
+                continue
+            probs /= total
             cumprobs = probs.cumsum()
-            r = np.random.random()
-            
+            r = rng.random()
+
             for j, p in enumerate(cumprobs):
                 if r < p:
                     centroids.append(data[j])
                     break
-        
+
         return np.array(centroids)
 
     @staticmethod
     def _assign_clusters(data, centroids):
-        """Assign each point to nearest centroid"""
-        distances = np.array([[ZENV_MeshAngularPlanarizeUtils._euclidean_distance(x, c) for c in centroids] for x in data])
+        """Assign each point to nearest centroid (vectorized)."""
+        # data: (n, d), centroids: (k, d)
+        # Compute pairwise distances via broadcasting.
+        diff = data[:, None, :] - centroids[None, :, :]
+        distances = np.sqrt(np.sum(diff ** 2, axis=2))
         return np.argmin(distances, axis=1)
 
     @staticmethod
@@ -128,34 +140,37 @@ class ZENV_MeshAngularPlanarizeUtils:
         return centroids
 
     @staticmethod
-    def compute_clusters(normals, cluster_count, max_iter=100, tol=1e-4):
+    def compute_clusters(normals, cluster_count, max_iter=100, tol=1e-4, seed=None):
         """Perform k-means clustering on vertex normals
-        
+
         Args:
             normals: numpy array of shape (n_samples, n_features)
             cluster_count: number of clusters to create
             max_iter: maximum number of iterations
             tol: tolerance for convergence
-        
+            seed: optional random seed for reproducibility
+
         Returns:
             labels: cluster assignments for each point
         """
+        rng = np.random.RandomState(seed) if seed is not None else np.random
+
         # Initialize centroids using k-means++
-        centroids = ZENV_MeshAngularPlanarizeUtils._init_centroids(normals, cluster_count)
-        
+        centroids = ZENV_MeshAngularPlanarizeUtils._init_centroids(normals, cluster_count, rng)
+
         for _ in range(max_iter):
             old_centroids = centroids.copy()
-            
+
             # Assign points to nearest centroid
             labels = ZENV_MeshAngularPlanarizeUtils._assign_clusters(normals, centroids)
-            
+
             # Update centroids
             centroids = ZENV_MeshAngularPlanarizeUtils._update_centroids(normals, labels, cluster_count)
-            
+
             # Check for convergence
             if np.all(np.abs(old_centroids - centroids) < tol):
                 break
-        
+
         return labels
     
     @staticmethod
@@ -185,13 +200,13 @@ class ZENV_MeshAngularPlanarizeUtils:
         # Smooth boundary vertices
         for v in boundary_verts:
             connected = [e.other_vert(v) for e in v.link_edges]
-            avg_pos = sum((v.co for v in connected), Vector()) / len(connected)
+            avg_pos = sum((cv.co for cv in connected), Vector()) / len(connected)
             v.co = v.co.lerp(avg_pos, strength)
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Main Operator
-# ------------------------------------------------------------------------
+#region OP
+# Operator that performs angular planarization on the active mesh.
 
 class ZENV_OT_MeshAngularPlanarize(Operator):
     """Convert smooth mesh into angular form using normal-based clustering"""
@@ -202,65 +217,69 @@ class ZENV_OT_MeshAngularPlanarize(Operator):
     def execute(self, context):
         props = context.scene.angular_planarize_props
         obj = context.active_object
-        
+
         if obj is None or obj.type != 'MESH':
             self.report({'ERROR'}, "Please select a mesh object")
             return {'CANCELLED'}
-        
-        # Get mesh data
+
         bm = bmesh.new()
-        bm.from_mesh(obj.data)
-        bm.normal_update()
-        
-        # Prepare data for clustering
-        normals = np.array([v.normal[:] for v in bm.verts])
-        positions = np.array([v.co[:] for v in bm.verts])
-        
-        # Perform clustering
-        clusters = ZENV_MeshAngularPlanarizeUtils.compute_clusters(
-            normals, 
-            props.cluster_count
-        )
-        
-        # Process each cluster
-        for cluster_id in range(props.cluster_count):
-            cluster_mask = clusters == cluster_id
-            if not np.any(cluster_mask):
-                continue
-            
-            # Get cluster data
-            avg_normal, centroid = ZENV_MeshAngularPlanarizeUtils.get_cluster_data(
-                positions, normals, cluster_id, cluster_mask
+        try:
+            bm.from_mesh(obj.data)
+            bm.normal_update()
+
+            # Prepare data for clustering
+            normals = np.array([v.normal[:] for v in bm.verts])
+            positions = np.array([v.co[:] for v in bm.verts])
+
+            # Perform clustering
+            clusters = ZENV_MeshAngularPlanarizeUtils.compute_clusters(
+                normals,
+                props.cluster_count
             )
-            
-            # Calculate plane equation
-            d = avg_normal.dot(centroid)
-            
-            # Update vertex positions
-            for i, v in enumerate(bm.verts):
-                if clusters[i] == cluster_id:
-                    current_d = avg_normal.dot(v.co)
-                    diff = current_d - d
-                    displacement = diff * avg_normal * props.displacement_strength
-                    v.co -= displacement
-        
-        # Optional boundary smoothing
-        if props.smooth_boundaries:
-            ZENV_MeshAngularPlanarizeUtils.smooth_boundaries(bm, clusters, 0.3)
-        
-        # Update mesh
-        bm.to_mesh(obj.data)
-        obj.data.update()
-        bm.free()
-        
+
+            # Process each cluster
+            for cluster_id in range(props.cluster_count):
+                cluster_mask = clusters == cluster_id
+                if not np.any(cluster_mask):
+                    continue
+
+                # Get cluster data
+                avg_normal, centroid = ZENV_MeshAngularPlanarizeUtils.get_cluster_data(
+                    positions, normals, cluster_id, cluster_mask
+                )
+
+                # Calculate plane equation
+                d = avg_normal.dot(centroid)
+
+                # Update vertex positions
+                for i, v in enumerate(bm.verts):
+                    if clusters[i] == cluster_id:
+                        current_d = avg_normal.dot(v.co)
+                        diff = current_d - d
+                        displacement = diff * avg_normal * props.displacement_strength
+                        v.co -= displacement
+
+            # Optional boundary smoothing
+            if props.smooth_boundaries:
+                ZENV_MeshAngularPlanarizeUtils.smooth_boundaries(bm, clusters, 0.3)
+
+            # Update mesh
+            bm.to_mesh(obj.data)
+            obj.data.update()
+        except Exception as e:
+            self.report({'ERROR'}, f"Error during planarization: {str(e)}")
+            return {'CANCELLED'}
+        finally:
+            bm.free()
+
         return {'FINISHED'}
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
+#region PANEL
+# Sidebar panel in the ZENV category of the 3D Viewport.
 
-class ZENV_PT_MeshAngularPlanarize_Panel(Panel):
+class ZENV_PT_MeshAngularPlanarize(Panel):
     """Panel for angular planarize settings"""
     bl_label = "MESH Angular Planarize"
     bl_idname = "ZENV_PT_angular_planarize_panel"
@@ -274,59 +293,45 @@ class ZENV_PT_MeshAngularPlanarize_Panel(Panel):
         
         layout.prop(props, "cluster_count")
         layout.prop(props, "displacement_strength")
-        layout.prop(props, "preserve_volume")
         layout.prop(props, "smooth_boundaries")
         
         layout.separator()
         layout.operator(ZENV_OT_MeshAngularPlanarize.bl_idname)
+#endregion
 
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#region REG
 classes = (
     ZENV_PG_MeshAngularPlanarize_Props,
     ZENV_OT_MeshAngularPlanarize,
-    ZENV_PT_MeshAngularPlanarize_Panel,
+    ZENV_PT_MeshAngularPlanarize,
 )
 
-def _install_logger():
-    """Attach a single StreamHandler to ``logger`` (idempotent)."""
-    global _zenv_angular_planarize_console_handler
-    if _zenv_angular_planarize_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_angular_planarize_console_handler = handler
-
-
-def _uninstall_logger():
-    """Remove the handler added by :func:`_install_logger`."""
+def register():
     global _zenv_angular_planarize_console_handler
     if _zenv_angular_planarize_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_angular_planarize_console_handler)
-    except ValueError:
-        pass
-    _zenv_angular_planarize_console_handler = None
-
-
-def register():
-    _install_logger()
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _zenv_angular_planarize_console_handler = handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     bpy.types.Scene.angular_planarize_props = PointerProperty(type=ZENV_PG_MeshAngularPlanarize_Props)
 
 def unregister():
+    global _zenv_angular_planarize_console_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     del bpy.types.Scene.angular_planarize_props
-    _uninstall_logger()
+    if _zenv_angular_planarize_console_handler is not None:
+        try:
+            logger.removeHandler(_zenv_angular_planarize_console_handler)
+        except ValueError:
+            pass
+        _zenv_angular_planarize_console_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion
