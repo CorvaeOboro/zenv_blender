@@ -389,7 +389,7 @@ class ZENV_WoodGrainUtils:
         """
         Create lists of plane positions for each axis, clamped to max_slices.
         All three axes are subdivided so that wide faces receive an internal
-        vertex grid — this is required for grooves to form across the face of
+        vertex grid - this is required for grooves to form across the face of
         a board, not just along its perimeter.
         """
         all_positions = [[], [], []]
@@ -789,7 +789,7 @@ def register():
 
 def unregister():
     # Delete the Scene PointerProperty BEFORE unregistering the
-    # PropertyGroup class — Blender refuses to unregister a class that is
+    # PropertyGroup class - Blender refuses to unregister a class that is
     # still referenced by an active property, and the resulting RuntimeError
     # would leave the old class stuck in RNA.
     if hasattr(bpy.types.Scene, 'zenv_wood_props'):

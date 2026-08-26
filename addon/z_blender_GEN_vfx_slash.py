@@ -1,5 +1,4 @@
 #region META
-# Addon metadata - Blender's bl_info dict plus ZENV extended fields.
 bl_info = {
     "name": 'GEN VFX Slash',
     "blender": (4, 0, 0),

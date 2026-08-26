@@ -9,6 +9,8 @@ bl_info = {
     "sort_priority": '1',
     "group": 'UV',
     "group_prefix": 'UV',
+    "group_order": 80,
+    "addon_order": 10,
     "description_short": 'U or V mirroring with pivot always at zero instead of the default of selected center',
     "description_long": """
 UV MIRROR ZERO PIVOT

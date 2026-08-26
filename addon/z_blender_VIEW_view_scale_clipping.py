@@ -1,27 +1,39 @@
+#region META
 bl_info = {
     "name": 'VIEW Scale Clipping',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20260418',
+    "version": '20260823',
     "description": 'Adjust viewport clipping based on object size',
     "status": 'working',
     "approved": True,
-    "sort_priority": '2',
     "group": 'View',
     "group_prefix": 'VIEW',
+    "group_order": 70,
+    "addon_order": 20,
+    "tags": ['viewport', 'clipping', 'bounds', 'view fit'],
     "description_short": 'uses bounds of objects in scene to set near and far clipping',
+    "description_medium": 'Adjusts viewport near/far clipping planes and view distance based on the aggregated bounding box of all scene objects.',
     "description_long": """
 VIEW Scale Clipping
  adjusts viewport clipping and view settings based on object size
 """,
     "location": 'View3D > Sidebar > ZENV > VIEW Scale Clipping',
+    "image_overview": 'zenv_blender_VIEW_view_scale_clipping.png',
+    "addon_image": 'zenv_blender_VIEW_view_scale_clipping.png',
 }
 
+#region IMPORT
 import bpy
-import bmesh
+import logging
 import mathutils
 from bpy.types import Panel, Operator
 
+logger = logging.getLogger(__name__)
+_logger_handler = None
+
+#endregion
+#region OP
 class ZENV_OT_ViewAutoClippingBounds(Operator):
     """Update viewport settings based on object size across all viewports"""
     bl_idname = "zenv.update_viewport"
@@ -31,7 +43,7 @@ class ZENV_OT_ViewAutoClippingBounds(Operator):
     
     @classmethod
     def poll(cls, context):
-        return context.scene.objects
+        return bool(context.scene.objects)
 
     def get_object_bounds(self, obj, depsgraph):
         """Return ``(bounds_min, bounds_max)`` for ``obj`` in world space.
@@ -59,11 +71,22 @@ class ZENV_OT_ViewAutoClippingBounds(Operator):
                     pass
 
         elif obj.type == 'CURVE':
-            for spline in obj.data.splines:
-                if spline.type == 'BEZIER':
-                    points.extend(world_matrix @ p.co for p in spline.bezier_points)
-                else:
-                    points.extend(world_matrix @ p.co.xyz for p in spline.points)
+            # Use depsgraph evaluation so curve modifiers (bevel,
+            # extrude, etc.) are honored, consistent with mesh handling.
+            obj_eval = obj.evaluated_get(depsgraph)
+            curve_eval = obj_eval.data
+            if curve_eval is not None:
+                for spline in curve_eval.splines:
+                    if spline.type == 'BEZIER':
+                        points.extend(world_matrix @ p.co for p in spline.bezier_points)
+                    else:
+                        points.extend(world_matrix @ p.co.xyz for p in spline.points)
+            else:
+                for spline in obj.data.splines:
+                    if spline.type == 'BEZIER':
+                        points.extend(world_matrix @ p.co for p in spline.bezier_points)
+                    else:
+                        points.extend(world_matrix @ p.co.xyz for p in spline.points)
 
         elif obj.type in {'EMPTY', 'CAMERA', 'LIGHT'}:
             loc = world_matrix.translation
@@ -170,21 +193,26 @@ class ZENV_OT_ViewAutoClippingBounds(Operator):
         return processed_count
         
     def execute(self, context):
-        # Store current screen and area
-        current_screen = context.window.screen
-        current_area = context.area
-        
-        # Update all viewports
-        processed_count = self.update_viewport_settings(context)
-        
-        if processed_count:
-            self.report({'INFO'}, f"Updated {processed_count} viewports to fit scene bounds")
-            return {'FINISHED'}
-        else:
-            self.report({'WARNING'}, "No objects found to calculate bounds")
+        """Execute the viewport clipping update operation."""
+        try:
+            # Update all viewports
+            processed_count = self.update_viewport_settings(context)
+
+            if processed_count:
+                self.report({'INFO'}, f"Updated {processed_count} viewports to fit scene bounds")
+                return {'FINISHED'}
+            else:
+                self.report({'WARNING'}, "No objects found to calculate bounds")
+                return {'CANCELLED'}
+
+        except Exception as e:
+            logger.exception("Failed to update viewport clipping")
+            self.report({'ERROR'}, f"Error updating viewport: {str(e)}")
             return {'CANCELLED'}
 
-class ZENV_PT_ViewAutoClippingBounds_Panel(Panel):
+#endregion
+#region PANEL
+class ZENV_PT_ViewAutoClippingBounds(Panel):
     """Panel for viewport settings"""
     bl_label = "VIEW Bounds Scale"
     bl_idname = "ZENV_PT_viewport"
@@ -196,18 +224,34 @@ class ZENV_PT_ViewAutoClippingBounds_Panel(Panel):
         layout = self.layout
         layout.operator(ZENV_OT_ViewAutoClippingBounds.bl_idname)
 
+#endregion
+#region REG
 classes = (
     ZENV_OT_ViewAutoClippingBounds,
-    ZENV_PT_ViewAutoClippingBounds_Panel,
+    ZENV_PT_ViewAutoClippingBounds,
 )
 
 def register():
+    """Register all addon classes and configure the module logger handler."""
+    global _logger_handler
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
+    if _logger_handler is None:
+        _logger_handler = logging.StreamHandler()
+        _logger_handler.setFormatter(logging.Formatter('%(name)s: %(levelname)s: %(message)s'))
+        logger.addHandler(_logger_handler)
+    if not logger.level:
+        logger.setLevel(logging.INFO)
 
 def unregister():
+    """Unregister all addon classes and remove the module logger handler."""
+    global _logger_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
+    if _logger_handler is not None:
+        logger.removeHandler(_logger_handler)
+        _logger_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion

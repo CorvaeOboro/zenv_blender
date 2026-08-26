@@ -1,36 +1,66 @@
-"""
-ROCK BASALT GENERATOR
-Generates stylized sharp rock meshes with tiered extrusions and directional bias
-"""
-
+#region META
 bl_info = {
     "name": 'GEN Rock Basalt Generator',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250413',
+    "version": '20260825',
     "description": 'Generate sharp, angular basalt rock formations',
     "status": 'wip',
-    "approved": True,
+    "approved": False,
     "group": 'Generative',
     "group_prefix": 'GEN',
+    "group_order": 30,
+    "addon_order": 20,
+    "tags": ['generative', 'rock', 'basalt', 'mesh', 'procedural'],
+    "description_short": 'Generate sharp, angular basalt rock formations',
+    "description_medium": 'Creates stylized sharp basalt rock meshes using a fractured base grid, tiered extrusions with directional bias, 3D noise displacement, and a procedural material with Voronoi crystalline structure.',
+    "description_long": """
+    Rock Basalt Generator
+Generates stylized sharp rock meshes with tiered extrusions and directional bias.
+Creates a fractured base grid, extrudes faces with height variation and directional bias,
+applies 3D noise displacement, and assigns a procedural material with Voronoi crystalline structure.""",
     "location": 'View3D > ZENV > GEN Rock Basalt',
+    "image_overview": 'zenv_blender_GEN_rock_basalt.png',
+    "addon_image": 'zenv_blender_GEN_rock_basalt.png',
+    "warning": '',
+    "doc_url": '',
 }
 
-__addon_enabled__ = True
-
+#region IMPORT
 import bpy
 import bmesh
 import math
 import random
+import logging
 from mathutils import Vector, Matrix, noise
 from bpy.props import FloatProperty, IntProperty, PointerProperty, BoolProperty, EnumProperty, FloatVectorProperty
 from bpy.types import PropertyGroup, Operator, Panel
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+_log_handler = None
 
-class ZENV_PG_RockBasaltProperties(PropertyGroup):
+
+def _install_logger():
+    """Install a stream handler on the module logger (idempotent)."""
+    global _log_handler
+    if _log_handler is not None:
+        return
+    _log_handler = logging.StreamHandler()
+    _log_handler.setFormatter(logging.Formatter('%(name)s: %(levelname)s: %(message)s'))
+    logger.addHandler(_log_handler)
+    logger.setLevel(logging.INFO)
+
+
+def _uninstall_logger():
+    """Remove the stream handler from the module logger (idempotent)."""
+    global _log_handler
+    if _log_handler is not None:
+        logger.removeHandler(_log_handler)
+        _log_handler = None
+
+#endregion
+#region PROPS
+class ZENV_PG_RockBasalt(PropertyGroup):
     """Properties for the Rock Basalt Generator"""
     # Base Shape Properties
     base_width: FloatProperty(
@@ -54,7 +84,7 @@ class ZENV_PG_RockBasaltProperties(PropertyGroup):
         min=0.1,
         max=10.0
     )
-    
+
     # Pattern Properties
     pattern_scale: FloatProperty(
         name="Pattern Scale",
@@ -114,7 +144,7 @@ class ZENV_PG_RockBasaltProperties(PropertyGroup):
         subtype='NONE',
         unit='NONE'
     )
-    
+
     # Debug Properties - Each step includes all previous steps
     enable_fracture: BoolProperty(
         name="Enable Fracturing",
@@ -132,11 +162,9 @@ class ZENV_PG_RockBasaltProperties(PropertyGroup):
         default=True
     )
 
-# ------------------------------------------------------------------------
-#    Operator
-# ------------------------------------------------------------------------
-
-class ZENV_OT_RockBasaltAdd(Operator):
+#endregion
+#region OP
+class ZENV_OT_RockBasalt(Operator):
     """Create a new stylized rock basalt"""
     bl_idname = "zenv.rock_basalt_add"
     bl_label = "Add Rock Basalt"
@@ -145,49 +173,46 @@ class ZENV_OT_RockBasaltAdd(Operator):
     def create_base_mesh(self, context, props):
         """Create a sharp, angular basalt rock mesh using fractured base shape and extrusion"""
         bm = bmesh.new()
-        
+
         # Step 1: Create base grid
         mesh = self.create_base_grid(bm, props)
-        if not props.enable_fracture:
-            return self.finalize_mesh(context, bm, mesh)
-        
-        # Step 2: Apply fracturing
-        self.apply_fracturing(bm, props)
-        if not props.enable_extrusion:
-            return self.finalize_mesh(context, bm, mesh)
-        
-        # Step 3: Extrude faces
-        self.apply_extrusion(bm, props)
-        if not props.enable_noise:
-            return self.finalize_mesh(context, bm, mesh)
-        
-        # Step 4: Apply noise
-        self.apply_noise(bm, props)
-        
+
+        # Step 2: Apply fracturing (optional)
+        if props.enable_fracture:
+            self.apply_fracturing(bm, props)
+
+        # Step 3: Extrude faces (optional)
+        if props.enable_extrusion:
+            self.apply_extrusion(bm, props)
+
+        # Step 4: Apply noise (optional)
+        if props.enable_noise:
+            self.apply_noise(bm, props)
+
         return self.finalize_mesh(context, bm, mesh)
-    
+
     def create_base_grid(self, bm, props):
         """Create initial grid of vertices and faces"""
         grid_size = 6
         cell_size = props.base_width / grid_size
         base_verts = []
-        
+
         # Create vertices
         for i in range(grid_size + 1):
             row_verts = []
             for j in range(grid_size + 1):
                 x_base = (i - grid_size/2) * cell_size
                 y_base = (j - grid_size/2) * cell_size
-                
+
                 noise_scale = 2.0
                 offset = noise.noise(Vector((x_base * noise_scale, y_base * noise_scale, 0)))
                 x = x_base + offset * cell_size * 0.3
                 y = y_base + offset * cell_size * 0.3
-                
+
                 vert = bm.verts.new((x, y, 0))
                 row_verts.append(vert)
             base_verts.append(row_verts)
-        
+
         # Create faces
         for i in range(grid_size):
             for j in range(grid_size):
@@ -197,33 +222,33 @@ class ZENV_OT_RockBasaltAdd(Operator):
                     base_verts[i+1][j+1],
                     base_verts[i+1][j]
                 ))
-        
+
         return bpy.data.meshes.new("ZENV_Rock_Basalt")
-    
+
     def apply_fracturing(self, bm, props):
         """Apply fracture patterns to the mesh based on world-space density"""
         # Calculate area in square meters and target number of points
         area = props.base_width * props.base_length
         points_per_meter = props.fracture_density
         base_points = int(area * points_per_meter)
-        
+
         # Create fracture points in concentric rings
         fracture_points = []
-        
+
         # Calculate number of rings based on area, but keep it reasonable
         ring_count = max(2, min(4, int(math.sqrt(base_points) / 2)))
-        points_per_ring = [max(4, int(base_points / ring_count * (i + 1) / ring_count)) 
+        points_per_ring = [max(4, int(base_points / ring_count * (i + 1) / ring_count))
                           for i in range(ring_count)]
-        
+
         # Calculate ring radii based on base shape
         max_radius = min(props.base_width, props.base_length) * 0.45
         ring_radii = [max_radius * (i + 1) / ring_count for i in range(ring_count)]
-        
+
         # Add ring points
         for ring_idx in range(ring_count):
             radius = ring_radii[ring_idx]
             num_points = min(points_per_ring[ring_idx], 8)  # Cap points per ring
-            
+
             for i in range(num_points):
                 # Add controlled randomness to angle and radius
                 angle = (2 * math.pi * i / num_points) + random.uniform(-0.2, 0.2)
@@ -231,7 +256,7 @@ class ZENV_OT_RockBasaltAdd(Operator):
                 x = math.cos(angle) * r
                 y = math.sin(angle) * r
                 fracture_points.append((x, y))
-        
+
         # Add random interior points based on remaining density
         interior_points = max(3, min(6, int(base_points * 0.3)))  # Keep interior points reasonable
         for _ in range(interior_points):
@@ -241,42 +266,42 @@ class ZENV_OT_RockBasaltAdd(Operator):
             x = math.cos(angle) * r * (props.base_width / props.base_length)
             y = math.sin(angle) * r
             fracture_points.append((x, y))
-        
+
         # Create fracture lines between nearby points
         for i, point1 in enumerate(fracture_points):
             # Find nearest points using spatial relationship
-            distances = [(j, math.sqrt((p[0]-point1[0])**2 + (p[1]-point1[1])**2)) 
+            distances = [(j, math.sqrt((p[0]-point1[0])**2 + (p[1]-point1[1])**2))
                         for j, p in enumerate(fracture_points) if p != point1]
             distances.sort(key=lambda x: x[1])
-            
+
             # Connect to 2-3 nearest points only
             connections = random.randint(2, 3)
             for j_dist in distances[:connections]:
                 j, dist = j_dist  # Unpack the tuple correctly
                 if dist > max_radius * 0.7:  # Skip if points are too far apart
                     continue
-                    
+
                 point2 = fracture_points[j]
-                
+
                 # Create fracture line with controlled randomization
                 mid_x = (point1[0] + point2[0])/2
                 mid_y = (point1[1] + point2[1])/2
-                
+
                 # Calculate perpendicular offset for interesting fracture lines
                 dir_x = point2[0] - point1[0]
                 dir_y = point2[1] - point1[1]
                 length = math.sqrt(dir_x**2 + dir_y**2)
-                
+
                 if length > 0:
                     # Create perpendicular vector for offset
                     perp_x = -dir_y/length
                     perp_y = dir_x/length
-                    
+
                     # Scale offset based on world-space size but keep it subtle
                     offset_scale = random.uniform(-0.2, 0.2) * props.base_width/8
                     mid_x += perp_x * offset_scale
                     mid_y += perp_y * offset_scale
-                    
+
                     # Only bisect if within base shape bounds
                     if math.sqrt(mid_x**2 + mid_y**2) < min(props.base_width, props.base_length) * 0.6:
                         bmesh.ops.bisect_plane(
@@ -292,69 +317,70 @@ class ZENV_OT_RockBasaltAdd(Operator):
         """Extrude faces with height variation"""
         for face in bm.faces[:]:
             center = face.calc_center_median()
-            
+
             dist = math.sqrt(center.x**2 + center.y**2) / (props.base_width * 0.5)
             falloff = max(0, 1 - dist**1.5)
-            
+
             noise_val = noise.noise(Vector((
                 center.x * props.pattern_scale * 0.5,
                 center.y * props.pattern_scale * 0.5,
                 0
             )))
             base_height = props.max_height * (falloff + noise_val * 0.2)
-            
+
             bias_angle_rad = math.radians(props.bias_angle)
-            bias = (center.x * math.cos(bias_angle_rad) + 
+            bias = (center.x * math.cos(bias_angle_rad) +
                    center.y * math.sin(bias_angle_rad)) * props.bias_strength
-            
+
             height = base_height * (1 + bias) * random.uniform(0.9, 1.1)
-            
+
             normal = face.normal.copy()
             normal.x += random.uniform(-0.15, 0.15) * props.edge_sharpness
             normal.y += random.uniform(-0.15, 0.15) * props.edge_sharpness
             normal.z = max(0.7, normal.z)
             normal.normalize()
-            
+
             ret = bmesh.ops.extrude_face_region(bm, geom=[face])
             extruded_verts = [v for v in ret["geom"] if isinstance(v, bmesh.types.BMVert)]
-            
+
             bmesh.ops.translate(
                 bm,
                 vec=normal * height,
                 verts=extruded_verts
             )
-    
+
     def apply_noise(self, bm, props):
         """Apply 3D noise to the mesh surface"""
         for vert in bm.verts:
             pos = vert.co * props.pattern_scale
             detail = props.noise_detail
             roughness = props.noise_roughness
-            
+
             noise_val = noise.noise(pos)
-            
+
             amplitude = 1.0
             frequency = 1.0
             max_val = 0
-            
+
             for _ in range(int(detail)):
                 noise_val += noise.noise(pos * frequency) * amplitude
                 max_val += amplitude
                 amplitude *= roughness
                 frequency *= 2.0
-            
-            noise_val /= max_val
+
+            if max_val > 0:
+                noise_val /= max_val
             displacement = vert.normal * noise_val * props.noise_strength
             vert.co += displacement
-    
+
     def finalize_mesh(self, context, bm, mesh):
         """Create the final mesh object"""
         bm.to_mesh(mesh)
         bm.free()
-        
+
         rock_obj = bpy.data.objects.new("ZENV_Rock_Basalt", mesh)
         context.collection.objects.link(rock_obj)
-        
+
         return rock_obj
 
     def create_material(self, obj, props):
@@ -363,7 +389,7 @@ class ZENV_OT_RockBasaltAdd(Operator):
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
         nodes.clear()
-        
+
         # Create nodes
         output = nodes.new('ShaderNodeOutputMaterial')
         principled = nodes.new('ShaderNodeBsdfPrincipled')
@@ -374,7 +400,7 @@ class ZENV_OT_RockBasaltAdd(Operator):
         tex_coord = nodes.new('ShaderNodeTexCoord')
         color_ramp = nodes.new('ShaderNodeValToRGB')
         mix_rgb = nodes.new('ShaderNodeMixRGB')
-        
+
         # Set node locations for organization
         output.location = (300, 0)
         principled.location = (0, 0)
@@ -385,42 +411,42 @@ class ZENV_OT_RockBasaltAdd(Operator):
         tex_coord.location = (-1000, 0)
         color_ramp.location = (-400, 100)
         mix_rgb.location = (-200, 100)
-        
+
         # Set up basic material properties
         principled.inputs['Base Color'].default_value = (0.02, 0.02, 0.02, 1)  # Dark basalt color
         principled.inputs['Metallic'].default_value = 0.0
         principled.inputs['Specular IOR Level'].default_value = 0.5
         principled.inputs['Roughness'].default_value = 0.8
-        
+
         # Configure noise texture for micro-detail
         noise_tex.inputs['Scale'].default_value = 20.0
         noise_tex.inputs['Detail'].default_value = 15.0
         noise_tex.inputs['Roughness'].default_value = 0.7
-        
+
         # Configure Voronoi for crystalline structure
         voronoi.inputs['Scale'].default_value = 5.0
         voronoi.feature = 'DISTANCE_TO_EDGE'
         voronoi.distance = 'MANHATTAN'
-        
+
         # Configure color ramp for sharp transitions
         color_ramp.color_ramp.elements[0].position = 0.4
         color_ramp.color_ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
         color_ramp.color_ramp.elements[1].position = 0.6
         color_ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
-        
+
         # Configure bump settings
         bump.inputs['Strength'].default_value = 1.0
         bump.inputs['Distance'].default_value = 0.02
-        
+
         # Configure mapping for directional detail
         mapping.inputs['Scale'].default_value[0] = 1.0
         mapping.inputs['Scale'].default_value[1] = 1.0
         mapping.inputs['Scale'].default_value[2] = 1.0
-        
+
         # Mix noise and voronoi for complex surface detail
         mix_rgb.blend_type = 'MULTIPLY'
         mix_rgb.inputs['Fac'].default_value = 0.7
-        
+
         # Link nodes
         links = mat.node_tree.links
         links.new(tex_coord.outputs['Generated'], mapping.inputs['Vector'])
@@ -432,27 +458,37 @@ class ZENV_OT_RockBasaltAdd(Operator):
         links.new(mix_rgb.outputs['Color'], bump.inputs['Height'])
         links.new(bump.outputs['Normal'], principled.inputs['Normal'])
         links.new(principled.outputs['BSDF'], output.inputs['Surface'])
-        
+
         # Apply material to object
         obj.data.materials.append(mat)
 
     def execute(self, context):
+        """Execute the rock basalt generation operation."""
         props = context.scene.zenv_rock_basalt_props
-        
-        # Create rock mesh
-        rock_obj = self.create_base_mesh(context, props)
-        
-        # Set active object
-        context.view_layer.objects.active = rock_obj
-        rock_obj.select_set(True)
-        
-        return {'FINISHED'}
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
+        try:
+            # Create rock mesh
+            rock_obj = self.create_base_mesh(context, props)
 
-class ZENV_PT_RockBasaltPanel(Panel):
+            # Apply procedural material
+            self.create_material(rock_obj, props)
+
+            # Set active object
+            context.view_layer.objects.active = rock_obj
+            rock_obj.select_set(True)
+
+            logger.info("Generated rock basalt '%s'", rock_obj.name)
+            self.report({'INFO'}, "Generated rock basalt")
+            return {'FINISHED'}
+
+        except Exception as e:
+            logger.exception("Rock basalt generation failed: %s", e)
+            self.report({'ERROR'}, f"Rock basalt generation failed: {e}")
+            return {'CANCELLED'}
+
+#endregion
+#region PANEL
+class ZENV_PT_RockBasalt(Panel):
     """Panel for Rock Basalt Generator"""
     bl_label = "GEN Rock Basalt Generator"
     bl_idname = "ZENV_PT_rock_basalt"
@@ -463,14 +499,14 @@ class ZENV_PT_RockBasaltPanel(Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.zenv_rock_basalt_props
-        
+
         # Base properties
         box = layout.box()
         box.label(text="Base Properties:")
         box.prop(props, "base_width")
         box.prop(props, "base_length")
         box.prop(props, "max_height")
-        
+
         # Pattern properties
         box = layout.box()
         box.label(text="Pattern Properties:")
@@ -482,42 +518,59 @@ class ZENV_PT_RockBasaltPanel(Panel):
         box.prop(props, "noise_roughness")
         box.prop(props, "noise_strength")
         box.prop(props, "fracture_density")
-        
+
         # Debug properties
         box = layout.box()
         box.label(text="Debug Properties:")
         box.prop(props, "enable_fracture")
         box.prop(props, "enable_extrusion")
         box.prop(props, "enable_noise")
-        
+
         # Add button
         layout.operator("zenv.rock_basalt_add")
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#endregion
+#region REG
 classes = (
-    ZENV_PG_RockBasaltProperties,
-    ZENV_OT_RockBasaltAdd,
-    ZENV_PT_RockBasaltPanel
+    ZENV_PG_RockBasalt,
+    ZENV_OT_RockBasalt,
+    ZENV_PT_RockBasalt,
 )
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.zenv_rock_basalt_props = PointerProperty(type=ZENV_PG_RockBasaltProperties)
-    bpy.types.VIEW3D_MT_mesh_add.append(menu_func)
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.zenv_rock_basalt_props
-    bpy.types.VIEW3D_MT_mesh_add.remove(menu_func)
 
 def menu_func(self, context):
     """Add menu item to Add Mesh menu"""
     self.layout.operator("zenv.rock_basalt_add", text="GEN Rock Basalt")
 
+def register():
+    """Register all addon classes, the scene property, the menu entry, and configure the logger."""
+    _install_logger()
+    for cls in classes:
+        try:
+            bpy.utils.register_class(cls)
+        except ValueError:
+            pass
+    if not hasattr(bpy.types.Scene, "zenv_rock_basalt_props"):
+        bpy.types.Scene.zenv_rock_basalt_props = PointerProperty(type=ZENV_PG_RockBasalt)
+    try:
+        bpy.types.VIEW3D_MT_mesh_add.append(menu_func)
+    except Exception:
+        pass
+
+def unregister():
+    """Unregister all addon classes, remove the scene property, the menu entry, and the logger handler."""
+    for cls in reversed(classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            pass
+    if hasattr(bpy.types.Scene, "zenv_rock_basalt_props"):
+        delattr(bpy.types.Scene, "zenv_rock_basalt_props")
+    try:
+        bpy.types.VIEW3D_MT_mesh_add.remove(menu_func)
+    except Exception:
+        pass
+    _uninstall_logger()
+
 if __name__ == "__main__":
     register()
+#endregion

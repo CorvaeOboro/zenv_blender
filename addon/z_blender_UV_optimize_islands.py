@@ -1,14 +1,17 @@
+#region META
 bl_info = {
     "name": 'UV Optimize Islands',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250212',
+    "version": '20260823',
     "description": 'Move UV islands closer to origin in whole-tile increments',
-    "status": 'wip',
+    "status": 'working',
     "approved": True,
-    "sort_priority": '75',
     "group": 'UV',
     "group_prefix": 'UV',
+    "group_order": 80,
+    "addon_order": 20,
+    "tags": ['uv', 'islands', 'optimize', 'texture'],
     "description_short": 'Snap UV islands toward origin',
     "description_medium": 'Optimize UV island positions by moving them closer to UV space origin (0,0) while maintaining texture mapping by moving in whole-number tile increments',
     "description_long": """\
@@ -18,26 +21,24 @@ UV Optimize Islands
  this is useful for texture baking UVs , and for game engine UV precision 
 """,
     "location": 'View3D > ZENV',
+    "image_overview": 'zenv_blender_UV_optimize_islands.png',
+    "addon_image": 'zenv_blender_UV_optimize_islands.png',
 }
 
+#region IMPORT
 import bpy
 import bmesh
 import math
 import logging
 from mathutils import Vector
+from bpy.types import Operator, Panel
 from typing import List, Set, Tuple
 
-# ------------------------------------------------------------------------
-#    Setup Logging
-# ------------------------------------------------------------------------
-
 logger = logging.getLogger(__name__)
-_zenv_uv_optimize_console_handler = None
+_logger_handler = None
 
-# ------------------------------------------------------------------------
-#    Utilities
-# ------------------------------------------------------------------------
-
+#endregion
+#region UTILS
 class ZENV_UVIslandOptimizer_Utils:
     """Static utilities for UV island detection and bounds math."""
 
@@ -86,7 +87,7 @@ class ZENV_UVIslandOptimizer_Utils:
                             remaining.remove(link_face)
 
             islands.append(island)
-            logger.info("Found UV island with %d faces", len(island))
+            logger.debug("Found UV island with %d faces", len(island))
 
         return islands
 
@@ -112,11 +113,9 @@ class ZENV_UVIslandOptimizer_Utils:
         min_u, min_v, max_u, max_v = cls.get_island_bounds(island, uv_layer)
         return Vector(((min_u + max_u) * 0.5, (min_v + max_v) * 0.5))
 
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
-
-class ZENV_OT_UVIslandOptimizer_Optimize(bpy.types.Operator):
+#endregion
+#region OP
+class ZENV_OT_UVIslandOptimizer(Operator):
     """Move each UV island toward the (0,0) origin in whole-tile increments.
 
     The integer-offset move preserves texture sampling because the texture
@@ -187,12 +186,9 @@ class ZENV_OT_UVIslandOptimizer_Optimize(bpy.types.Operator):
             self.report({'ERROR'}, f"UV optimize failed: {e}")
             return {'CANCELLED'}
 
-
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
-
-class ZENV_PT_UVIslandOptimizer_Panel(bpy.types.Panel):
+#endregion
+#region PANEL
+class ZENV_PT_UVIslandOptimizer(Panel):
     """Panel for UV island optimization."""
     bl_label = "UV Optimize Islands"
     bl_idname = "ZENV_PT_uv_island_optimizer"
@@ -208,59 +204,41 @@ class ZENV_PT_UVIslandOptimizer_Panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         box = layout.box()
-        box.operator(ZENV_OT_UVIslandOptimizer_Optimize.bl_idname, icon='UV_ISLANDSEL')
+        box.operator(ZENV_OT_UVIslandOptimizer.bl_idname, icon='UV_ISLANDSEL')
 
-
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#endregion
+#region REG
 classes = (
-    ZENV_OT_UVIslandOptimizer_Optimize,
-    ZENV_PT_UVIslandOptimizer_Panel,
+    ZENV_OT_UVIslandOptimizer,
+    ZENV_PT_UVIslandOptimizer,
 )
 
-
-def _install_logger():
-    """Attach a single StreamHandler to ``logger`` (idempotent)."""
-    global _zenv_uv_optimize_console_handler
-    if _zenv_uv_optimize_console_handler is not None:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _zenv_uv_optimize_console_handler = handler
-
-
-def _uninstall_logger():
-    """Remove the handler added by :func:`_install_logger`."""
-    global _zenv_uv_optimize_console_handler
-    if _zenv_uv_optimize_console_handler is None:
-        return
-    try:
-        logger.removeHandler(_zenv_uv_optimize_console_handler)
-    except ValueError:
-        pass
-    _zenv_uv_optimize_console_handler = None
-
-
 def register():
-    """Register the addon."""
-    _install_logger()
+    """Register all addon classes and configure the module logger handler."""
+    global _logger_handler
+    if _logger_handler is None:
+        _logger_handler = logging.StreamHandler()
+        _logger_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(_logger_handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
     for current_class_to_register in classes:
         bpy.utils.register_class(current_class_to_register)
     logger.info("UV Optimize Islands registered successfully")
 
-
 def unregister():
-    """Unregister the addon."""
+    """Unregister all addon classes and remove the module logger handler."""
+    global _logger_handler
     for current_class_to_unregister in reversed(classes):
         bpy.utils.unregister_class(current_class_to_unregister)
     logger.info("UV Optimize Islands unregistered")
-    _uninstall_logger()
-
+    if _logger_handler is not None:
+        try:
+            logger.removeHandler(_logger_handler)
+        except ValueError:
+            pass
+        _logger_handler = None
 
 if __name__ == "__main__":
     register()
+#endregion
