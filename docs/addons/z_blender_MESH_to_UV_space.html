@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZENV - MESH to UV Space</title>
+<style>
+:root { --bg:#1a1a1a; --surface:#2d2d2d; --border:#404040; --text:#e0e0e0; --muted:#b0b0b0; --accent:#4a7ba7; --link:#64b5f6; --code:#1e1e1e; }
+* { box-sizing:border-box; }
+html,body { margin:0; height:100%; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+.page { display:flex; height:100vh; }
+.sidebar { width:14%; min-width:200px; border-right:1px solid var(--border); background:var(--bg); }
+.sidebar iframe { width:100%; height:100%; border:none; }
+.content { flex:1; overflow-y:auto; }
+header { background:linear-gradient(90deg,#0a1520 0%,#1a1a1a 100%); border-bottom:2px solid var(--accent); padding:1.2rem 1rem; text-align:center; }
+header h1 { margin:0; font-size:2rem; color:#fff; }
+header p { margin:0.5rem 0 0; color:var(--muted); }
+.container { max-width:1000px; margin:0 auto; padding:2rem 1.5rem; }
+h2 { color:#fff; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-top:2.5rem; font-size:1.4rem; }
+h3 { color:#fff; margin-top:1.5rem; font-size:1.1rem; }
+a { color:var(--link); text-decoration:none; }
+a:hover { text-decoration:underline; }
+ul,ol { padding-left:1.4rem; }
+li { margin-bottom:0.4rem; }
+table { width:100%; border-collapse:collapse; margin:1rem 0; font-size:0.95rem; }
+th,td { border:1px solid var(--border); padding:0.5rem 0.7rem; text-align:left; vertical-align:top; }
+th { background:var(--surface); color:#fff; }
+td { background:#222; }
+code,pre { background:var(--code); border:1px solid var(--border); border-radius:4px; font-family:Consolas,Monaco,'Courier New',monospace; font-size:0.9rem; }
+code { padding:0.15rem 0.35rem; }
+pre { padding:0.8rem; overflow-x:auto; white-space:pre-wrap; }
+.note { border-left:3px solid var(--accent); background:var(--surface); padding:0.8rem 1rem; margin:1rem 0; border-radius:0 6px 6px 0; }
+.meta-grid { display:grid; grid-template-columns:160px 1fr; gap:0.4rem 1rem; margin:1rem 0; font-size:0.95rem; }
+.meta-grid dt { color:var(--muted); }
+.meta-grid dd { margin:0; }
+.badge { display:inline-block; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.75rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); margin:0.1rem; }
+.badge.status-working { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-stable { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-wip { color:#d6b55a; border-color:#a79a5a; }
+.badge.status-deprecated { color:#ff6b6b; border-color:#a75a5a; }
+img.node-shot { width:100%; border:1px solid var(--border); border-radius:4px; margin:1rem 0; }
+footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0.9rem; border-top:1px solid var(--border); margin-top:3rem; }
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="sidebar"><iframe src="../zenv_menu.html"></iframe></div>
+    <div class="content">
+<header>
+    <h1>MESH to UV Space</h1>
+    <p>transform mesh to match UV layout in 3D space</p>
+</header>
+<div class="container">
+
+
+
+<h2>Metadata</h2>
+<dl class="meta-grid">
+<dt>Addon File</dt><dd><code>z_blender_MESH_to_UV_space.py</code></dd>
+<dt>Tags</dt><dd><span class="badge">mesh</span> <span class="badge">uv</span> <span class="badge">transform</span> <span class="badge">bmesh</span> <span class="badge">uv-space</span> <span class="badge">vertex</span></dd>
+</dl>
+
+<p class="note">transform mesh to match UV layout in 3D space</p><p>Transform mesh between 3D and UV space with vertex separation and merging</p><p>transform a mesh between 3D and UV space by triangulating, separating vertices, mapping to UV coordinates, and optionally merging back - stores original positions for round-trip restoration</p>
+
+<pre>Mesh to UV Space
+Transform mesh between 3D and UV space with vertex separation and merging</pre>
+
+<h2>Properties</h2>
+<table>
+<tr><th>Attr</th><th>Label</th><th>Type</th><th>Default</th><th>Range</th><th>Subtype / Options</th><th>Description</th></tr>
+<tr><td><code>do_phase_0</code></td><td>Phase 0: Prepare Mesh</td><td>bool</td><td>true</td><td></td><td> </td><td>Triangulate mesh and separate vertices for UV transformation</td></tr>
+<tr><td><code>do_phase_2</code></td><td>Phase 2: To UV Space</td><td>bool</td><td>true</td><td></td><td> </td><td>Transform mesh to UV space coordinates</td></tr>
+<tr><td><code>do_phase_3</code></td><td>Phase 3: To 3D Space</td><td>bool</td><td>false</td><td></td><td> </td><td>Transform mesh back to original 3D space coordinates</td></tr>
+<tr><td><code>do_phase_4</code></td><td>Phase 4: Merge Vertices</td><td>bool</td><td>false</td><td></td><td> </td><td>Merge vertices and UVs at very small distances to reconstruct the mesh</td></tr>
+</table>
+
+<h2>Operators</h2>
+<table>
+<tr><th>Class</th><th>bl_idname</th><th>Label</th><th>Options</th><th>Description</th></tr>
+<tr><td><code>ZENV_OT_MeshToUVSpace</code></td><td><code>zenv.mesh_to_uv_space</code></td><td>Apply UV Transform</td><td></td><td>Transform mesh between 3D and UV space with vertex separation and merging.
+    
+    This operator performs a series of transformations:
+    1. Prepares mesh by triangulating and separating vertices
+    2. Transforms mesh to UV space coordinates
+    3. Optionally transforms back to 3D space
+    4. Optionally merges vertices to reconstruct the mesh</td></tr>
+</table>
+
+</div>
+    </div>
+</div>
+</body>
+</html>

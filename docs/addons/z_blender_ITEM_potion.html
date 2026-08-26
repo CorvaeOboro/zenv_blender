@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZENV - ITEM Potion Generator</title>
+<style>
+:root { --bg:#1a1a1a; --surface:#2d2d2d; --border:#404040; --text:#e0e0e0; --muted:#b0b0b0; --accent:#4a7ba7; --link:#64b5f6; --code:#1e1e1e; }
+* { box-sizing:border-box; }
+html,body { margin:0; height:100%; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+.page { display:flex; height:100vh; }
+.sidebar { width:14%; min-width:200px; border-right:1px solid var(--border); background:var(--bg); }
+.sidebar iframe { width:100%; height:100%; border:none; }
+.content { flex:1; overflow-y:auto; }
+header { background:linear-gradient(90deg,#0a1520 0%,#1a1a1a 100%); border-bottom:2px solid var(--accent); padding:1.2rem 1rem; text-align:center; }
+header h1 { margin:0; font-size:2rem; color:#fff; }
+header p { margin:0.5rem 0 0; color:var(--muted); }
+.container { max-width:1000px; margin:0 auto; padding:2rem 1.5rem; }
+h2 { color:#fff; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-top:2.5rem; font-size:1.4rem; }
+h3 { color:#fff; margin-top:1.5rem; font-size:1.1rem; }
+a { color:var(--link); text-decoration:none; }
+a:hover { text-decoration:underline; }
+ul,ol { padding-left:1.4rem; }
+li { margin-bottom:0.4rem; }
+table { width:100%; border-collapse:collapse; margin:1rem 0; font-size:0.95rem; }
+th,td { border:1px solid var(--border); padding:0.5rem 0.7rem; text-align:left; vertical-align:top; }
+th { background:var(--surface); color:#fff; }
+td { background:#222; }
+code,pre { background:var(--code); border:1px solid var(--border); border-radius:4px; font-family:Consolas,Monaco,'Courier New',monospace; font-size:0.9rem; }
+code { padding:0.15rem 0.35rem; }
+pre { padding:0.8rem; overflow-x:auto; white-space:pre-wrap; }
+.note { border-left:3px solid var(--accent); background:var(--surface); padding:0.8rem 1rem; margin:1rem 0; border-radius:0 6px 6px 0; }
+.meta-grid { display:grid; grid-template-columns:160px 1fr; gap:0.4rem 1rem; margin:1rem 0; font-size:0.95rem; }
+.meta-grid dt { color:var(--muted); }
+.meta-grid dd { margin:0; }
+.badge { display:inline-block; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.75rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); margin:0.1rem; }
+.badge.status-working { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-stable { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-wip { color:#d6b55a; border-color:#a79a5a; }
+.badge.status-deprecated { color:#ff6b6b; border-color:#a75a5a; }
+img.node-shot { width:100%; border:1px solid var(--border); border-radius:4px; margin:1rem 0; }
+footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0.9rem; border-top:1px solid var(--border); margin-top:3rem; }
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="sidebar"><iframe src="../zenv_menu.html"></iframe></div>
+    <div class="content">
+<header>
+    <h1>ITEM Potion Generator</h1>
+    <p>generate procedural potion bottles with modular components</p>
+</header>
+<div class="container">
+
+<img class="node-shot" src="../zenv_blender_ITEM_potion.png" alt="ITEM Potion Generator">
+
+<h2>Metadata</h2>
+<dl class="meta-grid">
+<dt>Addon File</dt><dd><code>z_blender_ITEM_potion.py</code></dd>
+<dt>Tags</dt><dd><span class="badge">item</span> <span class="badge">potion</span> <span class="badge">bottle</span> <span class="badge">procedural</span> <span class="badge">fantasy</span> <span class="badge">generator</span></dd>
+</dl>
+
+<p class="note">generate procedural potion bottles with modular components</p><p>Generate procedural potion bottles with modular components</p><p>Generates procedural potion bottles with modular components: glass bottle (Catmull-Rom spline profile spun around Z axis), liquid fill with surface effects, cork stopper with spiral groove and wood-grain shader, neck decorations, toppers, interior effects, and base decorations. Configurable dimensions, fill level, colors, and decoration types.</p>
+
+<pre>POTION GENERATOR
+- generates procedural potion bottles with modular components
+- useful for creating fantasy potions with various decorative elements</pre>
+
+<h2>Properties</h2>
+<table>
+<tr><th>Attr</th><th>Label</th><th>Type</th><th>Default</th><th>Range</th><th>Subtype / Options</th><th>Description</th></tr>
+<tr><td><code>use_bottle</code></td><td>Generate Bottle</td><td>bool</td><td>true</td><td></td><td> </td><td>Enable/disable bottle generation</td></tr>
+<tr><td><code>use_liquid</code></td><td>Generate Liquid</td><td>bool</td><td>true</td><td></td><td> </td><td>Enable/disable liquid generation</td></tr>
+<tr><td><code>use_neck</code></td><td>Add Neck Decorations</td><td>bool</td><td>false</td><td></td><td> </td><td>Enable/disable neck decorations</td></tr>
+<tr><td><code>use_topper</code></td><td>Add Topper</td><td>bool</td><td>true</td><td></td><td> </td><td>Enable/disable topper</td></tr>
+<tr><td><code>use_interior</code></td><td>Add Interior Effects</td><td>bool</td><td>false</td><td></td><td> </td><td>Enable/disable interior effects</td></tr>
+<tr><td><code>use_base</code></td><td>Add Base Decorations</td><td>bool</td><td>false</td><td></td><td> </td><td>Enable/disable base decorations</td></tr>
+<tr><td><code>bottle_height</code></td><td>Bottle Height</td><td>float</td><td>1</td><td>0.1 .. 5</td><td> </td><td></td></tr>
+<tr><td><code>bottle_width</code></td><td>Bottle Width</td><td>float</td><td>0.5</td><td>0.1 .. 2</td><td> </td><td></td></tr>
+<tr><td><code>liquid_fill_amount</code></td><td>Fill Amount</td><td>float</td><td>0.7</td><td>0 .. 1</td><td> </td><td>How full the bottle is</td></tr>
+<tr><td><code>liquid_noise_amount</code></td><td>Surface Noise</td><td>float</td><td>0.3</td><td>0 .. 1</td><td> </td><td>Amount of surface distortion</td></tr>
+<tr><td><code>liquid_noise_scale</code></td><td>Noise Scale</td><td>float</td><td>2</td><td>0.1 .. 10</td><td> </td><td>Scale of the surface noise</td></tr>
+<tr><td><code>liquid_color</code></td><td>Liquid Color</td><td>float vector</td><td>0.2, 0.8, 0.2, 1</td><td>0 .. 1</td><td><span class="badge">COLOR</span> <span class="badge">size=4</span></td><td>Color of the potion liquid</td></tr>
+<tr><td><code>neck_decoration_type</code></td><td>Neck Decoration Type</td><td>enum</td><td>NONE</td><td></td><td> </td><td></td></tr>
+<tr><td><code>topper_type</code></td><td>Topper Type</td><td>enum</td><td>CORK</td><td></td><td> </td><td></td></tr>
+<tr><td><code>interior_effect_type</code></td><td>Interior Effect Type</td><td>enum</td><td>NONE</td><td></td><td> </td><td></td></tr>
+<tr><td><code>base_type</code></td><td>Base Type</td><td>enum</td><td>NONE</td><td></td><td> </td><td></td></tr>
+<tr><td><code>cork_height_factor</code></td><td>Cork Height</td><td>float</td><td>0.22</td><td>0.05 .. 0.4</td><td> </td><td>Height of the cork relative to bottle height</td></tr>
+<tr><td><code>cork_width_factor</code></td><td>Cork Width</td><td>float</td><td>0.85</td><td>0.5 .. 1</td><td> </td><td>Width of the cork relative to neck width</td></tr>
+<tr><td><code>cork_detail</code></td><td>Cork Detail</td><td>float</td><td>0.5</td><td>0 .. 1</td><td> </td><td>Amount of surface detail on the cork</td></tr>
+<tr><td><code>cork_spiral_turns</code></td><td>Spiral Turns</td><td>int</td><td>3</td><td>1 .. 10</td><td> </td><td>Number of turns in the cork spiral</td></tr>
+<tr><td><code>cork_spiral_depth</code></td><td>Spiral Depth</td><td>float</td><td>0.3</td><td>0.1 .. 0.8</td><td> </td><td>Depth of the spiral groove</td></tr>
+<tr><td><code>seed</code></td><td>Random Seed</td><td>int</td><td>0</td><td>0 .. </td><td> </td><td>Seed for reproducible cork skew and other random effects (0 = random)</td></tr>
+</table>
+<h2>Enum Items</h2>
+<h3>Enum: <code>neck_decoration_type</code> (Neck Decoration Type)</h3>
+<table>
+<tr><th>Identifier</th><th>Label</th><th>Description</th></tr>
+<tr><td><code>NONE</code></td><td>None</td><td>No neck decoration</td></tr>
+<tr><td><code>CLOTH</code></td><td>Wrapped Cloth</td><td>Cloth wrapped around neck</td></tr>
+<tr><td><code>CHAINS</code></td><td>Wrapped Chains</td><td>Chains wrapped around neck</td></tr>
+<tr><td><code>ROPE</code></td><td>Tied Rope</td><td>Rope tied around neck</td></tr>
+</table>
+<h3>Enum: <code>topper_type</code> (Topper Type)</h3>
+<table>
+<tr><th>Identifier</th><th>Label</th><th>Description</th></tr>
+<tr><td><code>NONE</code></td><td>None</td><td>No topper</td></tr>
+<tr><td><code>CORK</code></td><td>Cork</td><td>Simple cork stopper</td></tr>
+<tr><td><code>SPHERE</code></td><td>Sphere</td><td>Decorative sphere</td></tr>
+<tr><td><code>SPIRAL_SPHERE</code></td><td>Spiral Sphere</td><td>Sphere with spiral wrap</td></tr>
+<tr><td><code>SPIRAL_CURL</code></td><td>Spiral Curl</td><td>Curled spiral decoration</td></tr>
+</table>
+<h3>Enum: <code>interior_effect_type</code> (Interior Effect Type)</h3>
+<table>
+<tr><th>Identifier</th><th>Label</th><th>Description</th></tr>
+<tr><td><code>NONE</code></td><td>None</td><td>No interior effect</td></tr>
+<tr><td><code>BUBBLES</code></td><td>Bubbles</td><td>Floating bubbles</td></tr>
+<tr><td><code>LIGHT</code></td><td>Light Spark</td><td>Glowing light effect</td></tr>
+<tr><td><code>TENTACLES</code></td><td>Tentacles</td><td>Moving tentacles</td></tr>
+<tr><td><code>VORTEX</code></td><td>Spiral Vortex</td><td>Swirling vortex effect</td></tr>
+</table>
+<h3>Enum: <code>base_type</code> (Base Type)</h3>
+<table>
+<tr><th>Identifier</th><th>Label</th><th>Description</th></tr>
+<tr><td><code>NONE</code></td><td>None</td><td>No base decoration</td></tr>
+<tr><td><code>TEETH</code></td><td>Teeth</td><td>Decorative teeth around base</td></tr>
+<tr><td><code>CLAWS</code></td><td>Claws</td><td>Claw feet</td></tr>
+<tr><td><code>CLOTH</code></td><td>Wrapped Cloth</td><td>Cloth wrapped around base</td></tr>
+</table>
+
+<h2>Operators</h2>
+<table>
+<tr><th>Class</th><th>bl_idname</th><th>Label</th><th>Options</th><th>Description</th></tr>
+<tr><td><code>ZENV_OT_PotionGenerator</code></td><td><code>zenv.generate_potion</code></td><td>Generate Potion</td><td></td><td>Generate a procedural potion bottle with modular components</td></tr>
+<tr><td><code>ZENV_OT_PotionRandomizeSeed</code></td><td><code>zenv.potion_randomize_seed</code></td><td>Randomize Seed</td><td></td><td>Randomize the potion generator seed</td></tr>
+</table>
+
+</div>
+    </div>
+</div>
+</body>
+</html>

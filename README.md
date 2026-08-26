@@ -14,116 +14,116 @@ blender addons focused on singular features of 3d modelling , materials , and te
 
 # ADDONS
 
-<table style="border-collapse: collapse; width: 100%;">
+<table style="border-collapse: collapse; width: 100%; table-layout: fixed; word-break: break-word;">
   <tbody style="line-height: 1.1;">
     <!-- TEXTURE -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">TEXTURE</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_texture_proj_cam.py">texture_proj_cam</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_texture_variant_view.py">texture_variant_view</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_bake_ambient_occlusion_multi.py">bake_ambient_occlusion_multi</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_bake_curvature_edge_highlight_multi.py">bake_curvature_edge_highlight_multi</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_texture_proj_cam.py">texture proj cam</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_texture_variant_view.py">texture variant view</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_bake_ambient_occlusion_multi.py">bake ambient occlusion multi</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_bake_curvature_edge_highlight_multi.py">bake curvature edge highlight multi</a></td>
     </tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_bake_uv_island_facing_center_mask_multi.py">bake_uv_island_facing_center_mask_multi</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_bake_worldspace_bounds_gradient_multi.py">bake_worldspace_bounds_gradient_multi</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_texture_export_dated.py">texture_export_dated</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_TEX_transition_texture_worldspace_bake.py">transition_texture_worldspace_bake</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_bake_uv_island_facing_center_mask_multi.py">bake uv island facing center mask multi</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_bake_worldspace_bounds_gradient_multi.py">bake worldspace bounds gradient multi</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_texture_export_dated.py">texture export dated</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_TEX_transition_texture_worldspace_bake.py">transition texture worldspace bake</a></td>
     </tr>
     <!-- MESH -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">MESH</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_separate_by_material.py">separate_by_material</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_separate_by_UV_island.py">separate_by_UV_island</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_separate_by_uv_quadrant.py">separate_by_uv_quadrant</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_separate_by_axis.py">separate_by_axis</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_separate_by_material.py">separate by material</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_separate_by_UV_island.py">separate by UV island</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_separate_by_uv_quadrant.py">separate by uv quadrant</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_separate_by_axis.py">separate by axis</a></td>
     </tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_rename_objects_by_material.py">rename_objects_by_material</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_noise_displace.py">noise_displace</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_cut_world_bricker.py">cut_world_bricker</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_to_UV_space.py">to_UV_space</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_rename_objects_by_material.py">rename objects by material</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_noise_displace.py">noise displace</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_cut_world_bricker.py">cut world bricker</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_to_UV_space.py">to UV space</a></td>
     </tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_angular_planarize.py">angular_planarize</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_merge_selected_to_new_collection.py">merge_selected_to_new_collection</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MESH_wood_grain.py">wood_grain</a></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_angular_planarize.py">angular planarize</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_merge_selected_to_new_collection.py">merge selected to new collection</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MESH_wood_grain.py">wood grain</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
     <!-- GENERATIVE -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">GENERATIVE</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_GEN_tiles_from_textures.py">tiles_from_textures</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_GEN_ultima_landtiles.py">ultima_landtiles</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_GEN_vfx_slash.py">vfx_slash</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_GEN_tiles_from_textures.py">tiles from textures</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_GEN_ultima_landtiles.py">ultima landtiles</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_GEN_vfx_slash.py">vfx slash</a></td>
     </tr>
     <!-- MATERIAL -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">MATERIAL</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_remove_unused_materials.py">remove_unused_materials</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_consolidate_duplicate_mats.py">consolidate_duplicate_mats</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_rename_material_by_texture.py">rename_material_by_texture</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_rename_material_suffix.py">rename_material_suffix</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_remove_unused_materials.py">remove unused materials</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_consolidate_duplicate_mats.py">consolidate duplicate mats</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_rename_material_by_texture.py">rename material by texture</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_rename_material_suffix.py">rename material suffix</a></td>
     </tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_remove_all_opacity.py">remove_all_opacity</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_create_from_textures.py">create_from_textures</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_unlit_convert.py">unlit_convert</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_remap_textures.py">remap_textures</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_remove_all_opacity.py">remove all opacity</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_create_from_textures.py">create from textures</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_unlit_convert.py">unlit convert</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_remap_textures.py">remap textures</a></td>
     </tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_MAT_set_textures_by_material_name.py">set_textures_by_material_name</a></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_MAT_set_textures_by_material_name.py">set textures by material name</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
     <!-- EXPORT -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">EXPORT</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_EXPORT_all_objects_to_separate_blend.py">export_all_objects_to_separate_blend</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_EXPORT_all_objects_to_separate_fbx.py">export_all_objects_to_separate_fbx</a></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_EXPORT_all_objects_to_separate_blend.py">export all objects to separate blend</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_EXPORT_all_objects_to_separate_fbx.py">export all objects to separate fbx</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
     <!-- ITEM -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">ITEM</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_ITEM_potion.py">potion</a></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_ITEM_potion.py">potion</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
     <!-- VIEW -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">VIEW</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_VIEW_view_flat_color_texture.py">view_flat_color_texture</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_VIEW_view_scale_clipping.py">view_scale_clipping</a></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_VIEW_view_flat_color_texture.py">view flat color texture</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_VIEW_view_scale_clipping.py">view scale clipping</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
     <!-- UV -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">UV</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_UV_uv_mirror_zero_pivot.py">uv_mirror_zero_pivot</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_UV_optimize_islands.py">optimize_islands</a></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_UV_uv_mirror_zero_pivot.py">uv mirror zero pivot</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_UV_optimize_islands.py">optimize islands</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
     <!-- RENDER -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">RENDER</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_RENDER_color.py">color</a></td>
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_RENDER_depth.py">depth</a></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_RENDER_color.py">color</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_RENDER_depth.py">depth</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
     <!-- CLEAN -->
     <tr><th colspan="4" align="left" style="padding: 2px 6px; background: #1f2430; color: #c8d3ff;">CLEAN</th></tr>
     <tr style="vertical-align: top;">
-      <td style="padding: 1px 6px;"><a href="addon/z_blender_CLEAN_scene_optimizer.py">scene_optimizer</a></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
-      <td style="padding: 1px 6px;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"><a href="addon/z_blender_CLEAN_scene_optimizer.py">scene optimizer</a></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
+      <td style="padding: 1px 6px; overflow-wrap: anywhere; word-break: break-word;"></td>
     </tr>
   </tbody>
 </table>

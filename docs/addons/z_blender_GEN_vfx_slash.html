@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZENV - GEN VFX Slash</title>
+<style>
+:root { --bg:#1a1a1a; --surface:#2d2d2d; --border:#404040; --text:#e0e0e0; --muted:#b0b0b0; --accent:#4a7ba7; --link:#64b5f6; --code:#1e1e1e; }
+* { box-sizing:border-box; }
+html,body { margin:0; height:100%; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+.page { display:flex; height:100vh; }
+.sidebar { width:14%; min-width:200px; border-right:1px solid var(--border); background:var(--bg); }
+.sidebar iframe { width:100%; height:100%; border:none; }
+.content { flex:1; overflow-y:auto; }
+header { background:linear-gradient(90deg,#0a1520 0%,#1a1a1a 100%); border-bottom:2px solid var(--accent); padding:1.2rem 1rem; text-align:center; }
+header h1 { margin:0; font-size:2rem; color:#fff; }
+header p { margin:0.5rem 0 0; color:var(--muted); }
+.container { max-width:1000px; margin:0 auto; padding:2rem 1.5rem; }
+h2 { color:#fff; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-top:2.5rem; font-size:1.4rem; }
+h3 { color:#fff; margin-top:1.5rem; font-size:1.1rem; }
+a { color:var(--link); text-decoration:none; }
+a:hover { text-decoration:underline; }
+ul,ol { padding-left:1.4rem; }
+li { margin-bottom:0.4rem; }
+table { width:100%; border-collapse:collapse; margin:1rem 0; font-size:0.95rem; }
+th,td { border:1px solid var(--border); padding:0.5rem 0.7rem; text-align:left; vertical-align:top; }
+th { background:var(--surface); color:#fff; }
+td { background:#222; }
+code,pre { background:var(--code); border:1px solid var(--border); border-radius:4px; font-family:Consolas,Monaco,'Courier New',monospace; font-size:0.9rem; }
+code { padding:0.15rem 0.35rem; }
+pre { padding:0.8rem; overflow-x:auto; white-space:pre-wrap; }
+.note { border-left:3px solid var(--accent); background:var(--surface); padding:0.8rem 1rem; margin:1rem 0; border-radius:0 6px 6px 0; }
+.meta-grid { display:grid; grid-template-columns:160px 1fr; gap:0.4rem 1rem; margin:1rem 0; font-size:0.95rem; }
+.meta-grid dt { color:var(--muted); }
+.meta-grid dd { margin:0; }
+.badge { display:inline-block; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.75rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); margin:0.1rem; }
+.badge.status-working { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-stable { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-wip { color:#d6b55a; border-color:#a79a5a; }
+.badge.status-deprecated { color:#ff6b6b; border-color:#a75a5a; }
+img.node-shot { width:100%; border:1px solid var(--border); border-radius:4px; margin:1rem 0; }
+footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0.9rem; border-top:1px solid var(--border); margin-top:3rem; }
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="sidebar"><iframe src="../zenv_menu.html"></iframe></div>
+    <div class="content">
+<header>
+    <h1>GEN VFX Slash</h1>
+    <p>generate a parabola mesh for vfx slash effects</p>
+</header>
+<div class="container">
+
+<img class="node-shot" src="../zenv_blender_GEN_vfx_slash.png" alt="GEN VFX Slash">
+
+<h2>Metadata</h2>
+<dl class="meta-grid">
+<dt>Addon File</dt><dd><code>z_blender_GEN_vfx_slash.py</code></dd>
+<dt>Tags</dt><dd><span class="badge">generate</span> <span class="badge">vfx</span> <span class="badge">slash</span> <span class="badge">parabola</span> <span class="badge">mesh</span> <span class="badge">game</span></dd>
+</dl>
+
+<p class="note">generate a parabola mesh for vfx slash effects</p><p>Parabola Slash Mesh Generator</p><p>Generates a parabola-shaped mesh for VFX slash effects common in game combat animations. Supports three mesh types: gradient-width ribbon (sharp at ends, wide in center), curved tube, or simple line. Configurable angle, height, width, segment count, gradient width, curve radius, and cross-section resolution. Includes per-mesh-type UV mapping.</p>
+
+<pre>VFX SLASH GENERATOR
+generates a parabola mesh for vfx slash effects
+useful for game vfx</pre>
+
+<h2>Properties</h2>
+<table>
+<tr><th>Attr</th><th>Label</th><th>Type</th><th>Default</th><th>Range</th><th>Subtype / Options</th><th>Description</th></tr>
+<tr><td><code>angle</code></td><td>Angle</td><td>float</td><td>0</td><td>0 .. 360</td><td> </td><td>Rotation of the whole arc around the Z axis (degrees). 0 = arc bulges toward +X</td></tr>
+<tr><td><code>height</code></td><td>Height</td><td>float</td><td>2</td><td>0.1 .. 10</td><td> </td><td>Peak bulge of the arc along the forward axis (distance from chord to apex)</td></tr>
+<tr><td><code>width</code></td><td>Width</td><td>float</td><td>4</td><td>0.1 .. 10</td><td> </td><td>Length of the chord (end-to-end span of the slash)</td></tr>
+<tr><td><code>arc_curvature</code></td><td>Arc Curvature</td><td>float</td><td>1</td><td>0.1 .. 5</td><td> </td><td>Shape of the arc bulge. 1.0 = standard parabola, &gt;1.0 = flatter middle with sharper shoulders, &lt;1.0 = rounder dome</td></tr>
+<tr><td><code>arc_peak</code></td><td>Peak Position</td><td>float</td><td>0.5</td><td>0 .. 1</td><td> </td><td>Where the apex sits along the chord (0.0 = left end, 0.5 = centered, 1.0 = right end)</td></tr>
+<tr><td><code>segments</code></td><td>Segments</td><td>int</td><td>32</td><td>4 .. 64</td><td> </td><td>Number of segments along the arc</td></tr>
+<tr><td><code>end_sharpness</code></td><td>End Sharpness</td><td>float</td><td>1</td><td>0.1 .. 5</td><td> </td><td>How pointed the ends/corners are. 1.0 = smooth parabolic taper, &gt;1.0 = sharper points, &lt;1.0 = blunter/rounder ends. Affects ribbon width and tube taper profiles</td></tr>
+<tr><td><code>mesh_type</code></td><td>Mesh Type</td><td>enum</td><td>GRADIENT</td><td></td><td> </td><td>Type of mesh to generate</td></tr>
+<tr><td><code>gradient_width</code></td><td>Max Width</td><td>float</td><td>0.35</td><td>0.01 .. 1</td><td> </td><td>Maximum width of the ribbon at the apex of the arc</td></tr>
+<tr><td><code>curve_radius</code></td><td>Max Radius</td><td>float</td><td>0.1</td><td>0.01 .. 0.5</td><td> </td><td>Maximum radius of the tube at the apex of the arc</td></tr>
+<tr><td><code>curve_taper</code></td><td>Taper Amount</td><td>float</td><td>0.8</td><td>0 .. 1</td><td> </td><td>How much the tube tapers toward the ends (0 = uniform tube, 1 = tapers fully to points at the ends)</td></tr>
+<tr><td><code>curve_segments</code></td><td>Cross Sections</td><td>int</td><td>8</td><td>3 .. 32</td><td> </td><td>Number of segments in the circular cross-section of the tube</td></tr>
+</table>
+<h2>Enum Items</h2>
+<h3>Enum: <code>mesh_type</code> (Mesh Type)</h3>
+<table>
+<tr><th>Identifier</th><th>Label</th><th>Description</th></tr>
+<tr><td><code>GRADIENT</code></td><td>Gradient Ribbon</td><td>Ribbon mesh with gradient width (sharp at ends, wide in center)</td></tr>
+<tr><td><code>CURVE</code></td><td>Curved Tube</td><td>Tube mesh along the slash line with circular cross-section</td></tr>
+<tr><td><code>LINE</code></td><td>Line</td><td>Simple line mesh (vertices and edges only)</td></tr>
+</table>
+
+<h2>Operators</h2>
+<table>
+<tr><th>Class</th><th>bl_idname</th><th>Label</th><th>Options</th><th>Description</th></tr>
+<tr><td><code>ZENV_OT_VFXSlashAdd</code></td><td><code>zenv.vfx_slash_add</code></td><td>Add VFX Slash</td><td></td><td>Create a new VFX slash parabola mesh</td></tr>
+</table>
+
+</div>
+    </div>
+</div>
+</body>
+</html>

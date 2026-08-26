@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZENV Blender Addons - Overview</title>
+<style>
+:root { --bg:#1a1a1a; --surface:#2d2d2d; --border:#404040; --text:#e0e0e0; --muted:#b0b0b0; --accent:#4a7ba7; --link:#64b5f6; --code:#1e1e1e; }
+* { box-sizing:border-box; }
+html,body { margin:0; height:100%; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+.page { display:flex; height:100vh; }
+.sidebar { width:14%; min-width:200px; border-right:1px solid var(--border); background:var(--bg); }
+.sidebar iframe { width:100%; height:100%; border:none; }
+.content { flex:1; overflow-y:auto; }
+header { background:linear-gradient(90deg,#0a1520 0%,#1a1a1a 100%); border-bottom:2px solid var(--accent); padding:1.2rem 1rem; text-align:center; }
+header h1 { margin:0; font-size:2rem; color:#fff; }
+header p { margin:0.5rem 0 0; color:var(--muted); }
+.container { max-width:1000px; margin:0 auto; padding:2rem 1.5rem; }
+h2 { color:#fff; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-top:2.5rem; font-size:1.4rem; }
+h3 { color:#fff; margin-top:1.5rem; font-size:1.1rem; }
+a { color:var(--link); text-decoration:none; }
+a:hover { text-decoration:underline; }
+ul,ol { padding-left:1.4rem; }
+li { margin-bottom:0.4rem; }
+table { width:100%; border-collapse:collapse; margin:1rem 0; font-size:0.95rem; }
+th,td { border:1px solid var(--border); padding:0.5rem 0.7rem; text-align:left; vertical-align:top; }
+th { background:var(--surface); color:#fff; }
+td { background:#222; }
+code,pre { background:var(--code); border:1px solid var(--border); border-radius:4px; font-family:Consolas,Monaco,'Courier New',monospace; font-size:0.9rem; }
+code { padding:0.15rem 0.35rem; }
+pre { padding:0.8rem; overflow-x:auto; white-space:pre-wrap; }
+.note { border-left:3px solid var(--accent); background:var(--surface); padding:0.8rem 1rem; margin:1rem 0; border-radius:0 6px 6px 0; }
+.meta-grid { display:grid; grid-template-columns:160px 1fr; gap:0.4rem 1rem; margin:1rem 0; font-size:0.95rem; }
+.meta-grid dt { color:var(--muted); }
+.meta-grid dd { margin:0; }
+.badge { display:inline-block; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.75rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); margin:0.1rem; }
+.badge.status-working { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-stable { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-wip { color:#d6b55a; border-color:#a79a5a; }
+.badge.status-deprecated { color:#ff6b6b; border-color:#a75a5a; }
+img.node-shot { width:100%; border:1px solid var(--border); border-radius:4px; margin:1rem 0; }
+footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0.9rem; border-top:1px solid var(--border); margin-top:3rem; }
+
+.node-card { display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--border); border-radius:6px; overflow:hidden; text-decoration:none; color:inherit; transition:border-color 0.15s, transform 0.15s; }
+.node-card:hover { border-color:#4a7ba7; transform:translateY(-2px); }
+.card-img { width:100%; height:140px; object-fit:cover; display:block; background:#1a1a1a; }
+.card-body { padding:0.6rem 0.8rem; }
+.card-title { color:#4a7ba7; font-size:0.9rem; font-weight:600; margin-bottom:0.2rem; }
+.card-desc { color:var(--muted); font-size:0.78rem; line-height:1.3; }
+.card-group { margin-top:1rem; }
+.card-group h3 { color:#ffffff; font-size:0.95rem; text-transform:uppercase; margin:0 0 0.5rem 0; padding-bottom:0.3rem; border-bottom:1px solid var(--border); }
+.card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:0.8rem; }
+.row-group { margin-top:1.2rem; }
+.row-group h3 { color:#ffffff; font-size:0.95rem; text-transform:uppercase; margin:0 0 0.5rem 0; padding-bottom:0.3rem; border-bottom:1px solid var(--border); }
+.row-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.row-table td { border:1px solid var(--border); padding:0.8rem; vertical-align:middle; background:#222; }
+.row-title { width:180px; text-align:center; vertical-align:middle; font-weight:600; }
+.row-title a { color:#4a7ba7; text-decoration:none; }
+.row-title a:hover { text-decoration:underline; }
+.row-media { text-align:center; }
+.row-img { display:block; margin:0 auto; max-width:1000px; width:100%; height:auto; border:1px solid var(--border); border-radius:4px; }
+.row-desc { color:var(--muted); font-size:0.85rem; margin-top:0.5rem; text-align:center; }
+.banner-img { max-width:100%; height:auto; max-height:120px; display:block; margin:0 auto; }
+.header-links { margin-top:0.2rem; font-size:0.9rem; }
+.header-links a { color:var(--link); text-decoration:none; font-weight:600; }
+.header-links a:hover { text-decoration:underline; }
+/* Compact the top of the overview page: tighten header + container padding. */
+header { padding:0.3rem 0.5rem; }
+.container { padding:0.5rem 1rem; }
+.details-table { width:100%; border-collapse:collapse; margin:0.4rem 0; font-size:0.88rem; }
+.details-table th { background:var(--surface); color:#fff; padding:0.3rem 0.6rem; text-align:left; border:1px solid var(--border); font-size:0.8rem; text-transform:uppercase; }
+.details-table td { border:1px solid var(--border); padding:0.3rem 0.6rem; vertical-align:top; background:#222; }
+.details-table td a { color:#4a7ba7; text-decoration:none; font-weight:600; }
+.details-table td a:hover { text-decoration:underline; }
+
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="sidebar"><iframe src="zenv_menu.html"></iframe></div>
+    <div class="content">
+<header>
+    <img class="banner-img" src="zenv_blender_header_wide.png" alt="ZENV Blender Addons">
+    <div class="header-links">
+        <a href="https://github.com/CorvaeOboro/zenv">GITHUB</a>
+    </div>
+</header>
+<div class="container">
+
+<table>
+<tr><td><strong>Texture</strong></td><td><a href="addons/z_blender_TEX_texture_proj_cam.html">TEX Camera Projection</a> | <a href="addons/z_blender_TEX_texture_variant_view.html">TEX Texture Variant View</a> | <a href="addons/z_blender_TEX_bake_ambient_occlusion_multi.html">TEX Bake Ambient Occlusion</a> | <a href="addons/z_blender_TEX_bake_curvature_edge_highlight_multi.html">TEX Bake Curvature Edge Highlight</a> | <a href="addons/z_blender_TEX_bake_uv_island_facing_center_mask_multi.html">TEX Bake UV Island Facing-Center Mask</a> | <a href="addons/z_blender_TEX_bake_worldspace_bounds_gradient_multi.html">TEX Bake Worldspace Bounds Gradients</a> | <a href="addons/z_blender_TEX_texture_export_dated.html">TEX Texture Export Dated</a> | <a href="addons/z_blender_TEX_transition_texture_worldspace_bake.html">TEX Bake Transition Worldspace</a></td></tr>
+<tr><td><strong>Mesh</strong></td><td><a href="addons/z_blender_MESH_separate_by_material.html">MESH Separate By Material</a> | <a href="addons/z_blender_MESH_separate_by_UV_island.html">MESH Separate by UV Islands</a> | <a href="addons/z_blender_MESH_separate_by_uv_quadrant.html">MESH Separate by UV Quadrants</a> | <a href="addons/z_blender_MESH_separate_by_axis.html">MESH Separate by Axis</a> | <a href="addons/z_blender_MESH_rename_objects_by_material.html">MESH Rename Objects By Material</a> | <a href="addons/z_blender_MESH_noise_displace.html">MESH Noise Surface Displacement</a> | <a href="addons/z_blender_MESH_cut_world_bricker.html">MESH Cut World Bricker</a> | <a href="addons/z_blender_MESH_to_UV_space.html">MESH to UV Space</a> | <a href="addons/z_blender_MESH_angular_planarize.html">MESH Angular Planarize</a></td></tr>
+<tr><td><strong>Generative</strong></td><td><a href="addons/z_blender_GEN_tiles_from_textures.html">GEN random Tiles by Textures</a> | <a href="addons/z_blender_GEN_ultima_landtiles.html">GEN Ultima Landtiles from CSV</a> | <a href="addons/z_blender_GEN_vfx_slash.html">GEN VFX Slash</a></td></tr>
+<tr><td><strong>Material</strong></td><td><a href="addons/z_blender_MAT_remove_unused_materials.html">MAT Remove Unused Materials</a> | <a href="addons/z_blender_MAT_consolidate_duplicate_mats.html">MAT Consolidate Materials by Texture</a> | <a href="addons/z_blender_MAT_rename_material_by_texture.html">MAT Rename Material by Texture</a> | <a href="addons/z_blender_MAT_rename_material_suffix.html">MAT Rename Material Suffix</a> | <a href="addons/z_blender_MAT_remove_all_opacity.html">MAT Remove Opacity</a> | <a href="addons/z_blender_MAT_create_from_textures.html">MAT Create From Textures</a> | <a href="addons/z_blender_MAT_unlit_convert.html">MAT Unlit Convert</a> | <a href="addons/z_blender_MAT_remap_textures.html">MAT Remap Textures</a> | <a href="addons/z_blender_MAT_set_textures_by_material_name.html">MAT Set Textures by Material Name</a></td></tr>
+<tr><td><strong>Export</strong></td><td><a href="addons/z_blender_EXPORT_all_objects_to_separate_blend.html">EXPORT All Objects to Separate Blend Files</a> | <a href="addons/z_blender_EXPORT_all_objects_to_separate_fbx.html">EXPORT All Objects to FBX Files for UE4</a></td></tr>
+<tr><td><strong>Items</strong></td><td><a href="addons/z_blender_ITEM_potion.html">ITEM Potion Generator</a></td></tr>
+<tr><td><strong>View</strong></td><td><a href="addons/z_blender_VIEW_view_flat_color_texture.html">VIEW Flat Texture View</a> | <a href="addons/z_blender_VIEW_view_scale_clipping.html">VIEW Scale Clipping</a></td></tr>
+<tr><td><strong>UV</strong></td><td><a href="addons/z_blender_UV_uv_mirror_zero_pivot.html">UV Mirror Zero Pivot</a> | <a href="addons/z_blender_UV_optimize_islands.html">UV Optimize Islands</a></td></tr>
+<tr><td><strong>Render</strong></td><td><a href="addons/z_blender_RENDER_color.html">RENDER Unlit Color</a> | <a href="addons/z_blender_RENDER_depth.html">RENDER Depth Map</a></td></tr>
+<tr><td><strong>Clean</strong></td><td><a href="addons/z_blender_CLEAN_scene_optimizer.html">CLEAN Scene Optimizer</a></td></tr>
+</table>
+
+<div class="card-group">
+<h3>Texture</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_TEX_texture_proj_cam.html">TEX Camera Projection</a></td><td>Create camera from current view and bake projected textures</td></tr>
+<tr><td><a href="addons/z_blender_TEX_texture_variant_view.html">TEX Texture Variant View</a></td><td>Quickly view and organize texture variants on a model</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_ambient_occlusion_multi.html">TEX Bake Ambient Occlusion</a></td><td>bake AO to texture , selected temp merge</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_curvature_edge_highlight_multi.html">TEX Bake Curvature Edge Highlight</a></td><td>bake Curvature to texture , selected temp merge</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_uv_island_facing_center_mask_multi.html">TEX Bake UV Island Facing-Center Mask</a></td><td>per UV island pick 1 face facing a center point; bake mask via EMIT</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_worldspace_bounds_gradient_multi.html">TEX Bake Worldspace Bounds Gradients</a></td><td>multi-object worldspace gradients bake (XYZ RGB or vertical grayscale)</td></tr>
+<tr><td><a href="addons/z_blender_TEX_texture_export_dated.html">TEX Texture Export Dated</a></td><td>Export painted textures to dated copies inside the matching project folder</td></tr>
+<tr><td><a href="addons/z_blender_TEX_transition_texture_worldspace_bake.html">TEX Bake Transition Worldspace</a></td><td>bake worldspace transition texture between two meshes</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>Mesh</h3>
+<div class="card-grid">
+<a class="node-card" href="addons/z_blender_MESH_angular_planarize.html"><img class="card-img" src="zenv_blender_MESH_angular_planarize.png" alt="MESH Angular Planarize"><div class="card-body"><div class="card-title">MESH Angular Planarize</div><div class="card-desc">planarize mesh faces by random k-means angle cluster , useful for rock like sharpening with flat areas</div></div></a>
+</div>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_MESH_separate_by_material.html">MESH Separate By Material</a></td><td>for each material detach mesh into parts</td></tr>
+<tr><td><a href="addons/z_blender_MESH_separate_by_UV_island.html">MESH Separate by UV Islands</a></td><td>for each uv island detach mesh into parts</td></tr>
+<tr><td><a href="addons/z_blender_MESH_separate_by_uv_quadrant.html">MESH Separate by UV Quadrants</a></td><td>split mesh along UV seams and transform</td></tr>
+<tr><td><a href="addons/z_blender_MESH_separate_by_axis.html">MESH Separate by Axis</a></td><td>separate mesh parts by axis</td></tr>
+<tr><td><a href="addons/z_blender_MESH_rename_objects_by_material.html">MESH Rename Objects By Material</a></td><td>rename objects by material name</td></tr>
+<tr><td><a href="addons/z_blender_MESH_noise_displace.html">MESH Noise Surface Displacement</a></td><td>3D noise-based surface displacement with presets</td></tr>
+<tr><td><a href="addons/z_blender_MESH_cut_world_bricker.html">MESH Cut World Bricker</a></td><td>Cut mesh into brick like segments</td></tr>
+<tr><td><a href="addons/z_blender_MESH_to_UV_space.html">MESH to UV Space</a></td><td>transform mesh to match UV layout in 3D space</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>Generative</h3>
+<div class="card-grid">
+<a class="node-card" href="addons/z_blender_GEN_vfx_slash.html"><img class="card-img" src="zenv_blender_GEN_vfx_slash.png" alt="GEN VFX Slash"><div class="card-body"><div class="card-title">GEN VFX Slash</div><div class="card-desc">generate a parabola mesh for vfx slash effects</div></div></a>
+</div>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_GEN_tiles_from_textures.html">GEN random Tiles by Textures</a></td><td>generate random tiles from texture set for tiling and seam blending review</td></tr>
+<tr><td><a href="addons/z_blender_GEN_ultima_landtiles.html">GEN Ultima Landtiles from CSV</a></td><td>generate ultima land tile planes from a CSV map file</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>Material</h3>
+<div class="card-grid">
+<a class="node-card" href="addons/z_blender_MAT_remove_unused_materials.html"><img class="card-img" src="zenv_blender_MAT_remove_unused.png" alt="MAT Remove Unused Materials"><div class="card-body"><div class="card-title">MAT Remove Unused Materials</div><div class="card-desc">remove unused materials</div></div></a>
+</div>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_MAT_consolidate_duplicate_mats.html">MAT Consolidate Materials by Texture</a></td><td>reduce to one material per texture</td></tr>
+<tr><td><a href="addons/z_blender_MAT_rename_material_by_texture.html">MAT Rename Material by Texture</a></td><td>rename material by texture name</td></tr>
+<tr><td><a href="addons/z_blender_MAT_rename_material_suffix.html">MAT Rename Material Suffix</a></td><td>add or remove prefix or suffix on materials</td></tr>
+<tr><td><a href="addons/z_blender_MAT_remove_all_opacity.html">MAT Remove Opacity</a></td><td>remove all opacity textures in materials</td></tr>
+<tr><td><a href="addons/z_blender_MAT_create_from_textures.html">MAT Create From Textures</a></td><td>create materials from texture folder</td></tr>
+<tr><td><a href="addons/z_blender_MAT_unlit_convert.html">MAT Unlit Convert</a></td><td>convert all materials to emission for unlit render</td></tr>
+<tr><td><a href="addons/z_blender_MAT_remap_textures.html">MAT Remap Textures</a></td><td>remap texture paths in materials</td></tr>
+<tr><td><a href="addons/z_blender_MAT_set_textures_by_material_name.html">MAT Set Textures by Material Name</a></td><td>assign textures based on material names</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>Export</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_EXPORT_all_objects_to_separate_blend.html">EXPORT All Objects to Separate Blend Files</a></td><td>batch export selected objects to separate blend files</td></tr>
+<tr><td><a href="addons/z_blender_EXPORT_all_objects_to_separate_fbx.html">EXPORT All Objects to FBX Files for UE4</a></td><td>batch export selected objects to separate FBX files</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>Items</h3>
+<div class="card-grid">
+<a class="node-card" href="addons/z_blender_ITEM_potion.html"><img class="card-img" src="zenv_blender_ITEM_potion.png" alt="ITEM Potion Generator"><div class="card-body"><div class="card-title">ITEM Potion Generator</div><div class="card-desc">generate procedural potion bottles with modular components</div></div></a>
+</div>
+</div>
+<div class="card-group">
+<h3>View</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_VIEW_view_flat_color_texture.html">VIEW Flat Texture View</a></td><td>quickview flat color texture , unlit viewmode</td></tr>
+<tr><td><a href="addons/z_blender_VIEW_view_scale_clipping.html">VIEW Scale Clipping</a></td><td>uses bounds of objects in scene to set near and far clipping</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>UV</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_UV_uv_mirror_zero_pivot.html">UV Mirror Zero Pivot</a></td><td>U or V mirroring with pivot always at zero instead of the default of selected center</td></tr>
+<tr><td><a href="addons/z_blender_UV_optimize_islands.html">UV Optimize Islands</a></td><td>Snap UV islands toward origin</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>Render</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_RENDER_color.html">RENDER Unlit Color</a></td><td>quick renders color unlit image with datetime suffix</td></tr>
+<tr><td><a href="addons/z_blender_RENDER_depth.html">RENDER Depth Map</a></td><td>renders depth with auto min max from selected object with datetime suffix</td></tr>
+</table>
+</div>
+<div class="card-group">
+<h3>Clean</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_CLEAN_scene_optimizer.html">CLEAN Scene Optimizer</a></td><td>optimize removing unused material , textures , and mesh data</td></tr>
+</table>
+</div>
+
+<div class="row-group">
+<h3>Texture</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_TEX_texture_proj_cam.html">TEX Camera Projection</a></td><td>Create camera from current view and bake projected textures</td></tr>
+<tr><td><a href="addons/z_blender_TEX_texture_variant_view.html">TEX Texture Variant View</a></td><td>Quickly view and organize texture variants on a model</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_ambient_occlusion_multi.html">TEX Bake Ambient Occlusion</a></td><td>bake AO to texture , selected temp merge</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_curvature_edge_highlight_multi.html">TEX Bake Curvature Edge Highlight</a></td><td>bake Curvature to texture , selected temp merge</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_uv_island_facing_center_mask_multi.html">TEX Bake UV Island Facing-Center Mask</a></td><td>per UV island pick 1 face facing a center point; bake mask via EMIT</td></tr>
+<tr><td><a href="addons/z_blender_TEX_bake_worldspace_bounds_gradient_multi.html">TEX Bake Worldspace Bounds Gradients</a></td><td>multi-object worldspace gradients bake (XYZ RGB or vertical grayscale)</td></tr>
+<tr><td><a href="addons/z_blender_TEX_texture_export_dated.html">TEX Texture Export Dated</a></td><td>Export painted textures to dated copies inside the matching project folder</td></tr>
+<tr><td><a href="addons/z_blender_TEX_transition_texture_worldspace_bake.html">TEX Bake Transition Worldspace</a></td><td>bake worldspace transition texture between two meshes</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>Mesh</h3>
+<table class="row-table">
+<tr><td class="row-title"><a href="addons/z_blender_MESH_angular_planarize.html">MESH Angular Planarize</a></td><td class="row-media"><img class="row-img" src="zenv_blender_MESH_angular_planarize.png" alt="MESH Angular Planarize"><div class="row-desc">planarize mesh faces by random k-means angle cluster , useful for rock like sharpening with flat areas</div></td></tr>
+</table>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_MESH_separate_by_material.html">MESH Separate By Material</a></td><td>for each material detach mesh into parts</td></tr>
+<tr><td><a href="addons/z_blender_MESH_separate_by_UV_island.html">MESH Separate by UV Islands</a></td><td>for each uv island detach mesh into parts</td></tr>
+<tr><td><a href="addons/z_blender_MESH_separate_by_uv_quadrant.html">MESH Separate by UV Quadrants</a></td><td>split mesh along UV seams and transform</td></tr>
+<tr><td><a href="addons/z_blender_MESH_separate_by_axis.html">MESH Separate by Axis</a></td><td>separate mesh parts by axis</td></tr>
+<tr><td><a href="addons/z_blender_MESH_rename_objects_by_material.html">MESH Rename Objects By Material</a></td><td>rename objects by material name</td></tr>
+<tr><td><a href="addons/z_blender_MESH_noise_displace.html">MESH Noise Surface Displacement</a></td><td>3D noise-based surface displacement with presets</td></tr>
+<tr><td><a href="addons/z_blender_MESH_cut_world_bricker.html">MESH Cut World Bricker</a></td><td>Cut mesh into brick like segments</td></tr>
+<tr><td><a href="addons/z_blender_MESH_to_UV_space.html">MESH to UV Space</a></td><td>transform mesh to match UV layout in 3D space</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>Generative</h3>
+<table class="row-table">
+<tr><td class="row-title"><a href="addons/z_blender_GEN_vfx_slash.html">GEN VFX Slash</a></td><td class="row-media"><img class="row-img" src="zenv_blender_GEN_vfx_slash.png" alt="GEN VFX Slash"><div class="row-desc">generate a parabola mesh for vfx slash effects</div></td></tr>
+</table>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_GEN_tiles_from_textures.html">GEN random Tiles by Textures</a></td><td>generate random tiles from texture set for tiling and seam blending review</td></tr>
+<tr><td><a href="addons/z_blender_GEN_ultima_landtiles.html">GEN Ultima Landtiles from CSV</a></td><td>generate ultima land tile planes from a CSV map file</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>Material</h3>
+<table class="row-table">
+<tr><td class="row-title"><a href="addons/z_blender_MAT_remove_unused_materials.html">MAT Remove Unused Materials</a></td><td class="row-media"><img class="row-img" src="zenv_blender_MAT_remove_unused.png" alt="MAT Remove Unused Materials"><div class="row-desc">remove unused materials</div></td></tr>
+</table>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_MAT_consolidate_duplicate_mats.html">MAT Consolidate Materials by Texture</a></td><td>reduce to one material per texture</td></tr>
+<tr><td><a href="addons/z_blender_MAT_rename_material_by_texture.html">MAT Rename Material by Texture</a></td><td>rename material by texture name</td></tr>
+<tr><td><a href="addons/z_blender_MAT_rename_material_suffix.html">MAT Rename Material Suffix</a></td><td>add or remove prefix or suffix on materials</td></tr>
+<tr><td><a href="addons/z_blender_MAT_remove_all_opacity.html">MAT Remove Opacity</a></td><td>remove all opacity textures in materials</td></tr>
+<tr><td><a href="addons/z_blender_MAT_create_from_textures.html">MAT Create From Textures</a></td><td>create materials from texture folder</td></tr>
+<tr><td><a href="addons/z_blender_MAT_unlit_convert.html">MAT Unlit Convert</a></td><td>convert all materials to emission for unlit render</td></tr>
+<tr><td><a href="addons/z_blender_MAT_remap_textures.html">MAT Remap Textures</a></td><td>remap texture paths in materials</td></tr>
+<tr><td><a href="addons/z_blender_MAT_set_textures_by_material_name.html">MAT Set Textures by Material Name</a></td><td>assign textures based on material names</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>Export</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_EXPORT_all_objects_to_separate_blend.html">EXPORT All Objects to Separate Blend Files</a></td><td>batch export selected objects to separate blend files</td></tr>
+<tr><td><a href="addons/z_blender_EXPORT_all_objects_to_separate_fbx.html">EXPORT All Objects to FBX Files for UE4</a></td><td>batch export selected objects to separate FBX files</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>Items</h3>
+<table class="row-table">
+<tr><td class="row-title"><a href="addons/z_blender_ITEM_potion.html">ITEM Potion Generator</a></td><td class="row-media"><img class="row-img" src="zenv_blender_ITEM_potion.png" alt="ITEM Potion Generator"><div class="row-desc">generate procedural potion bottles with modular components</div></td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>View</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_VIEW_view_flat_color_texture.html">VIEW Flat Texture View</a></td><td>quickview flat color texture , unlit viewmode</td></tr>
+<tr><td><a href="addons/z_blender_VIEW_view_scale_clipping.html">VIEW Scale Clipping</a></td><td>uses bounds of objects in scene to set near and far clipping</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>UV</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_UV_uv_mirror_zero_pivot.html">UV Mirror Zero Pivot</a></td><td>U or V mirroring with pivot always at zero instead of the default of selected center</td></tr>
+<tr><td><a href="addons/z_blender_UV_optimize_islands.html">UV Optimize Islands</a></td><td>Snap UV islands toward origin</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>Render</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_RENDER_color.html">RENDER Unlit Color</a></td><td>quick renders color unlit image with datetime suffix</td></tr>
+<tr><td><a href="addons/z_blender_RENDER_depth.html">RENDER Depth Map</a></td><td>renders depth with auto min max from selected object with datetime suffix</td></tr>
+</table>
+</div>
+<div class="row-group">
+<h3>Clean</h3>
+<table class="details-table">
+<tr><td><a href="addons/z_blender_CLEAN_scene_optimizer.html">CLEAN Scene Optimizer</a></td><td>optimize removing unused material , textures , and mesh data</td></tr>
+</table>
+</div>
+
+</div>
+    </div>
+</div>
+</body>
+</html>

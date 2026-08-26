@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZENV - TEX Texture Variant View</title>
+<style>
+:root { --bg:#1a1a1a; --surface:#2d2d2d; --border:#404040; --text:#e0e0e0; --muted:#b0b0b0; --accent:#4a7ba7; --link:#64b5f6; --code:#1e1e1e; }
+* { box-sizing:border-box; }
+html,body { margin:0; height:100%; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+.page { display:flex; height:100vh; }
+.sidebar { width:14%; min-width:200px; border-right:1px solid var(--border); background:var(--bg); }
+.sidebar iframe { width:100%; height:100%; border:none; }
+.content { flex:1; overflow-y:auto; }
+header { background:linear-gradient(90deg,#0a1520 0%,#1a1a1a 100%); border-bottom:2px solid var(--accent); padding:1.2rem 1rem; text-align:center; }
+header h1 { margin:0; font-size:2rem; color:#fff; }
+header p { margin:0.5rem 0 0; color:var(--muted); }
+.container { max-width:1000px; margin:0 auto; padding:2rem 1.5rem; }
+h2 { color:#fff; border-bottom:1px solid var(--border); padding-bottom:0.5rem; margin-top:2.5rem; font-size:1.4rem; }
+h3 { color:#fff; margin-top:1.5rem; font-size:1.1rem; }
+a { color:var(--link); text-decoration:none; }
+a:hover { text-decoration:underline; }
+ul,ol { padding-left:1.4rem; }
+li { margin-bottom:0.4rem; }
+table { width:100%; border-collapse:collapse; margin:1rem 0; font-size:0.95rem; }
+th,td { border:1px solid var(--border); padding:0.5rem 0.7rem; text-align:left; vertical-align:top; }
+th { background:var(--surface); color:#fff; }
+td { background:#222; }
+code,pre { background:var(--code); border:1px solid var(--border); border-radius:4px; font-family:Consolas,Monaco,'Courier New',monospace; font-size:0.9rem; }
+code { padding:0.15rem 0.35rem; }
+pre { padding:0.8rem; overflow-x:auto; white-space:pre-wrap; }
+.note { border-left:3px solid var(--accent); background:var(--surface); padding:0.8rem 1rem; margin:1rem 0; border-radius:0 6px 6px 0; }
+.meta-grid { display:grid; grid-template-columns:160px 1fr; gap:0.4rem 1rem; margin:1rem 0; font-size:0.95rem; }
+.meta-grid dt { color:var(--muted); }
+.meta-grid dd { margin:0; }
+.badge { display:inline-block; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.75rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); margin:0.1rem; }
+.badge.status-working { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-stable { color:#b5d65a; border-color:#5a8a3a; }
+.badge.status-wip { color:#d6b55a; border-color:#a79a5a; }
+.badge.status-deprecated { color:#ff6b6b; border-color:#a75a5a; }
+img.node-shot { width:100%; border:1px solid var(--border); border-radius:4px; margin:1rem 0; }
+footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0.9rem; border-top:1px solid var(--border); margin-top:3rem; }
+</style>
+</head>
+<body>
+<div class="page">
+    <div class="sidebar"><iframe src="../zenv_menu.html"></iframe></div>
+    <div class="content">
+<header>
+    <h1>TEX Texture Variant View</h1>
+    <p>Quickly view and organize texture variants on a model</p>
+</header>
+<div class="container">
+
+
+
+<h2>Metadata</h2>
+<dl class="meta-grid">
+<dt>Addon File</dt><dd><code>z_blender_TEX_texture_variant_view.py</code></dd>
+<dt>Tags</dt><dd><span class="badge">texture</span> <span class="badge">variant</span> <span class="badge">view</span> <span class="badge">cycle</span> <span class="badge">organize</span> <span class="badge">rank</span></dd>
+</dl>
+
+<p class="note">Quickly view and organize texture variants on a model</p><p>specify a folder of textures, then with a mesh selected cycle through them applied to the mesh, ranking them into subfolders - useful for visualizing and choosing the best from many synthesized texture variants</p>
+
+<pre>specify a folder of textures , then with a mesh selected can quickly cycle through them applied to the mesh , ranking them into subfolders . useful for visualizing and choosing the best from many synthesized texture variants , supports valid_exts = .png ,.jpg, .jpeg, .tga, .tif, .tiff, .bmp, .webp</pre>
+
+<h2>Properties</h2>
+<table>
+<tr><th>Attr</th><th>Label</th><th>Type</th><th>Default</th><th>Range</th><th>Subtype / Options</th><th>Description</th></tr>
+<tr><td><code>path</code></td><td>Path</td><td>string</td><td></td><td></td><td><span class="badge">FILE_PATH</span> </td><td>Absolute path to a texture image on disk</td></tr>
+<tr><td><code>folder_path</code></td><td>Folder Path</td><td>string</td><td></td><td></td><td><span class="badge">DIR_PATH</span> </td><td>Folder containing texture images</td></tr>
+<tr><td><code>texture_files</code></td><td>Texture Files</td><td>collection</td><td></td><td></td><td> <span class="badge">type=ZENV_PG_TextureVariantFilePath</span></td><td>List of texture files discovered in the folder, in order</td></tr>
+<tr><td><code>material_index</code></td><td>Material Index</td><td>int</td><td>0</td><td></td><td> </td><td>Index of the current texture</td></tr>
+</table>
+
+<h2>Operators</h2>
+<table>
+<tr><th>Class</th><th>bl_idname</th><th>Label</th><th>Options</th><th>Description</th></tr>
+<tr><td><code>ZENV_OT_TextureVariantViewRank_Load</code></td><td><code>zenv.texturevariant_load</code></td><td>Load Textures</td><td></td><td>Load textures from the specified folder</td></tr>
+<tr><td><code>ZENV_OT_TextureVariantViewRank_CopyPath</code></td><td><code>zenv.texturevariant_copy_path</code></td><td>Copy Path</td><td></td><td>Copy current texture path to clipboard</td></tr>
+<tr><td><code>ZENV_OT_TextureVariantViewRank_CyclePrevious</code></td><td><code>zenv.texturevariant_previous</code></td><td>Previous</td><td></td><td>View previous texture variant</td></tr>
+<tr><td><code>ZENV_OT_TextureVariantViewRank_CycleNext</code></td><td><code>zenv.texturevariant_next</code></td><td>Next</td><td></td><td>View next texture variant</td></tr>
+<tr><td><code>ZENV_OT_TextureVariantViewRank_CopyToFolder</code></td><td><code>zenv.texturevariant_copy_to_folder</code></td><td>Rank 01</td><td></td><td>Copy current texture to subfolder</td></tr>
+<tr><td><code>ZENV_OT_TextureVariantViewRank_MoveToFolder</code></td><td><code>zenv.texturevariant_move_to_folder</code></td><td>Rank 02</td><td></td><td>Move current texture to subfolder</td></tr>
+</table>
+
+</div>
+    </div>
+</div>
+</body>
+</html>
