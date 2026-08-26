@@ -1,56 +1,59 @@
-"""
-GEN Runes Norse – Procedural Rune Generator (Unified Mesh Version)
--------------------------------------------------------------------
-Generates a procedural rune-like symbol with a main stroke, optional secondary stroke,
-and endpoint decorations. The centerlines are expanded into a constant-thickness 2D stroke,
-filled to form a face, extruded to give 3D volume, and then the top face is tapered 
-to simulate a stone-carved appearance.
-
-Inspired by Norse runes
-"""
-
+#region META
 bl_info = {
     "name": 'GEN Runes Norse',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250222',
-    "description": 'Generate procedural rune-like symbols as extruded meshes with restored decorations and secondary strokes.',
-    "status": 'wip',
+    "version": '20260825',
+    "description": 'Generate procedural rune-like symbols as extruded meshes with stroke thickness, taper, and optional secondary stroke.',
+    "status": 'working',
     "approved": True,
     "group": 'Generative',
     "group_prefix": 'GEN',
+    "group_order": 30,
+    "addon_order": 30,
+    "tags": ['generative', 'rune', 'norse', 'procedural', 'mesh', 'symbol'],
+    "description_short": 'Generate procedural rune-like symbols as extruded meshes',
+    "description_medium": 'Generates rune-like symbols by creating a random orthogonal polyline, expanding it into a constant-thickness 2D stroke, filling it into a face, extruding to 3D, and tapering the top face for a stone-carved look. Supports optional secondary stroke and deterministic output via random seed.',
+    "description_long": """
+    GEN Runes Norse
+    Generates procedural rune-like symbols as extruded meshes. The main
+    stroke is a random orthogonal polyline that is expanded into a
+    constant-thickness 2D outline using miter joins, filled into a face,
+    extruded to 3D, and tapered at the top for a carved-stone appearance.
+    An optional secondary stroke can be attached. Output is deterministic
+    via a configurable random seed.""",
     "location": 'View3D > ZENV',
+    "image_overview": 'zenv_blender_GEN_runes_norse.png',
+    "addon_image": 'zenv_blender_GEN_runes_norse.png',
+    "warning": '',
+    "doc_url": '',
 }
 
+#endregion
+#region IMPORT
 import bpy
 import bmesh
 import random
-import time
-from math import (
-    radians, degrees,
-    sin, cos, tan,
-    asin, acos, atan2,
-    pi,
-    sqrt
-)
-from mathutils import Vector, Matrix
+import logging
+from mathutils import Vector
 from bpy.props import (
     IntProperty,
     FloatProperty,
     BoolProperty,
-    EnumProperty,
-    PointerProperty
+    PointerProperty,
 )
 from bpy.types import (
     Operator,
     PropertyGroup,
-    Panel
+    Panel,
 )
 
-# ------------------------------------------------------------------------
-#    Property Group (Restored with Additional Attributes)
-# ------------------------------------------------------------------------
-class ZENV_PG_RuneGenerator_Properties(PropertyGroup):
+logger = logging.getLogger(__name__)
+_zenv_runes_console_handler = None
+
+#endregion
+#region PROPS
+class ZENV_PG_RuneGenerator(PropertyGroup):
     """Properties for rune generation."""
     num_segments: IntProperty(
         name="Segments",
@@ -63,12 +66,14 @@ class ZENV_PG_RuneGenerator_Properties(PropertyGroup):
         name="Stroke Thickness",
         default=0.3,
         min=0.01,
+        max=2.0,
         description="2D line thickness of the rune"
     )
     extrude_depth: FloatProperty(
         name="Extrude Depth",
         default=0.1,
         min=0.001,
+        max=2.0,
         description="Depth to extrude the filled 2D stroke"
     )
     taper_factor: FloatProperty(
@@ -83,23 +88,30 @@ class ZENV_PG_RuneGenerator_Properties(PropertyGroup):
         default=False,
         description="Generate a secondary stroke attached to the main stroke"
     )
+    second_stroke_length: FloatProperty(
+        name="Second Stroke Length",
+        default=1.0,
+        min=0.1,
+        max=5.0,
+        description="Length of the secondary stroke"
+    )
+    random_seed: IntProperty(
+        name="Random Seed",
+        default=42,
+        min=0,
+        max=999999,
+        description="Seed for deterministic rune generation"
+    )
 
-# ------------------------------------------------------------------------
-#    Operator – Generate Rune Mesh (Unified Version)
-# ------------------------------------------------------------------------
-class ZENV_OT_GenerateRune(Operator):
-    """Generate a procedural rune-like symbol as an extruded mesh,
-       with main stroke, optional secondary stroke, and endpoint decorations."""
-    bl_idname = "zenv.generate_rune"
-    bl_label = "Generate Rune Mesh"
-    bl_options = {'REGISTER', 'UNDO'}
+#endregion
+#region UTILS
+class ZENV_Rune_Utils:
+    """Utility functions for rune generation."""
 
-    # --- BMesh 2D Stroke Helpers ---
     @staticmethod
     def compute_offset_for_vertex(poly, i, thickness):
-        """
-        For vertex i in poly (list of Vectors), compute left and right offsets
-        (using a miter join) for a stroke of given thickness.
+        """For vertex i in poly, compute left and right offsets using miter join.
+
         Returns (left_offset, right_offset).
         """
         p = poly[i]
@@ -113,8 +125,8 @@ class ZENV_OT_GenerateRune(Operator):
             perp = Vector((-d.y, d.x, 0))
             return p + perp * half, p - perp * half
         else:
-            d1 = (poly[i] - poly[i-1]).normalized()
-            d2 = (poly[i+1] - poly[i]).normalized()
+            d1 = (poly[i] - poly[i - 1]).normalized()
+            d2 = (poly[i + 1] - poly[i]).normalized()
             perp1 = Vector((-d1.y, d1.x, 0))
             perp2 = Vector((-d2.y, d2.x, 0))
             miter = perp1 + perp2
@@ -131,227 +143,333 @@ class ZENV_OT_GenerateRune(Operator):
 
     @staticmethod
     def create_stroke_outline(poly, thickness):
+        """Given a polyline, compute the closed outline for a constant-thickness stroke.
+
+        The outline is a closed polygon: left offsets forward, then right
+        offsets reversed.
         """
-        Given a polyline (list of Vectors), compute the closed outline for a stroke
-        with constant thickness.
-        """
+        if not poly or len(poly) < 2:
+            return []
+
         left_offsets = []
         right_offsets = []
         for i in range(len(poly)):
-            l, r = ZENV_OT_GenerateRune.compute_offset_for_vertex(poly, i, thickness)
+            l, r = ZENV_Rune_Utils.compute_offset_for_vertex(poly, i, thickness)
             left_offsets.append(l)
             right_offsets.append(r)
         outline = left_offsets + list(reversed(right_offsets))
         return outline
 
     @staticmethod
-    def create_extruded_stroke_mesh(points, thickness, depth, taper):
-        """Create an extruded mesh from points with strict limits and safety checks."""
-        if not points or len(points) < 2:
+    def create_extruded_stroke_mesh(outline_points, depth, taper):
+        """Create an extruded mesh from a closed 2D outline.
+
+        Creates side faces (quads), a bottom cap, and a tapered top cap.
+        The taper scales vertices toward the outline's centroid.
+        """
+        if not outline_points or len(outline_points) < 3:
             return None
-            
-        # Safety limit on points
-        if len(points) > 20:  # Hard limit on complexity
-            points = points[:20]
-            
-        # Create new mesh
+
+        # Compute centroid for proper tapering.
+        cx = sum(p.x for p in outline_points) / len(outline_points)
+        cy = sum(p.y for p in outline_points) / len(outline_points)
+        centroid = Vector((cx, cy, 0))
+
         mesh = bpy.data.meshes.new(name="RuneStroke")
         bm = bmesh.new()
-        
+
         try:
-            # Create vertices for base face (bottom)
+            # Create base (bottom) vertices.
             base_verts = []
-            for p in points:
-                # Limit coordinates to prevent extreme values
+            for p in outline_points:
                 x = max(min(p.x, 10), -10)
                 y = max(min(p.y, 10), -10)
                 base_verts.append(bm.verts.new((x, y, 0)))
-                
-            # Create vertices for top face
+
+            # Create top vertices - tapered toward centroid.
+            safe_taper = max(min(taper, 1.0), 0.1)
             top_verts = []
             for v in base_verts:
-                # Apply taper with safety limits
-                safe_taper = max(min(taper, 1.0), 0.1)
-                top_verts.append(bm.verts.new((v.co.x * safe_taper, v.co.y * safe_taper, depth)))
-                
-            # Create faces - only if we have enough vertices
-            if len(base_verts) >= 2:
-                # Create edges instead of faces for very simple shapes
-                for i in range(len(base_verts) - 1):
-                    bm.edges.new((base_verts[i], base_verts[i + 1]))
-                    bm.edges.new((top_verts[i], top_verts[i + 1]))
-                    bm.edges.new((base_verts[i], top_verts[i]))
-                
-                # Connect last vertex to first if we have enough points
-                if len(base_verts) > 2:
-                    bm.edges.new((base_verts[-1], top_verts[-1]))
-                    
-            bm.verts.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            
-            # Finalize mesh
+                offset = v.co - centroid
+                tapered = centroid + offset * safe_taper
+                top_verts.append(bm.verts.new((tapered.x, tapered.y, depth)))
+
+            n = len(base_verts)
+
+            # Create side faces (quads).
+            for i in range(n):
+                next_i = (i + 1) % n
+                bm.faces.new((
+                    base_verts[i],
+                    base_verts[next_i],
+                    top_verts[next_i],
+                    top_verts[i],
+                ))
+
+            # Create bottom cap face (reversed for correct normal).
+            bm.faces.new(list(reversed(base_verts)))
+
+            # Create top cap face.
+            bm.faces.new(top_verts)
+
+            bm.normal_update()
             bm.to_mesh(mesh)
             bm.free()
-            
+            mesh.update()
+
             return mesh
-            
-        except Exception as e:
-            if bm:
+
+        except Exception:
+            try:
                 bm.free()
-            if mesh:
+            except Exception:
+                pass
+            try:
                 bpy.data.meshes.remove(mesh)
+            except Exception:
+                pass
             return None
 
-    def generate_main_polyline(self, props):
-        """Generate a simple rune-like shape using only vertical and horizontal lines."""
+    @staticmethod
+    def generate_main_polyline(num_segments, rng):
+        """Generate a rune-like orthogonal polyline.
+
+        Prevents immediate backtracking. Returns a list of Vector points
+        centered around the origin.
+        """
         points = []
         current = Vector((0, 0, 0))
         points.append(current)
-        
-        # Only use horizontal and vertical movements
+
         directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
-        
-        for _ in range(props.num_segments - 1):
-            dx, dy = random.choice(directions)
-            length = 1.0  # Fixed length for simplicity
+        last_dir = None
+
+        for _ in range(num_segments - 1):
+            # Filter out the reverse of the last direction to prevent
+            # immediate backtracking.
+            available = directions
+            if last_dir is not None:
+                reverse = (-last_dir[0], -last_dir[1])
+                available = [d for d in directions if d != reverse]
+
+            dx, dy = rng.choice(available)
+            length = 1.0
             new_point = current + Vector((dx * length, dy * length, 0))
             points.append(new_point)
             current = new_point
-        
-        # Simple centering
+            last_dir = (dx, dy)
+
+        # Center the points around the origin.
         center = Vector((0, 0, 0))
         for p in points:
             center += p
         center /= len(points)
-        
-        # Center the points
+
         for i in range(len(points)):
-            points[i] -= center
-        
+            points[i] = points[i] - center
+
         return points
 
-    def generate_secondary_polyline(self, main_points, props):
-        """Generate a simple straight line as secondary stroke."""
+    @staticmethod
+    def generate_secondary_polyline(main_points, length, rng):
+        """Generate a secondary stroke from the first point of the main stroke.
+
+        Uses the provided length and a random orthogonal direction.
+        """
         if not main_points or len(main_points) < 2:
             return None
-        
-        # Start from first point
+
         start = main_points[0]
-        
-        # Create a simple vertical line
-        points = [start]
-        points.append(start + Vector((0, 1, 0)))
-        
-        return points
+        # Choose a random orthogonal direction.
+        directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+        dx, dy = rng.choice(directions)
+        end = start + Vector((dx * length, dy * length, 0))
+
+        return [start, end]
+
+#endregion
+#region OP
+class ZENV_OT_GenerateRune(Operator):
+    """Generate a procedural rune-like symbol as an extruded mesh,
+    with main stroke, optional secondary stroke, and endpoint decorations."""
+    bl_idname = "zenv.generate_rune"
+    bl_label = "Generate Rune Mesh"
+    bl_description = "Generate a procedural rune-like symbol as an extruded mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene is not None
 
     def execute(self, context):
-        """Execute with strict safety checks and limits."""
         try:
             props = context.scene.zenv_rune_generator
-            
-            # Enforce safe limits
-            safe_segments = max(min(props.num_segments, 10), 2)  # Limit between 2-10 segments
-            safe_thickness = max(min(props.stroke_thickness, 1.0), 0.1)  # Limit thickness
-            safe_depth = max(min(props.extrude_depth, 2.0), 0.1)  # Limit depth
-            safe_taper = max(min(props.taper_factor, 1.0), 0.1)  # Limit taper
-            
-            # Generate main stroke with timeout protection
-            start_time = time.time()
-            main_poly = self.generate_main_polyline(props)
-            
-            if time.time() - start_time > 1.0:  # 1 second timeout
-                self.report({'ERROR'}, "Generation timeout - operation cancelled")
-                return {'CANCELLED'}
-                
-            if not main_poly:
+
+            # Seed the RNG for deterministic output.
+            rng = random.Random(props.random_seed)
+
+            # Generate main stroke polyline.
+            main_poly = ZENV_Rune_Utils.generate_main_polyline(props.num_segments, rng)
+
+            if not main_poly or len(main_poly) < 2:
                 self.report({'ERROR'}, "Failed to generate main stroke")
                 return {'CANCELLED'}
-            
-            # Create main stroke mesh
-            main_mesh = self.create_extruded_stroke_mesh(main_poly, safe_thickness, safe_depth, safe_taper)
+
+            # Expand polyline into a thick outline.
+            outline = ZENV_Rune_Utils.create_stroke_outline(
+                main_poly, props.stroke_thickness
+            )
+
+            if not outline or len(outline) < 3:
+                self.report({'ERROR'}, "Failed to create stroke outline")
+                return {'CANCELLED'}
+
+            # Create extruded mesh from outline.
+            main_mesh = ZENV_Rune_Utils.create_extruded_stroke_mesh(
+                outline, props.extrude_depth, props.taper_factor
+            )
             if not main_mesh:
                 self.report({'ERROR'}, "Failed to create main stroke mesh")
                 return {'CANCELLED'}
-            
-            # Create main object
+
+            # Create main object.
             main_obj = bpy.data.objects.new("RuneMainStroke", main_mesh)
             context.scene.collection.objects.link(main_obj)
-            
-            # Generate secondary stroke if enabled (with simplified logic)
+
+            # Generate secondary stroke if enabled.
             if props.enable_second_stroke:
-                second_poly = self.generate_secondary_polyline(main_poly, props)
+                second_poly = ZENV_Rune_Utils.generate_secondary_polyline(
+                    main_poly, props.second_stroke_length, rng
+                )
                 if second_poly and len(second_poly) >= 2:
-                    second_mesh = self.create_extruded_stroke_mesh(second_poly, safe_thickness, safe_depth, safe_taper)
-                    if second_mesh:
-                        second_obj = bpy.data.objects.new("RuneSecondStroke", second_mesh)
-                        context.scene.collection.objects.link(second_obj)
-                        second_obj.parent = main_obj
-            
-            # Select the main object
-            bpy.ops.object.select_all(action='DESELECT')
+                    second_outline = ZENV_Rune_Utils.create_stroke_outline(
+                        second_poly, props.stroke_thickness
+                    )
+                    if second_outline and len(second_outline) >= 3:
+                        second_mesh = ZENV_Rune_Utils.create_extruded_stroke_mesh(
+                            second_outline, props.extrude_depth, props.taper_factor
+                        )
+                        if second_mesh:
+                            second_obj = bpy.data.objects.new("RuneSecondStroke", second_mesh)
+                            context.scene.collection.objects.link(second_obj)
+                            second_obj.parent = main_obj
+
+            # Select the main object (headless-safe).
+            for obj in context.selected_objects:
+                obj.select_set(False)
             main_obj.select_set(True)
             context.view_layer.objects.active = main_obj
-            
+
+            logger.info("Generated rune: segments=%d, outline_verts=%d, faces=%d",
+                        props.num_segments, len(outline), len(main_mesh.polygons))
+            self.report({'INFO'}, "Rune generated (%d faces)" % len(main_mesh.polygons))
             return {'FINISHED'}
-            
+
         except Exception as e:
-            self.report({'ERROR'}, f"Error: {str(e)}")
+            logger.error("Error generating rune: %s", e)
+            self.report({'ERROR'}, "Rune generation failed: %s" % e)
             return {'CANCELLED'}
 
-    # --- Registration
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
+#endregion
+#region PANEL
 class ZENV_PT_RuneGenerator(Panel):
     """Panel for rune generation settings"""
     bl_label = "GEN Rune Generator"
-    bl_idname = "ZENV_PT_rune_generator"
+    bl_idname = "ZENV_PT_RuneGenerator"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "ZENV"
-    
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene is not None
+
     def draw(self, context):
         layout = self.layout
         props = context.scene.zenv_rune_generator
-        
+
         # Main generation settings
         layout.prop(props, "num_segments")
-        
+        layout.prop(props, "random_seed")
+
         # Stroke dimensions
         box = layout.box()
         box.label(text="Stroke Dimensions:")
         box.prop(props, "stroke_thickness")
-        
+
         # Extrusion settings
         box = layout.box()
         box.label(text="Extrusion Settings:")
         box.prop(props, "extrude_depth")
         box.prop(props, "taper_factor")
-        
+
         # Second stroke settings
-        layout.prop(props, "enable_second_stroke")
-        
+        box = layout.box()
+        box.label(text="Second Stroke:")
+        box.prop(props, "enable_second_stroke")
+        if props.enable_second_stroke:
+            box.prop(props, "second_stroke_length")
+
         # Generate button
         layout.operator("zenv.generate_rune")
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
+#endregion
+#region REG
 classes = (
-    ZENV_PG_RuneGenerator_Properties,
+    ZENV_PG_RuneGenerator,
     ZENV_OT_GenerateRune,
     ZENV_PT_RuneGenerator,
 )
 
+
+def _install_logger():
+    """Attach a single StreamHandler to ``logger`` (idempotent)."""
+    global _zenv_runes_console_handler
+    if _zenv_runes_console_handler is not None:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    _zenv_runes_console_handler = handler
+
+
+def _uninstall_logger():
+    """Remove the handler added by :func:`_install_logger`."""
+    global _zenv_runes_console_handler
+    if _zenv_runes_console_handler is None:
+        return
+    try:
+        logger.removeHandler(_zenv_runes_console_handler)
+    except ValueError:
+        pass
+    _zenv_runes_console_handler = None
+
+
 def register():
+    """Register all addon classes, scene property, and configure the logger."""
+    _install_logger()
     for cls in classes:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.zenv_rune_generator = PointerProperty(type=ZENV_PG_RuneGenerator_Properties)
+        try:
+            bpy.utils.register_class(cls)
+        except Exception:
+            pass
+    bpy.types.Scene.zenv_rune_generator = PointerProperty(type=ZENV_PG_RuneGenerator)
+
 
 def unregister():
+    """Unregister all addon classes, remove scene property, and remove the logger handler."""
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.zenv_rune_generator
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
+    if hasattr(bpy.types.Scene, "zenv_rune_generator"):
+        delattr(bpy.types.Scene, "zenv_rune_generator")
+    _uninstall_logger()
+
 
 if __name__ == "__main__":
     register()
+#endregion

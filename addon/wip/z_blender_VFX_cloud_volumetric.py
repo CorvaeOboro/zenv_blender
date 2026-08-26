@@ -386,7 +386,6 @@ class ZENV_OT_VolumetricCloud(Operator):
         mat = bpy.data.materials.new(name="Cloud_Material")
         mat.use_nodes = True
         mat.blend_method = 'BLEND'
-        mat.shadow_method = 'HASHED'
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
 

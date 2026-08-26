@@ -19,8 +19,8 @@ bl_info = {
 Creates evenly distributed helical curves that follow a base curve.
 Useful for generating coils, vines, or decorative patterns.""",
     "location": 'View3D > Sidebar > ZENV > CURVE Helix Generator',
-    "image_overview": 'zenv_blender_CURVE_helix_along_curve.png',
-    "addon_image": 'zenv_blender_CURVE_helix_along_curve.png',
+    "image_overview": 'zenv_blender_MESH_helix.png',
+    "addon_image": 'zenv_blender_MESH_helix.png',
     "warning": '',
     "doc_url": '',
 }
@@ -129,11 +129,50 @@ class ZENV_OT_HelixAlongCurve(Operator):
     bl_label = "Generate Helix"
     bl_options = {'REGISTER', 'UNDO'}
 
-    @classmethod
-    def poll(cls, context):
-        """Check if the operator can be called"""
-        obj = context.active_object
-        return bool(obj and obj.type == 'CURVE')
+    def create_default_arc_curve(self, context):
+        """Create a smooth 90-degree arc curve and select/activate it.
+
+        Returns the new curve object, or None on failure.
+        """
+        # Quarter circle of radius 1 in the XY plane, centered at origin.
+        # Bezier handle offset for a circular arc: kappa = 4/3 * (sqrt(2) - 1) ~= 0.5523
+        kappa = 0.5522847498307936
+        radius = 1.0
+
+        curve_data = bpy.data.curves.new(name='HelixBaseArc', type='CURVE')
+        curve_data.dimensions = '3D'
+        spline = curve_data.splines.new('BEZIER')
+        spline.bezier_points.add(1)  # second point (one is created by default)
+
+        bp0 = spline.bezier_points[0]
+        bp1 = spline.bezier_points[1]
+
+        # Start at (radius, 0, 0), end at (0, radius, 0) -> 90 degree arc
+        bp0.co = (radius, 0.0, 0.0)
+        bp0.handle_left = (radius, -radius * kappa, 0.0)
+        bp0.handle_right = (radius, radius * kappa, 0.0)
+
+        bp1.co = (0.0, radius, 0.0)
+        bp1.handle_left = (radius * kappa, radius, 0.0)
+        bp1.handle_right = (-radius * kappa, radius, 0.0)
+
+        # Smooth handles
+        bp0.handle_left_type = 'FREE'
+        bp0.handle_right_type = 'FREE'
+        bp1.handle_left_type = 'FREE'
+        bp1.handle_right_type = 'FREE'
+
+        curve_obj = bpy.data.objects.new('HelixBaseArc', curve_data)
+        context.scene.collection.objects.link(curve_obj)
+
+        # Select and activate the new curve
+        bpy.ops.object.select_all(action='DESELECT')
+        curve_obj.select_set(True)
+        context.view_layer.objects.active = curve_obj
+
+        logger.info("Created default 90-degree arc curve '%s'", curve_obj.name)
+        self.report({'INFO'}, f"Created default arc curve '{curve_obj.name}'")
+        return curve_obj
 
     def get_curve_length(self, curve_obj, depsgraph):
         """Calculate the total length of a curve using the provided depsgraph."""
@@ -345,15 +384,13 @@ class ZENV_OT_HelixAlongCurve(Operator):
 
     def execute(self, context):
         """Execute the helix generation operation."""
-        # Get active object with better error handling
+        # Get active object; create a default arc curve if none is selected
         curve_obj = context.active_object
-        if not curve_obj:
-            self.report({'ERROR'}, "No active object selected")
-            return {'CANCELLED'}
-
-        if curve_obj.type != 'CURVE':
-            self.report({'ERROR'}, f"Selected object '{curve_obj.name}' is not a curve (type: {curve_obj.type})")
-            return {'CANCELLED'}
+        if not curve_obj or curve_obj.type != 'CURVE':
+            curve_obj = self.create_default_arc_curve(context)
+            if curve_obj is None:
+                self.report({'ERROR'}, "Failed to create a default curve")
+                return {'CANCELLED'}
 
         if not curve_obj.data.splines:
             self.report({'ERROR'}, f"Curve '{curve_obj.name}' has no splines")

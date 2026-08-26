@@ -1,29 +1,68 @@
-"""
-Curl Flow Generator - Creates mesh geometry with curl flow patterns
-"""
-
+#region blinfo
 bl_info = {
     "name": 'MESH Curl Flow',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250413',
+    "version": '20260825',
     "description": 'Creates mesh geometry with curl flow patterns',
     "status": 'wip',
-    "approved": True,
+    "approved": False,
     "group": 'Mesh',
     "group_prefix": 'MESH',
+    "group_order": 50,
+    "addon_order": 50,
     "location": 'View3D > ZENV',
+    "tags": ['mesh', 'curl', 'flow', 'noise', 'generator'],
+    "description_short": 'Creates mesh geometry with curl flow patterns.',
+    "description_medium": 'Generates flow lines on plane, sphere, or cylinder surfaces using '
+                          'curl noise. Lines are created as bezier curves with optional '
+                          'color gradient materials.',
+    "description_long": 'Curl Flow Generator creates mesh geometry with curl flow patterns. '
+                        'Uses curl noise to generate flow lines on parametric surfaces '
+                        '(plane, sphere, cylinder). Lines are rendered as bezier curves '
+                        'with configurable thickness, convergence, and color gradients.',
+    "image_overview": '',
+    "addon_image": '',
+    "warning": '',
+    "doc_url": '',
 }
+#endregion
 
+#region imports
 import bpy
-import bmesh
 import math
 import random
-import numpy as np
-from mathutils import Vector, Matrix, noise
+import logging
+from mathutils import Vector, noise
 from bpy.props import FloatProperty, IntProperty, PointerProperty, BoolProperty, EnumProperty
 from bpy.types import PropertyGroup, Operator, Panel
+#endregion
 
+#region logging
+logger = logging.getLogger(__name__)
+_log_handler = None
+
+
+def _install_logger():
+    """Install a stream handler on the module logger (idempotent)."""
+    global _log_handler
+    if _log_handler is not None:
+        return
+    _log_handler = logging.StreamHandler()
+    _log_handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+    logger.addHandler(_log_handler)
+    logger.setLevel(logging.INFO)
+
+
+def _uninstall_logger():
+    """Remove the stream handler from the module logger (idempotent)."""
+    global _log_handler
+    if _log_handler is not None:
+        logger.removeHandler(_log_handler)
+        _log_handler = None
+#endregion
+
+#region props
 # ------------------------------------------------------------------------
 #    Properties
 # ------------------------------------------------------------------------
@@ -60,7 +99,7 @@ class ZENV_PG_CurlFlowProperties(PropertyGroup):
     )
     flow_speed: FloatProperty(
         name="Flow Speed",
-        description="Speed of the flow movement",
+        description="Step size multiplier for line integration",
         default=1.0,
         min=0.1,
         max=5.0
@@ -108,7 +147,9 @@ class ZENV_PG_CurlFlowProperties(PropertyGroup):
         description="Apply color gradient to lines",
         default=True
     )
+#endregion
 
+#region operator
 # ------------------------------------------------------------------------
 #    Operator
 # ------------------------------------------------------------------------
@@ -119,6 +160,11 @@ class ZENV_OT_CurlFlowAdd(Operator):
     bl_label = "Add Curl Flow"
     bl_options = {'REGISTER', 'UNDO'}
 
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT'
+
+    #region surface
     def get_surface_point(self, u, v, props):
         """Get point on surface based on UV coordinates"""
         if props.surface_type == 'PLANE':
@@ -148,25 +194,75 @@ class ZENV_OT_CurlFlowAdd(Operator):
             return point.normalized()
         else:  # CYLINDER
             phi = u * 2 * math.pi
-            return Vector((math.cos(phi), math.sin(phi), 0))
+            # Normalize for safety - the vector (cos, sin, 0) already has
+            # length 1, but make it explicit so future modifications that
+            # add scale don't produce un-normalized normals (review (section)3.3).
+            return Vector((math.cos(phi), math.sin(phi), 0)).normalized()
+    #endregion
 
+    #region curl
     def curl_noise(self, p, props):
-        """Generate curl noise vector"""
-        eps = 0.0001
-        # Get noise values at offset positions
-        nx = noise.noise(Vector((p.x + eps, p.y, p.z))) - noise.noise(Vector((p.x - eps, p.y, p.z)))
-        ny = noise.noise(Vector((p.x, p.y + eps, p.z))) - noise.noise(Vector((p.x, p.y - eps, p.z)))
-        nz = noise.noise(Vector((p.x, p.y, p.z + eps))) - noise.noise(Vector((p.x, p.y, p.z - eps)))
-        
-        # Create curl vector
-        curl = Vector((
-            (ny - nz) * props.curl_strength,
-            (nz - nx) * props.curl_strength,
-            (nx - ny) * props.curl_strength
-        ))
-        
-        return curl * (1.0 / (2.0 * eps))
+        """Generate a true curl-noise vector.
 
+        Uses 3 independent scalar noise fields (n1, n2, n3) and computes
+        the curl of the vector potential F = (n1, n2, n3):
+
+            curl = (dn3/dy - dn2/dz,
+                    dn1/dz - dn3/dx,
+                    dn2/dx - dn1/dy)
+
+        This produces a divergence-free field, which is the key property
+        of curl noise that prevents flow lines from clumping or spreading
+        (review (section)3.1: the old formula was an arbitrary permutation of a
+        single noise field's gradient, not a true curl).
+        """
+        eps = 0.0001
+        # Offset samples for each of the 3 independent noise fields.
+        # 12 evaluations total (3 fields x 2 samples per axis used).
+        n1_xp = noise.noise(Vector((p.x + eps, p.y, p.z)))
+        n1_xm = noise.noise(Vector((p.x - eps, p.y, p.z)))
+        n1_yp = noise.noise(Vector((p.x, p.y + eps, p.z)))
+        n1_ym = noise.noise(Vector((p.x, p.y - eps, p.z)))
+        n1_zp = noise.noise(Vector((p.x, p.y, p.z + eps)))
+        n1_zm = noise.noise(Vector((p.x, p.y, p.z - eps)))
+
+        # Use different offsets for fields 2 and 3 so they are independent.
+        offset2 = 100.0
+        offset3 = 200.0
+        n2_xp = noise.noise(Vector((p.x + eps, p.y + offset2, p.z)))
+        n2_xm = noise.noise(Vector((p.x - eps, p.y + offset2, p.z)))
+        n2_yp = noise.noise(Vector((p.x, p.y + eps + offset2, p.z)))
+        n2_ym = noise.noise(Vector((p.x, p.y - eps + offset2, p.z)))
+        n2_zp = noise.noise(Vector((p.x, p.y + offset2, p.z + eps)))
+        n2_zm = noise.noise(Vector((p.x, p.y + offset2, p.z - eps)))
+
+        n3_xp = noise.noise(Vector((p.x + eps, p.y + offset3, p.z + offset3)))
+        n3_xm = noise.noise(Vector((p.x - eps, p.y + offset3, p.z + offset3)))
+        n3_yp = noise.noise(Vector((p.x, p.y + eps + offset3, p.z + offset3)))
+        n3_ym = noise.noise(Vector((p.x, p.y - eps + offset3, p.z + offset3)))
+        n3_zp = noise.noise(Vector((p.x, p.y + offset3, p.z + eps + offset3)))
+        n3_zm = noise.noise(Vector((p.x, p.y + offset3, p.z - eps + offset3)))
+
+        inv = 1.0 / (2.0 * eps)
+        d_n1_dx = (n1_xp - n1_xm) * inv
+        d_n1_dy = (n1_yp - n1_ym) * inv
+        d_n1_dz = (n1_zp - n1_zm) * inv
+        d_n2_dx = (n2_xp - n2_xm) * inv
+        d_n2_dy = (n2_yp - n2_ym) * inv
+        d_n2_dz = (n2_zp - n2_zm) * inv
+        d_n3_dx = (n3_xp - n3_xm) * inv
+        d_n3_dy = (n3_yp - n3_ym) * inv
+        d_n3_dz = (n3_zp - n3_zm) * inv
+
+        curl = Vector((
+            (d_n3_dy - d_n2_dz) * props.curl_strength,
+            (d_n1_dz - d_n3_dx) * props.curl_strength,
+            (d_n2_dx - d_n1_dy) * props.curl_strength,
+        ))
+        return curl
+    #endregion
+
+    #region flowline
     def generate_flow_line(self, start_u, start_v, props):
         """Generate a single flow line"""
         points = []
@@ -189,105 +285,172 @@ class ZENV_OT_CurlFlowAdd(Operator):
             step = props.flow_speed * 0.01
             u += curl.x * step
             v += curl.y * step
-            
-            # Wrap UV coordinates
-            u = u % 1.0
-            v = v % 1.0
-            
-            # Add convergence effect
+
+            # Apply convergence BEFORE wrapping so the pull toward center
+            # is computed on the continuous coordinate, not the wrapped
+            # one. This prevents discontinuities where a line near the
+            # edge wraps to the opposite side and then converges from
+            # the wrong direction (review (section)3.2).
             if props.convergence > 0:
                 center_u, center_v = 0.5, 0.5
                 u = u + (center_u - u) * props.convergence * 0.01
                 v = v + (center_v - v) * props.convergence * 0.01
+
+            # Wrap UV coordinates after convergence
+            u = u % 1.0
+            v = v % 1.0
         
         return points
+    #endregion
 
-    def create_curve_from_points(self, points, name):
-        """Create curve object from points"""
+    #region curve
+    def create_curve_from_points(self, context, points, name, props):
+        """Create curve object from points.
+
+        The curve is NOT linked to any collection here; the caller is
+        responsible for linking it to the flow collection (review (section)2.4).
+        """
+        if not points:
+            return None
+
         # Create curve data
         curve_data = bpy.data.curves.new(name=name, type='CURVE')
         curve_data.dimensions = '3D'
-        
+
         # Create spline
         spline = curve_data.splines.new('BEZIER')
         spline.bezier_points.add(len(points) - 1)
-        
-        # Set points
+
+        # Set points with smooth handles based on neighbor tangents (review (section)3.6)
+        n = len(points)
         for i, point in enumerate(points):
-            spline.bezier_points[i].co = point
-            spline.bezier_points[i].handle_left = point
-            spline.bezier_points[i].handle_right = point
-        
-        # Create object
+            bp = spline.bezier_points[i]
+            bp.co = point
+            if n > 2 and 0 < i < n - 1:
+                tangent = (points[i + 1] - points[i - 1]).normalized()
+                seg_len = (points[i + 1] - points[i - 1]).length * 0.3
+                bp.handle_left = point - tangent * seg_len
+                bp.handle_right = point + tangent * seg_len
+            else:
+                bp.handle_left = point
+                bp.handle_right = point
+
+        # Create object - do NOT link to bpy.context.collection (review (section)2.4)
         curve_obj = bpy.data.objects.new(name, curve_data)
-        bpy.context.collection.objects.link(curve_obj)
-        
-        # Set curve properties
-        props = bpy.context.scene.curl_flow_props
+
+        # Set curve properties from passed props (review (section)3.7)
         curve_data.bevel_depth = props.line_thickness
         curve_data.bevel_resolution = 2
-        
-        return curve_obj
 
+        return curve_obj
+    #endregion
+
+    #region material
     def create_material(self, props):
         """Create material for flow lines"""
         mat = bpy.data.materials.new(name="Flow_Line_Material")
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
         nodes.clear()
-        
+
         # Create nodes
         output = nodes.new('ShaderNodeOutputMaterial')
         emission = nodes.new('ShaderNodeEmission')
-        color_ramp = nodes.new('ShaderNodeValToRGB')
-        
+
+        # Link nodes
+        links = mat.node_tree.links
+
         if props.use_color_gradient:
-            # Setup color gradient
+            # Setup color gradient driven by Generated Z coordinate (review (section)4.10)
+            color_ramp = nodes.new('ShaderNodeValToRGB')
+            tex_coord = nodes.new('ShaderNodeTexCoord')
+            separate = nodes.new('ShaderNodeSeparateXYZ')
+
             color_ramp.color_ramp.elements[0].position = 0.0
             color_ramp.color_ramp.elements[0].color = (0.0, 0.5, 1.0, 1)
             color_ramp.color_ramp.elements[1].position = 1.0
             color_ramp.color_ramp.elements[1].color = (1.0, 0.2, 0.0, 1)
+
+            links.new(tex_coord.outputs["Generated"], separate.inputs[0])
+            links.new(separate.outputs["Z"], color_ramp.inputs["Fac"])
+            links.new(color_ramp.outputs[0], emission.inputs[0])
         else:
             # Single color
             emission.inputs[0].default_value = (0.0, 0.8, 1.0, 1)
-        
-        # Link nodes
-        links = mat.node_tree.links
-        if props.use_color_gradient:
-            links.new(color_ramp.outputs[0], emission.inputs[0])
-        links.new(emission.outputs[0], output.inputs[0])
-        
-        return mat
 
+        links.new(emission.outputs[0], output.inputs[0])
+
+        return mat
+    #endregion
+
+    #region execute
     def execute(self, context):
         props = context.scene.curl_flow_props
-        random.seed(props.random_seed)
-        
-        # Create collection for flow lines
-        flow_collection = bpy.data.collections.new("Flow_Lines")
-        bpy.context.scene.collection.children.link(flow_collection)
-        
-        # Create material
-        material = self.create_material(props)
-        
-        # Generate flow lines
-        for i in range(props.num_lines):
-            # Random starting position
-            start_u = random.random()
-            start_v = random.random()
-            
-            # Generate line points
-            points = self.generate_flow_line(start_u, start_v, props)
-            
-            # Create curve object
-            curve = self.create_curve_from_points(points, f"Flow_Line_{i}")
-            curve.data.materials.append(material)
-            
-            # Add to collection
-            flow_collection.objects.link(curve)
-        
-        return {'FINISHED'}
+        # Use a local RNG to avoid polluting the global random state (review (section)2.1)
+        rng = random.Random(props.random_seed)
 
+        # Track created curves for cleanup on failure (review (section)2.2)
+        created_curves = []
+        material_created = False
+
+        try:
+            # Reuse or recreate collection for flow lines (review (section)2.3)
+            flow_collection = bpy.data.collections.get("Flow_Lines")
+            if flow_collection:
+                # Clear existing objects from previous runs
+                for obj in list(flow_collection.objects):
+                    bpy.data.objects.remove(obj, do_unlink=True)
+            else:
+                flow_collection = bpy.data.collections.new("Flow_Lines")
+                context.scene.collection.children.link(flow_collection)
+
+            # Reuse or recreate material (review (section)2.3/(section)3.5)
+            mat_name = "Flow_Line_Material"
+            material = bpy.data.materials.get(mat_name)
+            if not material:
+                material = self.create_material(props)
+                material.name = mat_name
+                material_created = True
+
+            # Generate flow lines
+            for i in range(props.num_lines):
+                # Random starting position
+                start_u = rng.random()
+                start_v = rng.random()
+
+                # Generate line points
+                points = self.generate_flow_line(start_u, start_v, props)
+
+                # Create curve object - pass context and props (review (section)2.4/(section)3.7)
+                curve = self.create_curve_from_points(context, points, f"Flow_Line_{i}", props)
+                if curve is None:
+                    continue
+                curve.data.materials.append(material)
+                created_curves.append(curve)
+
+                # Add to collection
+                flow_collection.objects.link(curve)
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            # Clean up partial results on failure (review (section)2.2)
+            for curve in created_curves:
+                try:
+                    bpy.data.objects.remove(curve, do_unlink=True)
+                except Exception:
+                    pass
+            if material_created and material and material.users == 0:
+                try:
+                    bpy.data.materials.remove(material)
+                except Exception:
+                    pass
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+    #endregion
+#endregion
+
+#region panel
 # ------------------------------------------------------------------------
 #    Panel
 # ------------------------------------------------------------------------
@@ -299,6 +462,10 @@ class ZENV_PT_CurlFlowPanel(Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT'
 
     def draw(self, context):
         layout = self.layout
@@ -333,7 +500,9 @@ class ZENV_PT_CurlFlowPanel(Panel):
         
         # Generate button
         layout.operator("zenv.curl_flow_add")
+#endregion
 
+#region register
 # ------------------------------------------------------------------------
 #    Registration
 # ------------------------------------------------------------------------
@@ -345,14 +514,27 @@ classes = (
 )
 
 def register():
+    _install_logger()
     for current_class_to_register in classes:
-        bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.curl_flow_props = PointerProperty(type=ZENV_PG_CurlFlowProperties)
+        try:
+            bpy.utils.register_class(current_class_to_register)
+        except ValueError:
+            pass
+    if not hasattr(bpy.types.Scene, 'curl_flow_props'):
+        bpy.types.Scene.curl_flow_props = PointerProperty(type=ZENV_PG_CurlFlowProperties)
 
 def unregister():
     for current_class_to_unregister in reversed(classes):
-        bpy.utils.unregister_class(current_class_to_unregister)
-    del bpy.types.Scene.curl_flow_props
+        try:
+            bpy.utils.unregister_class(current_class_to_unregister)
+        except RuntimeError:
+            pass
+    if hasattr(bpy.types.Scene, 'curl_flow_props'):
+        delattr(bpy.types.Scene, 'curl_flow_props')
+    _uninstall_logger()
+#endregion
 
+#region main
 if __name__ == "__main__":
     register()
+#endregion

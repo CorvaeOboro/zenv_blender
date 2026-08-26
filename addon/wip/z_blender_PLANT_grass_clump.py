@@ -1,27 +1,41 @@
-"""
-PLANT Grass Cluster - a blender addon creates clusters of grass avoiding intersection 
-grass blade is wide and stylized , a subtle bend and twist , 
-like a tall leaf where the top and bot are pinched and its sides bend inward 
-"""
-
+#region META
 bl_info = {
     "name": 'PLANT Grass Cluster',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250413',
+    "version": '20260825',
     "description": 'Generate plant grass clusters',
     "status": 'wip',
-    "approved": True,
+    "approved": False,
     "group": 'Plant',
     "group_prefix": 'PLANT',
+    "group_order": 40,
+    "addon_order": 40,
     "location": 'View3D > Sidebar > ZENV > PLANT Grass Cluster',
     "doc_url": '',
+    "tags": ['plant', 'grass', 'cluster', 'procedural', 'generation'],
+    "description_short": 'Generate procedural grass clusters with intersection avoidance.',
+    "description_medium": 'Creates clusters of stylized grass strands with wide, pinched, '
+                          'bent, and twisted blades. Supports three grass types (Meadow, '
+                          'Wheat, Tussock) with density falloff and intersection avoidance.',
+    "description_long": 'Procedural grass cluster generator that creates 9 strand variations '
+                        '(3 per zone: inner, middle, outer) with modifier-based shaping '
+                        '(twist, bend, taper). Distributes strands in a circular cluster '
+                        'with density falloff from center and configurable intersection '
+                        'checks. Generates UVs for texture mapping.',
+    "image_overview": '',
+    "addon_image": '',
+    "warning": '',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import bmesh
 import math
 import random
+import logging
+import traceback
 from mathutils import Vector, Matrix
 from bpy.props import (
     FloatProperty,
@@ -34,10 +48,39 @@ from bpy.types import (
     Operator,
     PropertyGroup
 )
+#endregion
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
+#region LOG
+# Module logger + idempotent stream handler install/uninstall helpers.
+
+logger = logging.getLogger(__name__)
+
+_LOG_HANDLER = None
+
+
+def _install_logger():
+    """Install a stream handler on the module logger (idempotent)."""
+    global _LOG_HANDLER
+    if _LOG_HANDLER is not None:
+        return
+    _LOG_HANDLER = logging.StreamHandler()
+    _LOG_HANDLER.setFormatter(
+        logging.Formatter("[%(levelname)s] %(name)s: %(message)s")
+    )
+    logger.addHandler(_LOG_HANDLER)
+    logger.setLevel(logging.INFO)
+
+
+def _uninstall_logger():
+    """Remove the stream handler from the module logger (idempotent)."""
+    global _LOG_HANDLER
+    if _LOG_HANDLER is not None:
+        logger.removeHandler(_LOG_HANDLER)
+        _LOG_HANDLER = None
+#endregion
+
+#region PROPS
+# PropertyGroup defining all user-facing grass cluster parameters.
 
 class ZENV_PG_GrassCluster_Props(PropertyGroup):
     """Properties for grass cluster generation"""
@@ -95,55 +138,65 @@ class ZENV_PG_GrassCluster_Props(PropertyGroup):
         ],
         default='MEADOW'
     )
+#endregion
 
-# ------------------------------------------------------------------------
-#    Operator
-# ------------------------------------------------------------------------
+#region OP
+# Operator that builds strand meshes, scatters them in a cluster, and
+# cleans up. Core generation functions are ordered top-down by workflow:
+#   1. create_base_strand_mesh  - single blade mesh + shaping modifiers
+#   2. create_strand_variations - 9 zone-based variants
+#   3. check_intersection       - proximity test helper
+#   4. distribute_strands       - scatter instances with falloff
+#   5. execute                  - orchestrates the above
 
 class ZENV_OT_GrassCluster(Operator):
     """Generate a cluster of grass with realistic distribution"""
     bl_idname = "zenv.plant_grass_cluster"
     bl_label = "Generate Grass Cluster"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene is not None
+
     def create_base_strand_mesh(self, context, length, width, segments):
         """Create a single grass strand mesh with UVs"""
         # Increase resolution for better shaping
         segments = max(segments * 2, 8)  # Minimum 8 segments
         side_segments = 3  # Segments across width for better edge detail
-        
+
         # Create vertices
         verts = []
         uvs = []
-        
+
         for i in range(segments):
             t = i / (segments - 1)
-            
+
             # Create profile curve that pinches at bottom and top
             profile_width = width * (1 - (2*t - 1)**2)  # Parabolic profile
-            
+
             # Add slight S-curve using sine waves
             x_offset = math.sin(t * math.pi) * width * 0.3
             # Add secondary wave for more natural shape
             x_offset += math.sin(t * math.pi * 2) * width * 0.15
-            
+
             # Add subtle thickness variation
             z_offset = math.sin(t * math.pi * 1.5) * width * 0.1
-            
+
             # Create vertices across width
             for j in range(side_segments):
                 s = j / (side_segments - 1)
                 # Create curved cross-section
                 curve_in = math.sin(s * math.pi) * 0.3  # 30% curve inward
-                
+
                 # Calculate vertex position
                 x = (-profile_width/2 + profile_width * s) * (1 - curve_in) + x_offset
                 y = z_offset * curve_in
                 z = t * length
-                
+
                 verts.append((x, y, z))
                 uvs.append((s, t))
-        
+
         # Create faces
         faces = []
         for i in range(segments - 1):
@@ -154,53 +207,54 @@ class ZENV_OT_GrassCluster(Operator):
                 i2 = (i + 1) * side_segments + j
                 i3 = i2 + 1
                 faces.append((i0, i1, i3, i2))
-        
+
         # Create mesh
         mesh = bpy.data.meshes.new(name="GrassStrand")
         mesh.from_pydata(verts, [], faces)
-        
+
         # Create UV layer
         uv_layer = mesh.uv_layers.new()
         for i, loop in enumerate(mesh.loops):
             uv_layer.data[i].uv = uvs[loop.vertex_index]
-        
+
         # Add modifiers for final shaping
         obj = bpy.data.objects.new("GrassStrand", mesh)
-        
+
         # Add subtle twist
         twist = obj.modifiers.new(name="Twist", type='SIMPLE_DEFORM')
         twist.deform_method = 'TWIST'
         twist.angle = math.radians(random.uniform(-15, 15))
         twist.deform_axis = 'Z'
-        
+
         # Add main bend
         bend = obj.modifiers.new(name="Bend", type='SIMPLE_DEFORM')
         bend.deform_method = 'BEND'
         bend.angle = math.radians(random.uniform(10, 25))
         bend.deform_axis = 'Y'
-        
+
         # Add subtle taper
         taper = obj.modifiers.new(name="Taper", type='SIMPLE_DEFORM')
         taper.deform_method = 'TAPER'
         taper.factor = random.uniform(0.1, 0.3)
         taper.deform_axis = 'Z'
-        
+
         # Apply modifiers
         depsgraph = context.evaluated_depsgraph_get()
         obj_eval = obj.evaluated_get(depsgraph)
         mesh_eval = bpy.data.meshes.new_from_object(obj_eval)
-        
+
         # Clean up temporary objects
         bpy.data.objects.remove(obj)
-        mesh.user_clear()
-        bpy.data.meshes.remove(mesh)
-        
+        # user_clear() was removed in Blender 4.x; just remove the mesh
+        if mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+
         return mesh_eval
 
     def create_strand_variations(self, context, props):
         """Create different variations of grass strands"""
         variations = []
-        
+
         # Base dimensions based on grass type
         if props.grass_type == 'MEADOW':
             base_length = 0.2  # 20cm
@@ -214,38 +268,38 @@ class ZENV_OT_GrassCluster(Operator):
             base_length = 0.25  # 25cm
             base_width = 0.01  # 10mm
             segments = 6
-        
+
         # Create 9 variations (3 for each zone: inner, middle, outer)
         random.seed(props.variation_seed)
-        
+
         # Inner zone variations (longer)
         for i in range(3):
             length = base_length * random.uniform(0.95, 1.15)
             width = base_width * random.uniform(0.9, 1.1)
             mesh = self.create_base_strand_mesh(context, length * 1.2, width, segments + 1)
             variations.append(mesh)
-        
+
         # Middle zone variations (medium)
         for i in range(3):
             length = base_length * random.uniform(0.85, 1.0)
             width = base_width * random.uniform(0.9, 1.1)
             mesh = self.create_base_strand_mesh(context, length, width, segments)
             variations.append(mesh)
-        
+
         # Outer zone variations (shorter)
         for i in range(3):
             length = base_length * random.uniform(0.7, 0.85)
             width = base_width * random.uniform(0.8, 1.0)
             mesh = self.create_base_strand_mesh(context, length * 0.8, width, segments)
             variations.append(mesh)
-        
+
         return variations
 
     def check_intersection(self, location, existing_strands, min_distance):
         """Check if a new strand would intersect with existing ones"""
         if not existing_strands:
             return False
-            
+
         for strand in existing_strands:
             dist = (location - strand).length
             if dist < min_distance:
@@ -258,35 +312,35 @@ class ZENV_OT_GrassCluster(Operator):
         target_strands = int(props.density * math.pi * props.radius * props.radius)  # Calculate based on area
         max_attempts = target_strands * 10  # Maximum attempts to place strands
         attempts = 0
-        
+
         # Create collection for grass cluster
         cluster_name = f"GrassCluster_{len(context.scene.collection.children) + 1}"
         cluster_collection = bpy.data.collections.new(cluster_name)
         context.scene.collection.children.link(cluster_collection)
-        
+
         while len(strands) < target_strands and attempts < max_attempts:
             attempts += 1
-            
+
             # Generate random position within circle
             angle = random.uniform(0, math.pi * 2)
             dist = math.sqrt(random.uniform(0, 1)) * props.radius  # Square root for uniform distribution
-            
+
             # Apply density falloff
             falloff = math.pow(1 - dist/props.radius, 1/props.density_falloff)
             if random.random() > falloff:
                 continue
-                
+
             location = Vector((
                 math.cos(angle) * dist,
                 math.sin(angle) * dist,
                 0
             ))
-            
+
             # Check for intersections with recent strands
             check_count = min(props.intersection_checks, len(strands))
             if check_count > 0 and self.check_intersection(location, strands[-check_count:], props.min_distance):
                 continue
-            
+
             # Select strand variation based on distance from center
             if dist < props.radius * 0.3:
                 # Inner area - prefer longer strands
@@ -297,21 +351,21 @@ class ZENV_OT_GrassCluster(Operator):
             else:
                 # Outer area - prefer shorter strands
                 variation = random.choice(strand_variations[6:])
-            
+
             # Add random rotation and tilt
             rotation_z = random.uniform(0, math.pi * 2)
             tilt_angle = random.uniform(-0.2, 0.2)
             tilt_direction = random.uniform(0, math.pi * 2)
-            
+
             # Create rotation matrices
             mat_rot_z = Matrix.Rotation(rotation_z, 4, 'Z')
             mat_rot_x = Matrix.Rotation(math.cos(tilt_direction) * tilt_angle, 4, 'X')
             mat_rot_y = Matrix.Rotation(math.sin(tilt_direction) * tilt_angle, 4, 'Y')
             mat_loc = Matrix.Translation(location)
             transform = mat_loc @ mat_rot_z @ mat_rot_x @ mat_rot_y
-            
+
             strands.append(location)
-            
+
             # Create instance
             instance = bpy.data.objects.new(
                 name=f"Grass_Strand_{len(strands)}",
@@ -319,7 +373,7 @@ class ZENV_OT_GrassCluster(Operator):
             )
             instance.matrix_world = transform
             cluster_collection.objects.link(instance)
-        
+
         return strands
 
     def execute(self, context):
@@ -327,45 +381,43 @@ class ZENV_OT_GrassCluster(Operator):
         try:
             # Get properties from context
             props = context.scene.grass_cluster_props
-            
+
             # Create strand variations
             strand_variations = self.create_strand_variations(context, props)
-            
+
             if not strand_variations:
                 self.report({'ERROR'}, "Failed to create grass strand variations")
                 return {'CANCELLED'}
-            
+
             # Distribute strands
             strands = self.distribute_strands(context, props, strand_variations)
-            
+
             if not strands:
                 self.report({'ERROR'}, "Failed to distribute grass strands")
                 # Clean up variations
                 for mesh in strand_variations:
                     if mesh.users == 0:
-                        mesh.user_clear()
                         bpy.data.meshes.remove(mesh)
                 return {'CANCELLED'}
-            
+
             # Clean up variations
             for mesh in strand_variations:
                 if mesh.users == 0:
-                    mesh.user_clear()
                     bpy.data.meshes.remove(mesh)
-            
+
             self.report({'INFO'}, f"Created grass cluster with {len(strands)} strands")
             return {'FINISHED'}
-            
+
         except Exception as e:
-            import traceback
+            logger.error(f"Error creating grass cluster: {e}\n{traceback.format_exc()}")
             self.report({'ERROR'}, f"Error creating grass cluster: {str(e)}\n{traceback.format_exc()}")
             return {'CANCELLED'}
+#endregion
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
+#region PANEL
+# Sidebar UI exposing all grass cluster parameters and the generate button.
 
-class ZENV_PT_GrassCluster_Panel(Panel):
+class ZENV_PT_GrassCluster(Panel):
     """Panel for grass cluster generation"""
     bl_label = "PLANT Grass Cluster"
     bl_idname = "ZENV_PT_GrassCluster"
@@ -373,19 +425,23 @@ class ZENV_PT_GrassCluster_Panel(Panel):
     bl_region_type = 'UI'
     bl_category = 'ZENV'
 
+    @classmethod
+    def poll(cls, context):
+        return hasattr(context.scene, 'grass_cluster_props')
+
     def draw(self, context):
         layout = self.layout
         props = context.scene.grass_cluster_props
 
         # Grass Type
         layout.prop(props, "grass_type")
-        
+
         # Basic Parameters
         box = layout.box()
         box.label(text="Basic Parameters:")
         box.prop(props, "radius")
         box.prop(props, "density")
-        
+
         # Advanced Parameters
         box = layout.box()
         box.label(text="Advanced Parameters:")
@@ -393,29 +449,40 @@ class ZENV_PT_GrassCluster_Panel(Panel):
         box.prop(props, "min_distance")
         box.prop(props, "intersection_checks")
         box.prop(props, "variation_seed")
-        
+
         # Generate Button
         layout.operator("zenv.plant_grass_cluster", text="Generate Grass Cluster")
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
+#region REG
+# Class tuple + register/unregister wiring (classes, scene property, logger).
 
 classes = (
     ZENV_PG_GrassCluster_Props,
     ZENV_OT_GrassCluster,
-    ZENV_PT_GrassCluster_Panel,
+    ZENV_PT_GrassCluster,
 )
 
 def register():
+    _install_logger()
     for current_class_to_register in classes:
-        bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.grass_cluster_props = PointerProperty(type=ZENV_PG_GrassCluster_Props)
+        try:
+            bpy.utils.register_class(current_class_to_register)
+        except ValueError:
+            pass
+    if not hasattr(bpy.types.Scene, 'grass_cluster_props'):
+        bpy.types.Scene.grass_cluster_props = PointerProperty(type=ZENV_PG_GrassCluster_Props)
 
 def unregister():
     for current_class_to_unregister in reversed(classes):
-        bpy.utils.unregister_class(current_class_to_unregister)
-    del bpy.types.Scene.grass_cluster_props
+        try:
+            bpy.utils.unregister_class(current_class_to_unregister)
+        except RuntimeError:
+            pass
+    if hasattr(bpy.types.Scene, 'grass_cluster_props'):
+        del bpy.types.Scene.grass_cluster_props
+    _uninstall_logger()
 
 if __name__ == "__main__":
     register()
+#endregion

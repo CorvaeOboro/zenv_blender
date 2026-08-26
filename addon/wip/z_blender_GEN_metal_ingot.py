@@ -1,55 +1,62 @@
-"""
-GEN Metal Ingot Generator - Creates metal ingots with surface imperfections
-a trapezoidal base shape with beveled edges . UV mapping to hide seam along base .
-surface is cut by world unit slices then uses multiple noise layers for surface detail .
-lastly optimized .
-Generation processing time at gridsize 1.0 = 12s 
-"""
-
+#region META
 bl_info = {
     "name": 'GEN Metal Ingot Generator',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250303',
-    "description": 'Generate metal ingot meshes',
-    "status": 'wip',
+    "version": '20260825',
+    "description": 'Generate metal ingot meshes with surface imperfections, bevels, grid cutting, and noise detail.',
+    "status": 'working',
     "approved": True,
     "group": 'Generative',
     "group_prefix": 'GEN',
+    "group_order": 30,
+    "addon_order": 30,
+    "tags": ['generative', 'metal', 'ingot', 'procedural', 'mesh', 'surface'],
+    "description_short": 'Generate metal ingot meshes with surface imperfections',
+    "description_medium": 'Creates metal ingots with a trapezoidal base shape, beveled edges, grid cutting for uniform topology, multi-layer noise surface displacement, smelting bubbles, micro surface detail, UV mapping, and mesh optimization.',
+    "description_long": """
+    GEN Metal Ingot Generator
+    Creates metal ingots with surface imperfections. Uses a trapezoidal
+    base shape with beveled edges, UV mapping to hide seam along base,
+    surface cutting by world-unit slices, multiple noise layers for
+    surface detail, and mesh optimization. Supports deterministic output
+    via random seed.""",
     "location": 'View3D > ZENV > GEN Metal Ingot',
+    "image_overview": 'zenv_blender_GEN_metal_ingot.png',
+    "addon_image": 'zenv_blender_GEN_metal_ingot.png',
+    "warning": '',
+    "doc_url": '',
 }
 
+#endregion
+#region IMPORT
 import bpy
 import bmesh
 import math
 import random
 import logging
-import time
-from mathutils import Vector, Matrix, noise
+from mathutils import Vector, noise
 from bpy.props import (
     FloatProperty,
     BoolProperty,
     IntProperty,
-    FloatVectorProperty,
     PointerProperty,
 )
 from bpy.types import Panel, Operator, PropertyGroup
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+_zenv_ingot_console_handler = None
 
-# ------------------------------------------------------------------------
-#    Property Group
-# ------------------------------------------------------------------------
+#endregion
+#region PROPS
+class ZENV_PG_MetalIngot(PropertyGroup):
+    """Properties for metal ingot generation."""
 
-class ZENV_PG_MetalIngotProps(PropertyGroup):
-    """Properties for metal ingot generation"""
-    
     # Base shape properties
     length: FloatProperty(
         name="Length",
         description="Length of the ingot",
-        default=0.2,  # 20cm
+        default=0.2,
         min=0.05,
         max=1.0,
         unit='LENGTH'
@@ -57,7 +64,7 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
     width: FloatProperty(
         name="Width",
         description="Width of the ingot at the base",
-        default=0.1,  # 10cm
+        default=0.1,
         min=0.025,
         max=0.5,
         unit='LENGTH'
@@ -65,7 +72,7 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
     height: FloatProperty(
         name="Height",
         description="Height of the ingot",
-        default=0.05,  # 5cm
+        default=0.05,
         min=0.01,
         max=0.25,
         unit='LENGTH'
@@ -79,12 +86,12 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
     )
     variation_scale: FloatProperty(
         name="Variation Range",
-        description="Scale of random variations in base shape , 0.3 default",
+        description="Scale of random variations in base shape, 0.3 default",
         default=0.3,
         min=0.0,
         max=1.0
     )
-    
+
     # Surface detail properties
     detail_scale: FloatProperty(
         name="Detail Intensity",
@@ -96,7 +103,7 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
     roughness: FloatProperty(
         name="Roughness",
         description="Intensity of surface roughness",
-        default=0.001,  # 1mm
+        default=0.001,
         min=0.0,
         max=0.01,
         precision=4
@@ -111,7 +118,7 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
     micro_detail: FloatProperty(
         name="Micro Intensity",
         description="Intensity of centimeter-scale surface imperfections",
-        default=0.0005,  # 0.3mm
+        default=0.0005,
         min=-1.000,
         max=1.000,
         precision=5
@@ -119,26 +126,26 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
     micro_scale: FloatProperty(
         name="Micro Scale",
         description="Scale of micro surface details (in centimeters)",
-        default=0.5,  # 0.5cm scale
+        default=0.5,
         min=0.1,
         max=5.0
     )
-    
+
     # Remesh properties
     grid_size: FloatProperty(
         name="Grid Size",
         description="Size of grid cutting in centimeters",
-        default=1.0,  # 1.0 1cm default
+        default=1.0,
         min=0.1,
         max=2.0,
         precision=2
     )
-    
+
     # Bevel properties
     bevel_width: FloatProperty(
         name="Bevel Width",
         description="Width of edge bevels",
-        default=0.005,  # 5mm
+        default=0.005,
         min=0.001,
         max=0.02,
         precision=4
@@ -150,7 +157,7 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
         min=2,
         max=6
     )
-    
+
     # Step control properties
     do_bevel: BoolProperty(
         name="Apply Bevel",
@@ -177,43 +184,55 @@ class ZENV_PG_MetalIngotProps(PropertyGroup):
         description="Randomly transform UVs for variation",
         default=True
     )
-    
-# ------------------------------------------------------------------------
-#    Operator
-# ------------------------------------------------------------------------
+    do_subsurf: BoolProperty(
+        name="Apply Subdivision",
+        description="Add subdivision surface for smoothing",
+        default=False
+    )
+    random_seed: IntProperty(
+        name="Random Seed",
+        description="Seed for deterministic ingot generation",
+        default=42,
+        min=0,
+        max=999999
+    )
 
-class ZENV_OT_MetalIngot(Operator):
-    """Generate a metal ingot with realistic surface details"""
-    bl_idname = "zenv.metal_ingot"
-    bl_label = "Generate Metal Ingot"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    def generate_base_shape(self, bm, props):
-        """Create the basic trapezoidal ingot shape"""
-        # Get time-based random seed
-        random.seed(int(time.time() * 1000))
-        
-        # Create vertices for the trapezoid with subtle random variations
+#endregion
+#region UTILS
+class ZENV_MetalIngot_Utils:
+    """Utility functions for metal ingot generation."""
+
+    @staticmethod
+    def generate_base_shape(bm, props, rng):
+        """Create the basic trapezoidal ingot shape."""
         l, w, h = props.length, props.width, props.height
         t = props.taper
-        v_scale = props.variation_scale * 0.02  # Scale down variations
-        
+        v_scale = props.variation_scale * 0.02
+
         def random_offset():
-            return random.uniform(-v_scale, v_scale)
-        
+            return rng.uniform(-v_scale, v_scale)
+
         # Bottom vertices (keep flat for stability)
-        v1 = bm.verts.new((-l/2, -w/2, 0))
-        v2 = bm.verts.new((l/2, -w/2, 0))
-        v3 = bm.verts.new((l/2, w/2, 0))
-        v4 = bm.verts.new((-l/2, w/2, 0))
-        
+        v1 = bm.verts.new((-l / 2, -w / 2, 0))
+        v2 = bm.verts.new((l / 2, -w / 2, 0))
+        v3 = bm.verts.new((l / 2, w / 2, 0))
+        v4 = bm.verts.new((-l / 2, w / 2, 0))
+
         # Top vertices (with taper and subtle random variations)
-        top_rand = props.variation_scale * 0.01  # Smaller variations for top
-        v5 = bm.verts.new((-l/2 * (1-t) + random_offset(), -w/2 * (1-t) + random_offset(), h + random.uniform(-top_rand, top_rand)))
-        v6 = bm.verts.new((l/2 * (1-t) + random_offset(), -w/2 * (1-t) + random_offset(), h + random.uniform(-top_rand, top_rand)))
-        v7 = bm.verts.new((l/2 * (1-t) + random_offset(), w/2 * (1-t) + random_offset(), h + random.uniform(-top_rand, top_rand)))
-        v8 = bm.verts.new((-l/2 * (1-t) + random_offset(), w/2 * (1-t) + random_offset(), h + random.uniform(-top_rand, top_rand)))
-        
+        top_rand = props.variation_scale * 0.01
+        v5 = bm.verts.new((-l / 2 * (1 - t) + random_offset(),
+                           -w / 2 * (1 - t) + random_offset(),
+                           h + rng.uniform(-top_rand, top_rand)))
+        v6 = bm.verts.new((l / 2 * (1 - t) + random_offset(),
+                           -w / 2 * (1 - t) + random_offset(),
+                           h + rng.uniform(-top_rand, top_rand)))
+        v7 = bm.verts.new((l / 2 * (1 - t) + random_offset(),
+                           w / 2 * (1 - t) + random_offset(),
+                           h + rng.uniform(-top_rand, top_rand)))
+        v8 = bm.verts.new((-l / 2 * (1 - t) + random_offset(),
+                           w / 2 * (1 - t) + random_offset(),
+                           h + rng.uniform(-top_rand, top_rand)))
+
         # Create faces
         faces = [
             [v1, v2, v3, v4],  # bottom
@@ -223,136 +242,125 @@ class ZENV_OT_MetalIngot(Operator):
             [v3, v7, v8, v4],  # back
             [v4, v8, v5, v1],  # left
         ]
-        
+
         for f in faces:
             bm.faces.new(f)
-        
-        # Ensure normals are correct
+
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        
         return bm
-    
-    def add_surface_undulations(self, bm, props):
-        """Add surface imperfections using multiple noise layers"""
-        # Time based random seed
-        noise_seed = int(time.time() * 1000) 
-        
+
+    @staticmethod
+    def add_surface_undulations(bm, props, rng):
+        """Add surface imperfections using multiple noise layers."""
+        noise_seed = rng.randint(0, 999999)
+
         for v in bm.verts:
-            # Layer 1: Large-scale undulations (reduced intensity)
+            # Layer 1: Large-scale undulations
             noise1 = noise.noise(v.co * props.detail_scale + Vector((noise_seed, 0, 0))) * props.roughness * 0.8
-            
+
             # Layer 2: Medium details
             noise2 = noise.noise(v.co * props.detail_scale * 4 + Vector((0, noise_seed, 0))) * props.roughness * 0.4
-            
+
             # Layer 3: Fine surface texture
             noise3 = noise.noise(v.co * props.detail_scale * 16 + Vector((0, 0, noise_seed))) * props.roughness * 0.2
-            
-            # Combine layers with reduced intensity for top face
+
             total_displacement = (noise1 + noise2 + noise3)
-            if v.co.z > props.height * 0.9:  # Reduce displacement on top surface
+            if v.co.z > props.height * 0.9:
                 total_displacement *= 0.5
             v.co += v.normal * total_displacement
-    
-    def add_smelting_bubbles(self, bm, props):
-        """Add random bubble-like imperfections"""
+
+    @staticmethod
+    def add_smelting_bubbles(bm, props, rng):
+        """Add random bubble-like imperfections."""
+        bubble_radius = max(props.roughness * 10, 0.005)  # Ensure visible radius
+
         for _ in range(props.bubble_density):
-            # Random position on surface
-            x = random.uniform(-props.length/2, props.length/2)
-            y = random.uniform(-props.width/2, props.width/2)
-            z = random.uniform(0, props.height)
-            
-            # Create small sphere-like deformation
+            x = rng.uniform(-props.length / 2, props.length / 2)
+            y = rng.uniform(-props.width / 2, props.width / 2)
+            z = rng.uniform(0, props.height)
+
+            center = Vector((x, y, z))
             for v in bm.verts:
-                dist = (Vector((x, y, z)) - v.co).length
-                if dist < props.roughness * 2:
-                    factor = 1 - (dist / (props.roughness * 2))
+                dist = (center - v.co).length
+                if dist < bubble_radius:
+                    factor = 1 - (dist / bubble_radius)
                     v.co += v.normal * factor * props.roughness
-    
-    def add_micro_detail(self, bm, props):
-        """Add final pass of cellular noise for micro surface imperfections"""
-        noise_seed = int(time.time() * 1000)
-        scale = 100 * props.micro_scale  # Convert to ~1cm scale
-        
-        # Ensure correct normals before starting
+
+    @staticmethod
+    def add_micro_detail(bm, props, rng):
+        """Add final pass of cellular noise for micro surface imperfections."""
+        noise_seed = rng.randint(0, 999999)
+        scale = 100 * props.micro_scale
+
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        
-        # Create vertex groups for edge detection
+
+        # Create vertex set for edge detection
         edge_vertices = set()
         for edge in bm.edges:
             if edge.calc_face_angle_signed() > math.radians(30):
                 edge_vertices.add(edge.verts[0])
                 edge_vertices.add(edge.verts[1])
-        
+
         def cellular_noise(pos, offset):
-            """Enhanced Manhattan distance cellular noise with second-closest point"""
+            """Enhanced Manhattan distance cellular noise."""
             scaled_pos = (pos * scale) + Vector((offset, offset, offset))
             p = Vector((int(scaled_pos.x), int(scaled_pos.y), int(scaled_pos.z)))
-            
-            # Track both closest and second closest distances
+
             min_dist = float('inf')
             second_min_dist = float('inf')
-            
-            # Check neighboring cells in larger area for more crystalline patterns
+
             for dx in range(-2, 3):
                 for dy in range(-2, 3):
                     for dz in range(-2, 3):
                         cell_pos = p + Vector((dx, dy, dz))
-                        # Generate stable random point in cell
-                        random.seed(hash((cell_pos.x, cell_pos.y, cell_pos.z, noise_seed)))
-                        point = cell_pos + Vector((random.random(), random.random(), random.random()))
-                        
-                        # Manhattan distance
+                        # Use a local RNG seeded deterministically - does not
+                        # corrupt the global random state.
+                        local_seed = hash((cell_pos.x, cell_pos.y, cell_pos.z, noise_seed))
+                        local_rng = random.Random(local_seed)
+                        point = cell_pos + Vector((local_rng.random(), local_rng.random(), local_rng.random()))
+
                         dist = abs(point.x - scaled_pos.x) + abs(point.y - scaled_pos.y) + abs(point.z - scaled_pos.z)
-                        
+
                         if dist < min_dist:
                             second_min_dist = min_dist
                             min_dist = dist
                         elif dist < second_min_dist:
                             second_min_dist = dist
-            
-            # Use difference between closest and second closest for sharper features
+
             diff = (second_min_dist - min_dist) / scale
-            # Normalize to [-1, 1] range and enhance contrast
             return math.tanh(diff * 3.0) * 2.0 - 1.0
 
-        # Calculate vertex normals
-        bmesh.ops.smooth_vert(bm, verts=list(bm.verts), factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
-        
-        # Store original positions
+        # Light smoothing - does not destroy base shape (was factor=0.5)
+        bmesh.ops.smooth_vert(bm, verts=list(bm.verts), factor=0.1,
+                              use_axis_x=True, use_axis_y=True, use_axis_z=True)
+
         orig_positions = {v: v.co.copy() for v in bm.verts}
-        
-        # First pass to calculate noise range for normalization
+
+        # First pass: calculate noise range for normalization
         noise_values = []
         for v in bm.verts:
-            # Generate three offset cellular patterns
             n1 = cellular_noise(v.co, 0)
             n2 = cellular_noise(v.co, 100) * 0.6
             n3 = cellular_noise(v.co, -100) * 0.3
-            
             total = (n1 + n2 + n3) * 0.5
             noise_values.append(total)
-        
-        # Calculate noise range for normalization
+
         noise_min = min(noise_values)
         noise_max = max(noise_values)
         noise_range = noise_max - noise_min
-        
+
         # Apply normalized noise
         for v, noise_val in zip(bm.verts, noise_values):
-            # Normalize to [-1, 1] range
             if noise_range > 0:
                 total = 2.0 * ((noise_val - noise_min) / noise_range) - 1.0
             else:
                 total = 0
-                
-            # Scale by micro detail intensity
+
             total *= props.micro_detail
-            
-            # Reduce effect near edges
+
             if v in edge_vertices:
                 total *= 0.3
-            
-            # Calculate average normal from connected faces
+
             normal = Vector((0, 0, 0))
             num_faces = 0
             for face in v.link_faces:
@@ -362,413 +370,319 @@ class ZENV_OT_MetalIngot(Operator):
                 normal.normalize()
             else:
                 normal = v.normal
-            
-            # Apply displacement along normal
-            v.co = orig_positions[v] + normal * total
-        
-        # Final normal recalculation and smoothing
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        bmesh.ops.smooth_vert(bm, verts=list(bm.verts), factor=0.1, use_axis_x=True, use_axis_y=True, use_axis_z=True)
 
-    def setup_uv_mapping(self, bm):
-        """Set up UV mapping with bottom edge seams"""
-        # Ensure UV layer exists
+            v.co = orig_positions[v] + normal * total
+
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        # Gentle post-smoothing
+        bmesh.ops.smooth_vert(bm, verts=list(bm.verts), factor=0.05,
+                              use_axis_x=True, use_axis_y=True, use_axis_z=True)
+
+    @staticmethod
+    def setup_uv_mapping(bm):
+        """Set up UV mapping with bottom edge seams."""
         if not bm.loops.layers.uv:
             bm.loops.layers.uv.new()
-        
-        # Mark bottom edges as seams
+
         for edge in bm.edges:
-            # Find edges near the bottom
             verts_z = [v.co.z for v in edge.verts]
-            if max(verts_z) < 0.01:  # Bottom edges
+            if max(verts_z) < 0.01:
                 edge.seam = True
-        
+
         return bm
 
-    def create_base_mesh(self, context):
-        """Create the base mesh"""
-        # Create new bmesh
-        bm = bmesh.new()
-        
-        # Get properties
-        props = context.scene.zenv_metal_ingot_props
-        
-        # Generate base shape
-        self.generate_base_shape(bm, props)
-        
-        # Add large-scale surface undulations
-        self.add_surface_undulations(bm, props)
-        
-        # Add smelting bubbles
-        self.add_smelting_bubbles(bm, props)
-        
-        # Create object and link to scene
-        mesh = bpy.data.meshes.new("Metal_Ingot")
-        obj = bpy.data.objects.new(mesh.name, mesh)
-        
-        # Link object to scene
-        bpy.context.collection.objects.link(obj)
-        bpy.context.view_layer.objects.active = obj
-        obj.select_set(True)
-        
-        # Apply bmesh to object
-        bm.to_mesh(mesh)
-        bm.free()
-        
-        return obj
+    @staticmethod
+    def apply_grid_cut(bm, props):
+        """Apply grid cutting using bmesh operations (headless-safe).
 
-    def apply_bevel(self, obj, props, context):
-        """Apply bevel modifier"""
-        bevel = obj.modifiers.new(name="Bevel", type='BEVEL')
-        bevel.width = props.bevel_width
-        bevel.segments = props.bevel_segments
-        bevel.limit_method = 'ANGLE'
-        bevel.angle_limit = math.radians(30)
-        
-        context.view_layer.objects.active = obj
-        bpy.ops.object.modifier_apply(modifier=bevel.name)
-
-    def get_mesh_bounds(self, bm: bmesh.types.BMesh) -> tuple[Vector, Vector]:
-        """Calculate mesh bounds in world space"""
+        Writes the mesh back only once after all cuts are complete.
+        """
         bounds_min = Vector([min(v.co[i] for v in bm.verts) for i in range(3)])
         bounds_max = Vector([max(v.co[i] for v in bm.verts) for i in range(3)])
-        return bounds_min, bounds_max
+        grid_size = props.grid_size * 0.01  # Convert cm to meters
 
-    def calculate_grid_cuts(self, bounds_min: Vector, bounds_max: Vector, density: float) -> list[list[float]]:
-        """Calculate grid cut positions for each axis"""
-        cuts = []
         for axis in range(3):
-            start = density * (bounds_min[axis] // density)
-            num_cuts = int((bounds_max[axis] - start) / density) + 1
-            axis_cuts = [start + (i * density) for i in range(num_cuts)]
-            cuts.append(axis_cuts)
-        return cuts
+            start = grid_size * (bounds_min[axis] // grid_size)
+            end = bounds_max[axis]
+            num_cuts = int((end - start) / grid_size) + 2
 
-    def apply_grid_cut(self, obj, props, context):
-        """Apply grid cutting using world-space coordinates"""
-        # Store active object and mode
-        original_mode = obj.mode
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Apply all transforms to ensure proper cutting
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        
-        # Create BMesh
-        bm = bmesh.new()
-        bm.from_mesh(obj.data)
-        
-        # Get bounds
-        bounds_min = Vector([min(v.co[i] for v in bm.verts) for i in range(3)])
-        bounds_max = Vector([max(v.co[i] for v in bm.verts) for i in range(3)])
-        
-        # Convert grid size to meters (Blender units)
-        grid_size = props.grid_size * 0.01
-        
-        # Function to perform a single cut
-        def make_cut(axis, position):
-            # Create cutting plane
-            plane_co = Vector((0, 0, 0))
-            plane_co[axis] = position
-            plane_no = Vector((0, 0, 0))
-            plane_no[axis] = 1.0
-            
-            # Perform multiple cuts at slightly offset positions for robustness
-            offsets = [-0.00001, 0, 0.00001]  # Multiple cuts at slightly different positions
-            for offset in offsets:
-                plane_co_offset = plane_co.copy()
-                plane_co_offset[axis] += offset
-                
+            for i in range(num_cuts):
+                cut_pos = start + (i * grid_size)
+                plane_co = Vector((0, 0, 0))
+                plane_co[axis] = cut_pos
+                plane_no = Vector((0, 0, 0))
+                plane_no[axis] = 1.0
+
                 try:
-                    # Cut with bisect_plane
                     bmesh.ops.bisect_plane(
                         bm,
                         geom=bm.edges[:] + bm.faces[:],
                         dist=0.00001,
-                        plane_co=plane_co_offset,
+                        plane_co=plane_co,
                         plane_no=plane_no,
                         use_snap_center=False,
                         clear_outer=False,
                         clear_inner=False
                     )
-                    
-                    # Clean up after each cut
-                    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.00001)
-                    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-                    
-                except Exception as e:
-                    continue  # Try next offset if this one fails
-        
-        # Perform cuts along each axis
-        for axis in range(3):
-            # Calculate number of cuts needed
-            start = grid_size * (bounds_min[axis] // grid_size)
-            end = bounds_max[axis]
-            num_cuts = int((end - start) / grid_size) + 2  # Add extra cut for safety
-            
-            # Make cuts
-            for i in range(num_cuts):
-                cut_pos = start + (i * grid_size)
-                make_cut(axis, cut_pos)
-                
-                # Update mesh between major axis changes for stability
-                bm.to_mesh(obj.data)
-                obj.data.update()
-        
-        # Final cleanup pass
+                except Exception:
+                    continue
+
+        # Final cleanup - single pass after all cuts
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.00001)
         bmesh.ops.triangulate(bm, faces=bm.faces)
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-        
-        # Update mesh
-        bm.to_mesh(obj.data)
-        obj.data.update()
-        bm.free()
-        
-        # Add weighted normal modifier for clean shading
-        weighted_normal = obj.modifiers.new(name="Weighted Normal", type='WEIGHTED_NORMAL')
-        weighted_normal.keep_sharp = True
-        weighted_normal.weight = 50
-        weighted_normal.thresh = 0.01
-        
-        # Restore original mode
-        bpy.ops.object.mode_set(mode=original_mode)
 
-    def optimize_mesh(self, obj, props):
-        """Smart mesh optimization using planar decimation and proper triangulation"""
-        try:
-            # Ensure we're in object mode
-            bpy.ops.object.mode_set(mode='OBJECT')
-            
-            # Set as active object
-            bpy.context.view_layer.objects.active = obj
-            obj.select_set(True)
-            
-            # Add planar decimate modifier
-            decimate = obj.modifiers.new(name="Decimate", type='DECIMATE')
-            decimate.decimate_type = 'DISSOLVE'  # Planar mode
-            decimate.angle_limit = math.radians(1.0)  # 1 degree
-            decimate.use_dissolve_boundaries = False
-            decimate.delimit = {'SHARP'}  # Delimit by sharp edges
-            
-            # Apply decimate
-            bpy.ops.object.modifier_apply(modifier="Decimate")
-            
-            # Add triangulate modifier with beauty settings
-            triangulate = obj.modifiers.new(name="Triangulate", type='TRIANGULATE')
-            triangulate.quad_method = 'BEAUTY'
-            triangulate.ngon_method = 'BEAUTY'
-            
-            # Apply triangulate
-            bpy.ops.object.modifier_apply(modifier="Triangulate")
-            
-            # Add weighted normal modifier
-            weighted_normal = obj.modifiers.new(name="Weighted Normal", type='WEIGHTED_NORMAL')
-            weighted_normal.mode = 'FACE_AREA'
-            weighted_normal.weight = 50  # Maximum weight for stronger effect
-            weighted_normal.thresh = 0.01
-            weighted_normal.keep_sharp = False
-            
-            # Apply weighted normal
-            bpy.ops.object.modifier_apply(modifier="Weighted Normal")
-            
-        except Exception as e:
-            self.report({'ERROR'}, f"Optimization failed: {str(e)}")
+    @staticmethod
+    def randomize_uvs(bm, rng):
+        """Apply random transformation to UV coordinates."""
+        uv_layer = bm.loops.layers.uv.verify()
+        if not uv_layer:
             return
-        
-        # Ensure proper shading
-        obj.data.use_auto_smooth = True
-        obj.data.auto_smooth_angle = math.radians(60)
 
-    def randomize_uvs(self, obj):
-        """Apply random transformation to UVs by directly modifying UV coordinates"""
+        angle = rng.uniform(0, math.radians(360))
+        scale = rng.uniform(0.9, 1.1)
+        offset_x = rng.uniform(-1, 1)
+        offset_y = rng.uniform(-1, 1)
+        mirror_x = rng.choice([-1, 1])
+        mirror_y = rng.choice([-1, 1])
+
+        cos_angle = math.cos(angle)
+        sin_angle = math.sin(angle)
+
+        for face in bm.faces:
+            for loop in face.loops:
+                uv = loop[uv_layer].uv
+                x = uv.x - 0.5
+                y = uv.y - 0.5
+                x *= mirror_x
+                y *= mirror_y
+                rotated_x = x * cos_angle - y * sin_angle
+                rotated_y = x * sin_angle + y * cos_angle
+                scaled_x = rotated_x * scale
+                scaled_y = rotated_y * scale
+                final_x = scaled_x + 0.5 + offset_x
+                final_y = scaled_y + 0.5 + offset_y
+                loop[uv_layer].uv = Vector((final_x, final_y))
+
+#endregion
+#region OP
+class ZENV_OT_MetalIngot(Operator):
+    """Generate a metal ingot with realistic surface details"""
+    bl_idname = "zenv.metal_ingot"
+    bl_label = "Generate Metal Ingot"
+    bl_description = "Generate a metal ingot mesh with surface imperfections"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene is not None
+
+    def _safe_mode_set(self, mode):
+        """Safely switch object mode with context guard."""
         try:
-            self.report({'INFO'}, "Starting UV randomization...")
-            
-            # Ensure we're in object mode
-            bpy.ops.object.mode_set(mode='OBJECT')
-            
-            # Create BMesh
-            bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            
-            # Ensure UV layer exists
-            uv_layer = bm.loops.layers.uv.verify()
-            if not uv_layer:
-                self.report({'ERROR'}, "No UV layer found!")
-                return
-            
-            self.report({'INFO'}, f"Found UV layer: {uv_layer.name}")
-            
-            # Generate random transformation values
-            random.seed(int(time.time() * 1000))
-            angle = random.uniform(0, math.radians(360))
-            scale = random.uniform(0.9, 1.1)
-            offset_x = random.uniform(-1, 1)
-            offset_y = random.uniform(-1, 1)
-            
-            # Random mirroring
-            mirror_x = random.choice([-1, 1])
-            mirror_y = random.choice([-1, 1])
-            
-            self.report({'INFO'}, f"Generated random values: rot={math.degrees(angle):.1f}°, scale={scale:.2f}, offset=({offset_x:.2f}, {offset_y:.2f}), mirror=({mirror_x}, {mirror_y})")
-            
-            # Create rotation matrix
-            cos_angle = math.cos(angle)
-            sin_angle = math.sin(angle)
-            
-            # Count affected UVs
-            affected_uvs = 0
-            
-            # Transform each UV coordinate
-            for face in bm.faces:
-                for loop in face.loops:
-                    # Get UV coordinate
-                    uv = loop[uv_layer].uv
-                    old_uv = uv.copy()
-                    
-                    # Center UVs for transformation
-                    x = uv.x - 0.5
-                    y = uv.y - 0.5
-                    
-                    # Apply mirroring
-                    x *= mirror_x
-                    y *= mirror_y
-                    
-                    # Rotate
-                    rotated_x = x * cos_angle - y * sin_angle
-                    rotated_y = x * sin_angle + y * cos_angle
-                    
-                    # Scale
-                    scaled_x = rotated_x * scale
-                    scaled_y = rotated_y * scale
-                    
-                    # Offset and recenter
-                    final_x = scaled_x + 0.5 + offset_x
-                    final_y = scaled_y + 0.5 + offset_y
-                    
-                    # Apply transformed coordinates
-                    loop[uv_layer].uv = Vector((final_x, final_y))
-                    affected_uvs += 1
-                    
-                    if affected_uvs == 1:  # Log first UV transformation
-                        self.report({'INFO'}, f"First UV transform: ({old_uv.x:.2f}, {old_uv.y:.2f}) -> ({final_x:.2f}, {final_y:.2f})")
-            
-            self.report({'INFO'}, f"Transformed {affected_uvs} UV coordinates")
-            
-            # Update mesh
-            bm.to_mesh(obj.data)
-            obj.data.update()  # Ensure mesh updates
-            bm.free()
-            
-            self.report({'INFO'}, "UV randomization complete")
-            
-        except Exception as e:
-            self.report({'ERROR'}, f"UV randomization failed: {str(e)}")
-            import traceback
-            self.report({'ERROR'}, traceback.format_exc())
+            bpy.ops.object.mode_set(mode=mode)
+        except Exception:
+            pass
 
     def execute(self, context):
+        props = context.scene.zenv_metal_ingot_props
+        rng = random.Random(props.random_seed)
+
+        bm = None
+        obj = None
+
         try:
-            # Get properties
-            props = context.scene.zenv_metal_ingot_props
-            
-            # Create base mesh
-            obj = self.create_base_mesh(context)
-            if not obj:
-                return {'CANCELLED'}
-            
-            # Set as active object
+            # --- Create base mesh ---
+            bm = bmesh.new()
+            ZENV_MetalIngot_Utils.generate_base_shape(bm, props, rng)
+            ZENV_MetalIngot_Utils.add_surface_undulations(bm, props, rng)
+            ZENV_MetalIngot_Utils.add_smelting_bubbles(bm, props, rng)
+
+            mesh = bpy.data.meshes.new("Metal_Ingot")
+            obj = bpy.data.objects.new(mesh.name, mesh)
+            context.collection.objects.link(obj)
             context.view_layer.objects.active = obj
             obj.select_set(True)
-            
-            # Set up UV mapping immediately after base shape
-            bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            bm = self.setup_uv_mapping(bm)
-            bm.to_mesh(obj.data)
+
+            # UV setup + seam marking
+            ZENV_MetalIngot_Utils.setup_uv_mapping(bm)
+            bm.to_mesh(mesh)
             bm.free()
-            
-            # Perform initial UV unwrap
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.uv.unwrap(method='CONFORMAL', margin=0.001)
-            bpy.ops.object.mode_set(mode='OBJECT')
-            
-            # Apply bevel first
+            bm = None
+
+            # Initial UV unwrap (requires edit mode)
+            self._safe_mode_set('EDIT')
+            try:
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.uv.unwrap(method='CONFORMAL', margin=0.001)
+            except Exception:
+                pass
+            self._safe_mode_set('OBJECT')
+
+            # --- Bevel ---
             if props.do_bevel:
-                self.apply_bevel(obj, props, context)
-            
-            # Then apply grid cutting
+                bevel = obj.modifiers.new(name="Bevel", type='BEVEL')
+                bevel.width = props.bevel_width
+                bevel.segments = props.bevel_segments
+                bevel.limit_method = 'ANGLE'
+                bevel.angle_limit = math.radians(30)
+                context.view_layer.objects.active = obj
+                try:
+                    bpy.ops.object.modifier_apply(modifier=bevel.name)
+                except Exception as e:
+                    logger.warning("Bevel apply failed: %s", e)
+
+            # --- Grid cut ---
             if props.do_grid_cut:
-                self.apply_grid_cut(obj, props, context)
-            
-            # Add micro surface details if enabled
+                bm = bmesh.new()
+                bm.from_mesh(obj.data)
+                ZENV_MetalIngot_Utils.apply_grid_cut(bm, props)
+                bm.to_mesh(obj.data)
+                obj.data.update()
+                bm.free()
+                bm = None
+
+                # Weighted normal modifier
+                weighted_normal = obj.modifiers.new(name="Weighted Normal", type='WEIGHTED_NORMAL')
+                weighted_normal.keep_sharp = True
+                weighted_normal.weight = 50
+                weighted_normal.thresh = 0.01
+                try:
+                    bpy.ops.object.modifier_apply(modifier=weighted_normal.name)
+                except Exception as e:
+                    logger.warning("Weighted normal apply failed: %s", e)
+
+            # --- Micro detail ---
             if props.do_micro_detail:
                 bm = bmesh.new()
                 bm.from_mesh(obj.data)
-                self.add_micro_detail(bm, props)
+                ZENV_MetalIngot_Utils.add_micro_detail(bm, props, rng)
                 bm.to_mesh(obj.data)
+                obj.data.update()
                 bm.free()
-            
-            # Add subsurf modifier for final smoothing
-            subsurf = obj.modifiers.new(name="Subdivision", type='SUBSURF')
-            subsurf.levels = 1
-            subsurf.render_levels = 2
-            
-            # Apply all modifiers
-            for modifier in obj.modifiers[:]:
+                bm = None
+
+            # --- Subdivision (optional) ---
+            if props.do_subsurf:
+                subsurf = obj.modifiers.new(name="Subdivision", type='SUBSURF')
+                subsurf.levels = 1
+                subsurf.render_levels = 2
                 try:
-                    bpy.ops.object.modifier_apply(modifier=modifier.name)
+                    bpy.ops.object.modifier_apply(modifier=subsurf.name)
                 except Exception as e:
-                    self.report({'WARNING'}, f"Could not apply modifier {modifier.name}: {str(e)}")
-                    continue
-            
-            # Only run optimization if enabled
+                    logger.warning("Subsurf apply failed: %s", e)
+
+            # --- Optimize ---
             if props.do_optimize:
-                self.optimize_mesh(obj, props)
-            
-            # Pack UVs after all modifications
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.uv.pack_islands(margin=0.001)
-            bpy.ops.object.mode_set(mode='OBJECT')  # Switch back to object mode
-            
-            # Apply random UV transformation if enabled
+                self._optimize_mesh(obj, context)
+
+            # --- Pack UVs ---
+            self._safe_mode_set('EDIT')
+            try:
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.uv.pack_islands(margin=0.001)
+            except Exception:
+                pass
+            self._safe_mode_set('OBJECT')
+
+            # --- Random UV ---
             if props.do_random_uv:
-                self.report({'INFO'}, "Random UV transformation enabled, applying...")
-                self.randomize_uvs(obj)
-            
-            # Add weighted normal modifier with corner angle mode
+                bm = bmesh.new()
+                bm.from_mesh(obj.data)
+                ZENV_MetalIngot_Utils.randomize_uvs(bm, rng)
+                bm.to_mesh(obj.data)
+                obj.data.update()
+                bm.free()
+                bm = None
+
+            # --- Final weighted normal ---
             weighted_normal = obj.modifiers.new(name="Weighted Normal", type='WEIGHTED_NORMAL')
             weighted_normal.mode = 'CORNER_ANGLE'
-            weighted_normal.weight = 50  # Maximum weight for stronger effect
+            weighted_normal.weight = 50
             weighted_normal.thresh = 0.01
             weighted_normal.keep_sharp = False
-            
-            # Apply weighted normal modifier
-            bpy.ops.object.modifier_apply(modifier="Weighted Normal")
-            
-            # Ensure proper shading
-            obj.data.use_auto_smooth = True
-            obj.data.auto_smooth_angle = math.radians(60)
-            
+            try:
+                bpy.ops.object.modifier_apply(modifier=weighted_normal.name)
+            except Exception as e:
+                logger.warning("Final weighted normal apply failed: %s", e)
+
+            # Auto smooth (Blender 4.0 only - wrapped for forward compat)
+            try:
+                obj.data.use_auto_smooth = True
+                obj.data.auto_smooth_angle = math.radians(60)
+            except Exception:
+                pass
+
+            logger.info("Generated metal ingot: verts=%d, faces=%d",
+                        len(obj.data.vertices), len(obj.data.polygons))
+            self.report({'INFO'}, "Ingot generated (%d faces)" % len(obj.data.polygons))
             return {'FINISHED'}
-            
+
         except Exception as e:
-            self.report({'ERROR'}, f"Failed to generate metal ingot: {str(e)}")
+            logger.error("Error generating metal ingot: %s", e)
+            self.report({'ERROR'}, "Ingot generation failed: %s" % e)
+            # Cleanup BMesh on failure
+            if bm is not None:
+                try:
+                    bm.free()
+                except Exception:
+                    pass
             return {'CANCELLED'}
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
+    def _optimize_mesh(self, obj, context):
+        """Smart mesh optimization using planar decimation and triangulation."""
+        try:
+            self._safe_mode_set('OBJECT')
+            context.view_layer.objects.active = obj
+            obj.select_set(True)
 
-class ZENV_PT_MetalIngot_Panel(Panel):
+            # Planar decimate
+            decimate = obj.modifiers.new(name="Decimate", type='DECIMATE')
+            decimate.decimate_type = 'DISSOLVE'
+            decimate.angle_limit = math.radians(1.0)
+            decimate.use_dissolve_boundaries = False
+            decimate.delimit = {'SHARP'}
+            try:
+                bpy.ops.object.modifier_apply(modifier="Decimate")
+            except Exception as e:
+                logger.warning("Decimate apply failed: %s", e)
+
+            # Triangulate
+            triangulate = obj.modifiers.new(name="Triangulate", type='TRIANGULATE')
+            triangulate.quad_method = 'BEAUTY'
+            triangulate.ngon_method = 'BEAUTY'
+            try:
+                bpy.ops.object.modifier_apply(modifier="Triangulate")
+            except Exception as e:
+                logger.warning("Triangulate apply failed: %s", e)
+
+            # Weighted normal
+            weighted_normal = obj.modifiers.new(name="Weighted Normal", type='WEIGHTED_NORMAL')
+            weighted_normal.mode = 'FACE_AREA'
+            weighted_normal.weight = 50
+            weighted_normal.thresh = 0.01
+            weighted_normal.keep_sharp = False
+            try:
+                bpy.ops.object.modifier_apply(modifier="Weighted Normal")
+            except Exception as e:
+                logger.warning("Weighted normal apply failed: %s", e)
+
+        except Exception as e:
+            logger.error("Optimization failed: %s", e)
+
+#endregion
+#region PANEL
+class ZENV_PT_MetalIngot(Panel):
     """Panel for metal ingot generation"""
     bl_label = "GEN Metal Ingot Generator"
     bl_idname = "ZENV_PT_MetalIngot"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'ZENV'
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene is not None
 
     def draw(self, context):
         layout = self.layout
@@ -782,6 +696,8 @@ class ZENV_PT_MetalIngot_Panel(Panel):
         proc_box.prop(props, "do_micro_detail")
         proc_box.prop(props, "do_optimize")
         proc_box.prop(props, "do_random_uv")
+        proc_box.prop(props, "do_subsurf")
+        proc_box.prop(props, "random_seed")
 
         # Base shape settings
         shape_box = layout.box()
@@ -792,46 +708,93 @@ class ZENV_PT_MetalIngot_Panel(Panel):
         shape_box.prop(props, "taper")
         shape_box.prop(props, "variation_scale")
 
-        # Detail settings
+        # Surface detail settings
+        detail_box = layout.box()
+        detail_box.label(text="Surface Detail", icon='FORCE_TURBULENCE')
+        detail_box.prop(props, "detail_scale")
+        detail_box.prop(props, "roughness")
+        detail_box.prop(props, "bubble_density")
+
+        # Grid settings
         if props.do_grid_cut:
             grid_box = layout.box()
             grid_box.label(text="Grid Settings", icon='MESH_GRID')
             grid_box.prop(props, "grid_size")
 
+        # Bevel settings
         if props.do_bevel:
             bevel_box = layout.box()
             bevel_box.label(text="Bevel Settings", icon='MOD_BEVEL')
             bevel_box.prop(props, "bevel_width")
             bevel_box.prop(props, "bevel_segments")
 
+        # Micro detail settings
         if props.do_micro_detail:
-            detail_box = layout.box()
-            detail_box.label(text="Surface Detail", icon='FORCE_TURBULENCE')
-            detail_box.prop(props, "micro_detail")
-            detail_box.prop(props, "micro_scale")
+            micro_box = layout.box()
+            micro_box.label(text="Micro Detail", icon='MOD_NOISE')
+            micro_box.prop(props, "micro_detail")
+            micro_box.prop(props, "micro_scale")
 
         # Generate button
         layout.operator(ZENV_OT_MetalIngot.bl_idname, icon='MOD_CAST')
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#endregion
+#region REG
 classes = (
-    ZENV_PG_MetalIngotProps,
+    ZENV_PG_MetalIngot,
     ZENV_OT_MetalIngot,
-    ZENV_PT_MetalIngot_Panel,
+    ZENV_PT_MetalIngot,
 )
 
+
+def _install_logger():
+    """Attach a single StreamHandler to ``logger`` (idempotent)."""
+    global _zenv_ingot_console_handler
+    if _zenv_ingot_console_handler is not None:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    _zenv_ingot_console_handler = handler
+
+
+def _uninstall_logger():
+    """Remove the handler added by :func:`_install_logger`."""
+    global _zenv_ingot_console_handler
+    if _zenv_ingot_console_handler is None:
+        return
+    try:
+        logger.removeHandler(_zenv_ingot_console_handler)
+    except ValueError:
+        pass
+    _zenv_ingot_console_handler = None
+
+
 def register():
-    for current_class_to_register in classes:
-        bpy.utils.register_class(current_class_to_register)
-    bpy.types.Scene.zenv_metal_ingot_props = PointerProperty(type=ZENV_PG_MetalIngotProps)
+    """Register all addon classes, scene property, and configure the logger."""
+    _install_logger()
+    for cls in classes:
+        try:
+            bpy.utils.register_class(cls)
+        except Exception:
+            pass
+    bpy.types.Scene.zenv_metal_ingot_props = PointerProperty(type=ZENV_PG_MetalIngot)
+
 
 def unregister():
-    for current_class_to_unregister in reversed(classes):
-        bpy.utils.unregister_class(current_class_to_unregister)
-    del bpy.types.Scene.zenv_metal_ingot_props
+    """Unregister all addon classes, remove scene property, and remove the logger handler."""
+    for cls in reversed(classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
+    if hasattr(bpy.types.Scene, "zenv_metal_ingot_props"):
+        delattr(bpy.types.Scene, "zenv_metal_ingot_props")
+    _uninstall_logger()
+
 
 if __name__ == "__main__":
     register()
+#endregion
