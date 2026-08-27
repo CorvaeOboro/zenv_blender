@@ -4,7 +4,7 @@ bl_info = {
     "blender": (4, 0, 0),
     "category": 'ZENV',
     "version": '20260825',
-    "description": 'Realistic woodgrain using plane cuts and layered noise with inward crevices, zero-centered displacement.',
+    "description": 'Woodgrain using plane cuts and layered noise with inward crevices, zero-centered displacement.',
     "status": 'wip',
     "approved": False,
     "group": 'Mesh',
@@ -13,7 +13,7 @@ bl_info = {
     "addon_order": 55,
     "location": 'View3D > ZENV',
     "tags": ['mesh', 'wood', 'grain', 'noise', 'displacement'],
-    "description_short": 'Realistic woodgrain using plane cuts and layered noise.',
+    "description_short": 'Woodgrain using plane cuts and layered noise.',
     "description_medium": 'Bisect-plane approach with multi-layer wood grain noise, '
                           'zero-centered displacement, and carved-in crevices.',
     "description_long": 'MESH Wood Grain Generator uses a bisect-plane approach with '
@@ -192,7 +192,7 @@ class ZENV_WoodGrainNoise:
     def rotation_matrix_from_vector(from_vec: Vector, to_vec: Vector) -> Matrix:
         """
         Returns a 4x4 matrix rotating from 'from_vec' to 'to_vec'.
-        Returns identity if either vector is zero-length (review (section)4.3).
+        Returns identity if either vector is zero-length.
         """
         if from_vec.length < 1e-8 or to_vec.length < 1e-8:
             return Matrix.Identity(4)
@@ -238,7 +238,7 @@ class ZENV_WoodGrainNoise:
         radial = math.sqrt(sx*sx + sy*sy)
 
         rings = math.sin(ring_scale * radial * 2.0)
-        # break up perfect circles
+        # disrupt circular symmetry
         rings += noise.noise((sx*0.5, sy*0.5, z*0.5)) * 0.3
         return rings  # in ~ [-1..1]
     #endregion
@@ -292,7 +292,7 @@ class ZENV_WoodGrainNoise:
         n = noise.noise((xx, yy, z*0.52))
 
         # Shift from [-1..1] to [0..1], clamped to avoid float edge issues
-        # with non-integer exponents (review (section)4.4)
+        # with non-integer exponents
         n_01 = max(0.0, min(1.0, (n + 1.0) * 0.5))
 
         # Contrast curve
@@ -319,7 +319,7 @@ class ZENV_WoodGrainNoise:
     ):
         """
         Summation of the 4 noise layers, each with a smaller amplitude so they
-        don't overshadow each other. Then we do a final zero-centering in a
+        don't overshadow each other. Then a final zero-centering is done in a
         second pass (outside this function).
         """
         # 1) Align so that 'grain_dir' is local Z
@@ -332,7 +332,7 @@ class ZENV_WoodGrainNoise:
         ax, ay, az = aligned
 
         # Evaluate layers; apply smaller weighting so the sum stays in a moderate range
-        # You can adjust these if you want more or less influence:
+        # Adjust these to control layer influence:
         ring_val   = ZENV_WoodGrainNoise.radial_rings(aligned, ring_scale, swirl_strength=distortion*0.3) * 0.4
         macro_val  = ZENV_WoodGrainNoise.macro_end_grain(aligned, z_min, z_max, amplitude=0.3*distortion)
         fine_val   = ZENV_WoodGrainNoise.fine_grain_detail(aligned, amplitude=0.2)
@@ -390,7 +390,7 @@ class ZENV_WoodGrainUtils:
         Create lists of plane positions for each axis, clamped to max_slices.
         All three axes are subdivided so that wide faces receive an internal
         vertex grid - this is required for grooves to form across the face of
-        a board, not just along its perimeter.
+        a board, not along its perimeter.
         """
         all_positions = [[], [], []]
         max_slices_per_axis = 250
@@ -468,7 +468,7 @@ class ZENV_OT_WoodGrain(Operator):
         logger.info("=== Starting Wood Grain Generation (Bisect Planes) ===")
         logger.info(f"Object: {obj.name}")
 
-        # Save mode for restoration in finally (review (section)2.3)
+        # Save mode for restoration in finally
         original_mode = obj.mode
         bm = None
 
@@ -492,7 +492,6 @@ class ZENV_OT_WoodGrain(Operator):
             else:
                 grain_dir = Vector(props.grain_direction)
                 # Fall back to auto-detection if user direction is zero-length
-                # (review (section)4.2)
                 if grain_dir.length < 1e-6:
                     grain_dir = Vector((0,0,0))
                     grain_dir[auto_axis] = 1.0
@@ -505,7 +504,7 @@ class ZENV_OT_WoodGrain(Operator):
             #endregion
 
             #region BISECT
-            # Create cut positions - only along the grain axis (review (section)3.1/(section)3.2)
+            # Create cut positions - only along the grain axis
             cut_positions = ZENV_WoodGrainUtils.create_cut_positions(
                 bounds_min, bounds_max, props.grid_density, auto_axis
             )
@@ -547,7 +546,7 @@ class ZENV_OT_WoodGrain(Operator):
             #endregion
 
             #region DISPLACE
-            # Precompute alignment matrix once (review (section)3.5)
+            # Precompute alignment matrix once
             align_mat = ZENV_WoodGrainNoise.rotation_matrix_from_vector(Vector((0,0,1)), grain_dir)
             inv_align = align_mat.inverted()
 
@@ -595,16 +594,15 @@ class ZENV_OT_WoodGrain(Operator):
             final_depth = props.displacement_depth
 
             # PASS 2: apply final displacement per VERTEX (not per loop!)
-            # The old code iterated over faces/loops, which applied displacement
-            # N times per vertex (once per adjacent face), causing compounding
-            # (review (section)2.1).
+            # Iterating over faces/loops would apply displacement
+            # N times per vertex (once per adjacent face), causing compounding.
             color_layer = None
             if props.visualize_colors:
                 color_layer = bm.loops.layers.color.get("WoodGrain")
                 if not color_layer:
                     color_layer = bm.loops.layers.color.new("WoodGrain")
             else:
-                # Remove stale vertex color layer from previous runs (review (section)3.10)
+                # Remove stale vertex color layer from previous runs
                 stale = bm.loops.layers.color.get("WoodGrain")
                 if stale:
                     bm.loops.layers.color.remove(stale)
@@ -702,13 +700,13 @@ class ZENV_OT_WoodGrain(Operator):
 
         #region FINALLY
         finally:
-            # Free BMesh if still allocated (review (section)2.3)
+            # Free BMesh if still allocated
             if bm is not None:
                 try:
                     bm.free()
                 except Exception:
                     pass
-            # Restore original mode (review (section)2.3)
+            # Restore original mode
             try:
                 bpy.ops.object.mode_set(mode=original_mode)
             except Exception:
@@ -775,9 +773,9 @@ classes = (
 def register():
     _install_logger()
     # Remove any stale Scene property first so the PropertyGroup class can
-    # be cleanly re-registered after importlib.reload (e.g. via the Addon
-    # Manager).  Without this, the old class stays registered and the new
-    # one is silently skipped, leaving the panel to crash in draw().
+    # be re-registered after importlib.reload (e.g. via the Addon
+    # Manager).  Without this, the previous class stays registered and the new
+    # one is skipped, leaving the panel to crash in draw().
     if hasattr(bpy.types.Scene, 'zenv_wood_props'):
         delattr(bpy.types.Scene, 'zenv_wood_props')
     for c in classes:

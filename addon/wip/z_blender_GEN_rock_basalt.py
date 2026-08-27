@@ -443,7 +443,7 @@ class ZENV_OT_RockBasalt(Operator):
         mapping.inputs['Scale'].default_value[1] = 1.0
         mapping.inputs['Scale'].default_value[2] = 1.0
 
-        # Mix noise and voronoi for complex surface detail
+        # Mix noise and voronoi for layered surface detail
         mix_rgb.blend_type = 'MULTIPLY'
         mix_rgb.inputs['Fac'].default_value = 0.7
 

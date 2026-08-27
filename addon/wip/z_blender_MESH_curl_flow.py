@@ -14,11 +14,11 @@ bl_info = {
     "location": 'View3D > ZENV',
     "tags": ['mesh', 'curl', 'flow', 'noise', 'generator'],
     "description_short": 'Creates mesh geometry with curl flow patterns.',
-    "description_medium": 'Generates flow lines on plane, sphere, or cylinder surfaces using '
+    "description_medium": 'Generates flow lines on plane, sphere, or cylinder using '
                           'curl noise. Lines are created as bezier curves with optional '
                           'color gradient materials.',
     "description_long": 'Curl Flow Generator creates mesh geometry with curl flow patterns. '
-                        'Uses curl noise to generate flow lines on parametric surfaces '
+                        'Uses curl noise to generate flow lines on parametric '
                         '(plane, sphere, cylinder). Lines are rendered as bezier curves '
                         'with configurable thickness, convergence, and color gradients.',
     "image_overview": '',
@@ -195,8 +195,8 @@ class ZENV_OT_CurlFlowAdd(Operator):
         else:  # CYLINDER
             phi = u * 2 * math.pi
             # Normalize for safety - the vector (cos, sin, 0) already has
-            # length 1, but make it explicit so future modifications that
-            # add scale don't produce un-normalized normals (review (section)3.3).
+            # length 1, but normalize so future modifications that
+            # add scale don't produce un-normalized normals.
             return Vector((math.cos(phi), math.sin(phi), 0)).normalized()
     #endregion
 
@@ -212,9 +212,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
                     dn2/dx - dn1/dy)
 
         This produces a divergence-free field, which is the key property
-        of curl noise that prevents flow lines from clumping or spreading
-        (review (section)3.1: the old formula was an arbitrary permutation of a
-        single noise field's gradient, not a true curl).
+        of curl noise that prevents flow lines from clumping or spreading.
         """
         eps = 0.0001
         # Offset samples for each of the 3 independent noise fields.
@@ -290,7 +288,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
             # is computed on the continuous coordinate, not the wrapped
             # one. This prevents discontinuities where a line near the
             # edge wraps to the opposite side and then converges from
-            # the wrong direction (review (section)3.2).
+            # the wrong direction.
             if props.convergence > 0:
                 center_u, center_v = 0.5, 0.5
                 u = u + (center_u - u) * props.convergence * 0.01
@@ -308,7 +306,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
         """Create curve object from points.
 
         The curve is NOT linked to any collection here; the caller is
-        responsible for linking it to the flow collection (review (section)2.4).
+        responsible for linking it to the flow collection.
         """
         if not points:
             return None
@@ -321,7 +319,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
         spline = curve_data.splines.new('BEZIER')
         spline.bezier_points.add(len(points) - 1)
 
-        # Set points with smooth handles based on neighbor tangents (review (section)3.6)
+        # Set points with smooth handles based on neighbor tangents
         n = len(points)
         for i, point in enumerate(points):
             bp = spline.bezier_points[i]
@@ -335,10 +333,10 @@ class ZENV_OT_CurlFlowAdd(Operator):
                 bp.handle_left = point
                 bp.handle_right = point
 
-        # Create object - do NOT link to bpy.context.collection (review (section)2.4)
+        # Create object - do NOT link to bpy.context.collection
         curve_obj = bpy.data.objects.new(name, curve_data)
 
-        # Set curve properties from passed props (review (section)3.7)
+        # Set curve properties from passed props
         curve_data.bevel_depth = props.line_thickness
         curve_data.bevel_resolution = 2
 
@@ -361,7 +359,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
         links = mat.node_tree.links
 
         if props.use_color_gradient:
-            # Setup color gradient driven by Generated Z coordinate (review (section)4.10)
+            # Setup color gradient driven by Generated Z coordinate
             color_ramp = nodes.new('ShaderNodeValToRGB')
             tex_coord = nodes.new('ShaderNodeTexCoord')
             separate = nodes.new('ShaderNodeSeparateXYZ')
@@ -386,15 +384,15 @@ class ZENV_OT_CurlFlowAdd(Operator):
     #region execute
     def execute(self, context):
         props = context.scene.curl_flow_props
-        # Use a local RNG to avoid polluting the global random state (review (section)2.1)
+        # Use a local RNG to avoid polluting the global random state
         rng = random.Random(props.random_seed)
 
-        # Track created curves for cleanup on failure (review (section)2.2)
+        # Track created curves for cleanup on failure
         created_curves = []
         material_created = False
 
         try:
-            # Reuse or recreate collection for flow lines (review (section)2.3)
+            # Reuse or recreate collection for flow lines
             flow_collection = bpy.data.collections.get("Flow_Lines")
             if flow_collection:
                 # Clear existing objects from previous runs
@@ -404,7 +402,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
                 flow_collection = bpy.data.collections.new("Flow_Lines")
                 context.scene.collection.children.link(flow_collection)
 
-            # Reuse or recreate material (review (section)2.3/(section)3.5)
+            # Reuse or recreate material
             mat_name = "Flow_Line_Material"
             material = bpy.data.materials.get(mat_name)
             if not material:
@@ -421,7 +419,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
                 # Generate line points
                 points = self.generate_flow_line(start_u, start_v, props)
 
-                # Create curve object - pass context and props (review (section)2.4/(section)3.7)
+                # Create curve object - pass context and props
                 curve = self.create_curve_from_points(context, points, f"Flow_Line_{i}", props)
                 if curve is None:
                     continue
@@ -434,7 +432,7 @@ class ZENV_OT_CurlFlowAdd(Operator):
             return {'FINISHED'}
 
         except Exception as e:
-            # Clean up partial results on failure (review (section)2.2)
+            # Clean up partial results on failure
             for curve in created_curves:
                 try:
                     bpy.data.objects.remove(curve, do_unlink=True)

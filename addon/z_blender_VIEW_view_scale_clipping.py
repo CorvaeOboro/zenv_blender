@@ -50,7 +50,7 @@ class ZENV_OT_ViewAutoClippingBounds(Operator):
 
         The evaluated mesh from ``depsgraph`` is used so modifiers and
         shape keys are honored. Returns ``None`` when the object has no
-        geometry we can sample.
+        geometry available to sample.
         """
         if not obj:
             return None

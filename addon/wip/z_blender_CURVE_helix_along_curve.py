@@ -203,12 +203,12 @@ class ZENV_OT_HelixAlongCurve(Operator):
         points = []
         tangents = []
 
-        # Calculate total curve length for better point distribution
+        # Calculate total curve length for even point distribution
         total_length = self.get_curve_length(curve_obj, depsgraph)
         if total_length <= 0:
             raise ValueError("Curve has zero length")
 
-        # Increase sampling density for better accuracy
+        # Increase sampling density for finer resolution
         points_per_length = (num_samples * 2) / total_length  # Double the sampling density
 
         for spline in curve.splines:
@@ -225,7 +225,7 @@ class ZENV_OT_HelixAlongCurve(Operator):
                     angle_factor = 1 + (handle_angle / pi)  # Increase samples for sharper angles
                     num_segments = max(4, int(segment_length * points_per_length * angle_factor))
 
-                    # Sample points along the segment using better Bezier interpolation
+                    # Sample points along the segment using cubic Bezier interpolation
                     for t in range(num_segments):
                         factor = t / (num_segments - 1)
                         # Cubic Bezier interpolation
@@ -241,7 +241,7 @@ class ZENV_OT_HelixAlongCurve(Operator):
                         co = h4 + (h5 - h4) * factor
                         points_array.append(co)
 
-                        # Calculate more accurate tangent
+                        # Calculate tangent from Bezier derivative
                         if factor < 0.001:
                             tangent = (p1.handle_right - p1.co).normalized()
                         elif factor > 0.999:

@@ -16,7 +16,7 @@ bl_info = {
     "description_medium": 'Generates weathered medieval stone blocks with sword cuts, impact marks, corner chips, branching cracks, surface noise, and voxel remeshing.',
     "description_long": """
     Medieval Stone Block Generator
-Generates weathered stone blocks with realistic damage, wear patterns, and battle damage.
+Generates weathered stone blocks with damage, wear patterns, and battle damage.
 Supports sword cuts, impact marks, corner chips, branching cracks, surface noise
 displacement, edge bevels, voxel remeshing, and optional debug visualization.""",
     "location": 'View3D > Sidebar > ZENV > GEN Medieval Stone',
@@ -231,7 +231,7 @@ class ZENV_OT_StoneBlock(Operator):
         bevel.angle_limit = math.radians(45)
 
     def apply_voxel_remesh(self, obj, voxel_size):
-        """Apply voxel remesh with optimized settings"""
+        """Apply voxel remesh with tuned settings"""
         mod = obj.modifiers.new(name="VoxelRemesh", type='REMESH')
         mod.mode = 'VOXEL'
         mod.voxel_size = voxel_size
@@ -252,9 +252,9 @@ class ZENV_OT_StoneBlock(Operator):
     def _apply_boolean_immediately(self, target_obj, cutter_obj, modifier_name, solver='FLOAT', operation='DIFFERENCE'):
         """Add a boolean modifier referencing cutter_obj and bake it into target_obj immediately.
 
-        Baking each boolean step in isolation is far more robust than
+        Baking each boolean step in isolation is more stable than
         stacking N booleans and applying them later: a single bad cutter
-        can no longer poison the whole stack, and the depsgraph evaluates
+        cannot poison the whole stack, and the depsgraph evaluates
         a single boolean against a known-good mesh each time.
 
         The cutter must be visible to the depsgraph (linked into a scene
@@ -356,10 +356,11 @@ class ZENV_OT_StoneBlock(Operator):
             rng = random
         bm = bmesh.new()
 
-        # Parameters for crack detail. Segment count was previously
-        # ``int(length * 20)`` which produced thousands of bmesh faces per
-        # crack and dominated generation time. ``length * 6`` keeps visual
-        # detail while running ~3x faster.
+        # Parameters for crack detail. Segment count is derived from
+        # ``length * 6`` instead of the earlier ``int(length * 20)``, which
+        # produced thousands of bmesh faces per crack and dominated
+        # generation time. ``length * 6`` keeps visual detail while running
+        # ~3x faster.
         segments = max(2, int(length * 6))
         width_start = length * 0.08  # Base width of crack
         depth_start = depth * 0.6  # Base depth
@@ -382,7 +383,7 @@ class ZENV_OT_StoneBlock(Operator):
 
             # Create base vertices for the segment
             points = []
-            num_sides = 6  # Hexagonal profile for better detail
+            num_sides = 6  # Hexagonal profile for finer detail
 
             # Create profile points
             for i in range(num_sides):
@@ -544,7 +545,7 @@ class ZENV_OT_StoneBlock(Operator):
                     rng.uniform(0, 2 * math.pi),
                 )
 
-                # IMPORTANT: do NOT call project_to_surface here. That call
+                # Invariant: do NOT call project_to_surface here. That call
                 # raycasts every cutter vertex onto the target and snaps it
                 # to the hit, which collapses the 3D wedge into a
                 # non-manifold zero-thickness sheet. The FAST boolean
@@ -723,9 +724,9 @@ class ZENV_OT_StoneBlock(Operator):
         )
 
         # Always build the actual final object from final_mesh regardless of
-        # debug mode. The previous implementation pulled the final object out
-        # of ``debug_objects`` which is empty when debug mode is off, causing
-        # ``apply_damage`` to dereference ``None``.
+        # debug mode. Pulling the final object out of ``debug_objects`` (which
+        # is empty when debug mode is off) would cause ``apply_damage`` to
+        # dereference ``None``.
         final_obj = None
         if final_mesh is not None:
             actual_final_mesh = final_mesh.copy()
@@ -824,7 +825,7 @@ class ZENV_OT_StoneBlock(Operator):
         for v in bm.verts:
             pos = v.co * 20.0
             noise_val = noise.noise(pos.to_tuple())
-            v.co += v.normal * abs(noise_val) * size * 0.01  # Very subtle
+            v.co += v.normal * abs(noise_val) * size * 0.01  # Subtle displacement
         
         final_mesh = bpy.data.meshes.new("Impact_Final")
         bm.to_mesh(final_mesh)
@@ -1059,10 +1060,10 @@ class ZENV_OT_StoneBlock(Operator):
                 )
                 
                 # No project_to_surface here either - flattening the
-                # tetrahedron into a triangle sheet on the surface breaks
+                # tetrahedron into a triangle sheet on the surface invalidates
                 # the boolean. The tetra is already positioned at the
                 # corner with random rotation so it bites into the corner
-                # naturally.
+                # by construction.
 
                 damage_obj.name = f"CornerCutter_{i}"
                 if damage_obj.name not in damage_collection.objects:
@@ -1102,22 +1103,22 @@ class ZENV_OT_StoneBlock(Operator):
     def cleanup_temp_objects(self, context, seed_suffix=""):
         """Remove all temporary objects and collections used in generation.
 
-        The previous implementation removed obj.data *before* obj, which
+        The cleanup removes obj.data *before* obj, which
         can trigger a side-effect free of the Object data-block when the
         mesh is the object's only user (the object then has 0 users and
         Blender garbage-collects it as part of the mesh removal). The next
         bpy.data.objects.remove(obj) call would then raise
         ReferenceError: StructRNA of type Object has been removed. Removing
         the Object first (with do_unlink=True for atomic collection unlink)
-        avoids that race entirely.
+        avoids that race.
         """
 
         def _purge_collection(collection_name):
             target_collection = bpy.data.collections.get(collection_name)
             if target_collection is None:
                 return
-            # Snapshot mesh refs before removing objects so we can purge
-            # any orphans afterwards even if the Object struct goes away.
+            # Snapshot mesh refs before removing objects so orphans can be purged
+            # afterwards even if the Object struct goes away.
             orphan_meshes = []
             for child_object in list(target_collection.objects):
                 child_mesh = getattr(child_object, "data", None)
@@ -1341,9 +1342,9 @@ class ZENV_OT_StoneBlock(Operator):
         """
         props = context.scene.zenv_stone_block_generator
 
-        # Resolve a concrete generation seed. When ``random_seed=0`` we draw
-        # a fresh integer per click so every run gets a unique suffix and
-        # cannot collide with leftover collections from a previous run.
+        # Resolve a specific generation seed. When ``random_seed=0`` a
+        # fresh integer is drawn per click so every run gets a unique suffix
+        # and cannot collide with leftover collections from a previous run.
         if props.random_seed > 0:
             generation_seed = int(props.random_seed)
         else:

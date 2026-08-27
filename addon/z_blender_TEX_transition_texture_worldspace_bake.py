@@ -5,7 +5,7 @@ bl_info = {
     "category": 'ZENV',
     "version": '20260822',
     "location": "View3D > Sidebar > ZENV",
-    "description": "Bake a seamless transitional texture in world space",
+    "description": "Bake a continuous transitional texture in world space",
     "status": 'working',
     "approved": True,
     "group": 'Texture',
@@ -17,11 +17,11 @@ bl_info = {
     "description_medium": 'Projects the source mesh\'s material textures onto the target mesh\'s UV layout by finding the nearest point on the source for each target texel, sampling the source texture, and applying a smooth distance-based falloff. Supports bidirectional baking, mirror/unfold sampling, UV margin dilation, bilinear/nearest filtering, and automatic filename generation.',
     "description_long": """
 TEX Bake Transition Worldspace
-Bakes a seamless transition texture in world space between two mesh objects.
+Bakes a continuous transition texture in world space between two mesh objects.
 For each texel in the target mesh's UV layout, finds the nearest point on the
 source mesh, samples the source material's texture at that point, and writes
 the color with a smooth falloff based on the 3D distance between the two
-surfaces. Useful for creating blend masks where two surfaces meet.
+meshes. Useful for creating blend masks where two meshes meet.
 Supports:
 - Bidirectional baking (forward + reverse in one operation)
 - Mirror / unfold sampling to reduce seam artifacts

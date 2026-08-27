@@ -18,7 +18,7 @@ bl_info = {
 Generates layered stone walls by creating individual stone meshes,
 placing them with spatial-grid-accelerated BVH overlap detection,
 adding rigid-body physics, and running a bullet physics simulation
-so stones settle naturally. Supports large stones and filler stones
+so stones settle. Supports large stones and filler stones
 per layer, configurable wall dimensions, and seed-based reproducibility.""",
     "location": 'View3D > ZENV',
     "image_overview": '',
@@ -238,7 +238,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         # Set location
         stone.location = location
         
-        # Make active and select - deselect all first (review (section)5.8)
+        # Make active and select - deselect all first
         bpy.ops.object.select_all(action='DESELECT')
         context.view_layer.objects.active = stone
         stone.select_set(True)
@@ -253,7 +253,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         # Apply rotation
         bpy.ops.object.transform_apply(rotation=True)
 
-        # Wrap edit-mode operations in try/finally for cleanup (review (section)5.3)
+        # Wrap edit-mode operations in try/finally for cleanup
         noise_tex = None
         try:
             # --- Bevel FIRST on the clean cube edges so the chunky
@@ -263,7 +263,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
             bpy.ops.mesh.select_all(action='SELECT')
 
             # Low-poly single-face chamfer on all 12 cube edges.
-            # segments=1 + profile=0.5 = a single flat cut at 45 deg,
+            # segments=1 + profile=0.5 = a single flat cut at 45°,
             bpy.ops.mesh.bevel(
                 offset=0.025,
                 offset_type='WIDTH',
@@ -278,8 +278,8 @@ class ZENV_OT_GenerateStoneWall(Operator):
 
             bpy.ops.object.mode_set(mode='OBJECT')
 
-            # Very subtle surface noise scaled by `detail` (~=2 mm for
-            # large stones, ~=1 mm for fillers)  
+            # Subtle surface noise scaled by `detail` (≈2 mm for
+            # large stones, ≈1 mm for fillers)  
             noise_tex = bpy.data.textures.new(name=f"{name}_noise", type='NOISE')
             displace = stone.modifiers.new(name="Displacement", type='DISPLACE')
             displace.texture = noise_tex
@@ -297,17 +297,14 @@ class ZENV_OT_GenerateStoneWall(Operator):
             bpy.ops.mesh.delete_loose()
             bpy.ops.object.mode_set(mode='OBJECT')
 
-            # NOTE: decimate was removed - collapsing 50 % of edges
-            # destroyed the bevel corner topology and created the
-            # "sharp small broken corner vertices".
 
             # Smooth shading so the bevel rounds read smoothly.
             bpy.ops.object.shade_smooth()
 
             # Area-weighted custom normals: large flat faces dominate
             # their vertices' normals (read as flat / chunky) while the
-            # small bevel faces blend smoothly - the "flat faces with
-            # solid chunky bevel" look the user asked for.
+            # small bevel faces blend smoothly — the "flat faces with
+            # solid chunky bevel" look.
             bpy.ops.object.mode_set(mode='EDIT')
             # No kwargs: the keep_custom/keep_sharp_edges arg only exists
             # in Blender 4.5+, but this addon targets 4.0 (see bl_info).
@@ -315,13 +312,13 @@ class ZENV_OT_GenerateStoneWall(Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
 
         finally:
-            # Ensure we return to object mode (review (section)5.3)
+            # Ensure we return to object mode
             if stone.mode != 'OBJECT':
                 try:
                     bpy.ops.object.mode_set(mode='OBJECT')
                 except Exception:
                     pass
-            # Clean up noise texture even if modifier_apply failed (review (section)5.5)
+            # Clean up noise texture even if modifier_apply failed
             if noise_tex is not None:
                 try:
                     bpy.data.textures.remove(noise_tex)
@@ -339,7 +336,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         mesh = obj_eval.to_mesh()
         mesh.transform(obj.matrix_world)
         
-        # Create BVHTree - must use triangulated faces (review (section)6.1)
+        # Create BVHTree - must use triangulated faces
         mesh.calc_loop_triangles()
         bvh = BVHTree.FromPolygons(
             [v.co for v in mesh.vertices],
@@ -366,7 +363,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         ground = next((obj for obj in bpy.data.objects if obj.name.startswith("Ground")), None)
         if ground is not None:
             return ground
-        # Create ground plane - sized from wall_width (review (section)7.4)
+        # Create ground plane - sized from wall_width
         plane_size = max(50.0, wall_width * 2.0)
         bpy.ops.mesh.primitive_plane_add(size=plane_size)
         ground = context.active_object
@@ -421,7 +418,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         # Create the Empty via the data API rather than
         # bpy.ops.object.empty_add().  The operator relies on the 3D
         # viewport context (context.active_object / region) which is not
-        # guaranteed when the operator is invoked from the sidebar panel -
+        # guaranteed when the operator is invoked from the sidebar panel —
         # in that case active_object is None and force_obj.field throws
         # "'NoneType' object has no attribute 'type'".  Building the
         # object directly from bpy.data is context-independent.
@@ -431,7 +428,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         force_obj.location = (0.0, 0.0, 0.0)
 
         # Since Blender 3.0, Object.field is None by default and must be
-        # initialized explicitly via the forcefield_toggle operator.
+        # initialized via the forcefield_toggle operator.
         # See: https://blender.stackexchange.com/questions/242846
         # We make the object active+selected first so the operator has a
         # valid target, then toggle the field on.
@@ -444,7 +441,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         # An Empty at the origin carries the Harmonic field.  Harmonic
         # pulls each rigid body toward the effector location with a
         # spring-like force proportional to distance, so stones far from
-        # the center are pulled more - exactly the clumping bias we want.
+        # the center are pulled more — the clumping bias.
         field = force_obj.field
         if field is None:
             raise RuntimeError(
@@ -456,7 +453,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         # No distance limits configured: the default Harmonic radius is
         # large enough to cover the wall.  (use_max/use_min/falloff_type
         # are not set because their enum/attribute availability varies
-        # between Blender versions - see errors in this session.)
+        # between Blender versions — see errors in this session.)
 
         # Animate strength: full at frame_start, zero at
         # frame_start + clump_frames.  Each layer's simulation resets to
@@ -565,7 +562,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
             y = rng.uniform(-0.2, 0.2)
             z = layer_z + rng.uniform(-0.1, 0.1)
 
-            # Always treat stone_size_range as a (min, max) tuple (review (section)9.2)
+            # Always treat stone_size_range as a (min, max) tuple
             if isinstance(stone_size_range, (tuple, list)):
                 size = rng.uniform(stone_size_range[0], stone_size_range[1])
             else:
@@ -608,7 +605,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         # Add rigid body
         if not stone.rigid_body:
             result = bpy.ops.rigidbody.object_add()
-            # bpy.ops.rigidbody.object_add() can silently return
+            # bpy.ops.rigidbody.object_add() can return without error
             # {'CANCELLED'} when invoked from the sidebar panel context
             # (no proper 3D viewport region), leaving rigid_body as
             # None.  Catch that here with a clear error instead of the
@@ -637,7 +634,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         stone.rigid_body.linear_damping = 0.9
         stone.rigid_body.angular_damping = 0.9
 
-        # Set mass from bounding-box volume times a realistic stone density.
+        # Set mass from bounding-box volume times a stone density.
         # Real stone ~2700 kg/m^3; using 2000 as a sane default so impulses
         # don't fling light bodies around. Bounding-box volume overestimates
         # true volume, which partially compensates for the convex-hull gap.
@@ -649,7 +646,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
 
     @staticmethod
     def simulate_physics(context, frames, bounds, z_bound=-1.0, clump_frames=30):
-        """Run physics simulation with improved settings.
+        """Run physics simulation with configured settings.
 
         ``clump_frames`` is the number of frames the inward Harmonic force
         stays active (see create_clump_force).  We always simulate at least
@@ -688,7 +685,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
                 scene.frame_set(scene.frame_start + frame)
                 
                 # Check if any objects are out of bounds and remove them
-                # Collect first, then remove - avoids mutation-during-iteration (review (section)11.1)
+                # Collect first, then remove - avoids mutation-during-iteration
                 to_remove = [
                     obj for obj in bpy.data.objects
                     if obj.rigid_body and obj.type == 'MESH'
@@ -703,9 +700,9 @@ class ZENV_OT_GenerateStoneWall(Operator):
             context.view_layer.update()
 
     def execute(self, context):
-        # Track created objects for cleanup on failure (review (section)12.5)
+        # Track created objects for cleanup on failure
         created_objects = []
-        # Save scene state for restoration (review (section)12.3/(section)11.5)
+        # Save scene state for restoration
         scene = context.scene
         original_frame = scene.frame_current
         original_gravity = scene.gravity if scene.use_gravity else None
@@ -714,11 +711,11 @@ class ZENV_OT_GenerateStoneWall(Operator):
         try:
             props = context.scene.zenv_stone_wall_props
 
-            # Use a local RNG to avoid polluting the global random state (review (section)5.2)
+            # Use a local RNG to avoid polluting the global random state
             seed = props.seed if props.seed > 0 else None
             self._rng = random.Random(seed)
 
-            # Clean up stones from a previous run (review (section)12.2)
+            # Clean up stones from a previous run
             old_stones = [obj for obj in bpy.data.objects
                           if obj.name.startswith(("Large", "Filler"))]
             for obj in old_stones:
@@ -793,7 +790,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
 
         except Exception as e:
             logger.error(f"Error generating stone wall: {e}")
-            # Clean up partial results on failure (review (section)12.5)
+            # Clean up partial results on failure
             for obj in created_objects:
                 try:
                     bpy.data.objects.remove(obj, do_unlink=True)
@@ -802,7 +799,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
             self.report({'ERROR'}, f"Error generating stone wall: {str(e)}")
             return {'CANCELLED'}
         finally:
-            # Restore scene state (review (section)12.3/(section)11.5)
+            # Restore scene state
             try:
                 scene.frame_set(original_frame)
             except Exception:
@@ -869,7 +866,7 @@ classes = (
 )
 
 def register():
-    # Double-registration guard (review (section)14.1)
+    # Double-registration guard
     _install_logger()
     for cls in classes:
         try:
@@ -880,7 +877,7 @@ def register():
         bpy.types.Scene.zenv_stone_wall_props = PointerProperty(type=ZENV_PG_StoneWallProperties)
 
 def unregister():
-    # Unregister classes before deleting properties (review (section)14.2)
+    # Unregister classes before deleting properties
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)

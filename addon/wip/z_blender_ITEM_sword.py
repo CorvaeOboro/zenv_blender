@@ -4,7 +4,7 @@ bl_info = {
     "blender": (4, 0, 2),
     "category": 'ZENV',
     "version": '20260825',
-    "description": 'Generate swords with advanced geometry, bevels, and improved pivot',
+    "description": 'Generate swords with geometry, bevels, and pivot',
     "status": 'wip',
     "approved": False,
     "group": 'Item',
@@ -16,7 +16,7 @@ bl_info = {
     "description_short": 'Generate   swords with  geometry.',
     "description_medium": 'Creates a complete sword mesh with blade, crossguard, grip, and pommel. '
                           'Supports multiple blade types, hilt styles, pattern welding, and surface decoration.',
-    "description_long": ' sword generator with  orientation and realistic geometry. '
+    "description_long": ' sword generator with  orientation and geometry. '
                         'Crossguard at origin, blade in +Y direction, grip in -Y direction, pommel at base. '
                         'More subdivisions, fuller inset, bevels/chamfers for realism. '
                         'Randomization for unique results each generation.',
@@ -219,7 +219,7 @@ class ZENV_PG_SwordDecoration(PropertyGroup):
 # Sword Generator Operator
 # ------------------------------------------------------------------------
 class ZENV_OT_GenerateSword(Operator):
-    """Generate a historically accurate sword with customizable blade, hilt, and decorative properties.
+    """Generate a historically referenced sword with customizable blade, hilt, and decorative properties.
     Creates a complete sword mesh with proper geometry, including bevels and optional pattern welding."""
 
     bl_idname = "zenv.generate_sword"
@@ -231,7 +231,7 @@ class ZENV_OT_GenerateSword(Operator):
         return context.mode == 'OBJECT'
 
     def execute(self, context):
-        # Use a local RNG to avoid polluting the global random state (review (section)2.3)
+        # Use a local RNG to avoid polluting the global random state
         self._rng = random.Random()
 
         sword_opts = context.scene.sword_options
@@ -239,7 +239,7 @@ class ZENV_OT_GenerateSword(Operator):
         hilt_props = context.scene.sword_hilt
         decor_props = context.scene.sword_decoration
 
-        # Track created objects for cleanup on failure (review (section)2.4)
+        # Track created objects for cleanup on failure
         created_objects = []
 
         try:
@@ -286,7 +286,7 @@ class ZENV_OT_GenerateSword(Operator):
             return {'FINISHED'}
 
         except Exception as e:
-            # Clean up partial results on failure (review (section)2.4)
+            # Clean up partial results on failure
             logger.error(f"Sword generation failed: {e}")
             for obj in created_objects:
                 try:
@@ -297,7 +297,7 @@ class ZENV_OT_GenerateSword(Operator):
             return {'CANCELLED'}
     
     # --------------------------------------------------------------------
-    # Create Blade: More realistic geometry, subdivisions, fuller, bevel
+    # Create Blade: Geometry with subdivisions, fuller, bevel
     # --------------------------------------------------------------------
     def create_blade(self, context, props):
         """
@@ -318,7 +318,7 @@ class ZENV_OT_GenerateSword(Operator):
             length = props.blade_length * rng.uniform(0.9, 1.1)
             # We'll define a "spine curve" from y=0 (at crossguard) to y=length.
 
-            # Let's define how many major segments we'll have along the length
+            # Define how many major segments to have along the length
             major_segments = 8
             # We'll subdivide further later. This is for initial shape definition.
 
@@ -334,8 +334,8 @@ class ZENV_OT_GenerateSword(Operator):
                     amp = (length * 0.1) * rng.uniform(0.8, 1.2)
                     x_offset = math.sin(t * math.pi) * amp
 
-                # We can also add slight random vertical waviness for variety
-                # or keep it minimal for more "professional forging".
+                # Slight random vertical waviness can be added for variety
+                # or kept minimal for a clean forging look.
                 spine_points.append(Vector((x_offset, y, 0.0)))
 
             # Create cross-sections from these spine points
@@ -360,9 +360,9 @@ class ZENV_OT_GenerateSword(Operator):
 
                 # We'll create 8 vertices around the cross-section for more detail
                 ring_verts = []
-                # Let's do a symmetrical shape (like a flattened rectangle)
-                # We'll do top/bottom, left/right, etc. with round corners
-                # For simplicity, we can define corners in local "blade space"
+                # Use a symmetrical shape (like a flattened rectangle)
+                # Do top/bottom, left/right, etc. with round corners
+                # Corners can be defined in local "blade space"
 
                 half_w = width / 2.0
                 half_t = thickness / 2.0
@@ -375,7 +375,7 @@ class ZENV_OT_GenerateSword(Operator):
                 ]
 
                 # We'll subdivide these corners once to form an octagon-like shape
-                # or simply create 8 points around the perimeter
+                # or create 8 points around the perimeter
                 perimeter_points = []
                 for c_i in range(len(corners)):
                     c1 = corners[c_i]
@@ -385,7 +385,7 @@ class ZENV_OT_GenerateSword(Operator):
                     perimeter_points.append(midpoint)
 
                 # Transform these points so that their local "up/down" is in +Z,
-                # but we actually want the thickness in Z and width in X, so
+                # but the thickness is wanted in Z and width in X, so
                 # by default, we'll treat X as horizontal, Z as vertical.
                 # Then shift by 'center.y' in global space.
 
@@ -416,7 +416,7 @@ class ZENV_OT_GenerateSword(Operator):
 
             bm.verts.ensure_lookup_table()
 
-            # Ensure the tip is pointed BEFORE any bevel operations (review (section)2.5)
+            # Ensure the tip is pointed BEFORE any bevel operations
             # Bevel operations can invalidate vert references, so scale first.
             tip_ring = all_ring_verts[-1]
             bmesh.ops.scale(
@@ -425,16 +425,16 @@ class ZENV_OT_GenerateSword(Operator):
                 verts=tip_ring
             )
 
-            # If fuller_width > 0, let's create a groove in the middle
-            # We can create a set of edges along the top and use a "bevel" inward or extrude inward.
+            # If fuller_width > 0, create a groove in the middle
+            # A set of edges along the top can be used with a "bevel" inward or extrude inward.
             if props.fuller_width > 0.01:
                 # We'll identify a line along the top center of each ring,
                 # then do a small inset to represent the fuller.
-                # Since we have 8 perimeter points, let's assume
+                # Since there are 8 perimeter points, assume
                 # the "center top" is around index 2 or 3 in ring array.
 
-                # A robust solution might be to find the top center based on minimal x offset,
-                # but let's pick the middle between (2,3) or so for demonstration.
+                # A reliable approach is to find the top center based on minimal x offset,
+                # but pick the middle between (2,3) or so for demonstration.
 
                 # We'll collect edges from ring i to i+1 in that center region
                 groove_edges = []
@@ -443,7 +443,7 @@ class ZENV_OT_GenerateSword(Operator):
                     # approximate top center
                     ringA = all_ring_verts[i]
                     ringB = all_ring_verts[i+1]
-                    # Let's pick ringA[2] -> ringA[3], ringB[2] -> ringB[3]
+                    # Pick ringA[2] -> ringA[3], ringB[2] -> ringB[3]
                     topA = ringA[2]
                     topA2 = ringA[3]
                     topB = ringB[2]
@@ -489,9 +489,9 @@ class ZENV_OT_GenerateSword(Operator):
             mesh = bpy.data.meshes.new("Blade")
             bm.to_mesh(mesh)
             bm.free()
-            bm = None  # mark as freed so finally doesn't double-free (review (section)2.4)
+            bm = None  # mark as freed so finally doesn't double-free
 
-            # Create and link the object (review (section)3.2: use passed context)
+            # Create and link the object
             blade_obj = bpy.data.objects.new("Blade", mesh)
             context.collection.objects.link(blade_obj)
 
@@ -501,7 +501,7 @@ class ZENV_OT_GenerateSword(Operator):
             return blade_obj
 
         finally:
-            # Free BMesh if still allocated (review (section)2.4)
+            # Free BMesh if still allocated
             if bm is not None:
                 try:
                     bm.free()
@@ -514,7 +514,7 @@ class ZENV_OT_GenerateSword(Operator):
     def create_crossguard(self, context, props):
         """
         Create a crossguard at (0,0,0). Blade extends +Y, grip extends -Y.
-        We'll add subdivisions/bevels for a more realistic shape.
+        Subdivisions/bevels are added for shape definition.
         """
         rng = self._rng
         bm = None
@@ -522,7 +522,7 @@ class ZENV_OT_GenerateSword(Operator):
         try:
             bm = bmesh.new()
 
-            # Basic shape logic from previous code, with more detail
+            # Basic shape logic, with more detail
             if props.crossguard_style == 'STRAIGHT':
                 width = rng.uniform(18.0, 22.0)
                 height = rng.uniform(1.5, 2.5)
@@ -532,7 +532,7 @@ class ZENV_OT_GenerateSword(Operator):
                 bmesh.ops.scale(bm, vec=(width, depth, height), verts=[v for v in bm.verts])
 
             elif props.crossguard_style == 'CURVED':
-                # Let's create a cylinder and then "bend" it or subdiv for shape
+                # Create a cylinder and then "bend" it or subdiv for shape
                 rad = rng.uniform(2.0, 3.0)
                 length = rng.uniform(20.0, 25.0)
                 segs = 16
@@ -547,7 +547,7 @@ class ZENV_OT_GenerateSword(Operator):
                 )
 
 
-                # We want the cylinder aligned along X or Z, so let's rotate it.
+                # The cylinder should be aligned along X or Z, so rotate it.
                 # By default, create_cylinder is along Z. We'll rotate it so axis is X
                 bmesh.ops.rotate(
                     bm,
@@ -561,7 +561,7 @@ class ZENV_OT_GenerateSword(Operator):
 
             elif props.crossguard_style == 'COMPLEX':
                 # Create a filled circle, then extrude the face to produce
-                # solid geometry instead of a wireframe (review (section)3.8).
+                # solid geometry instead of a wireframe.
                 ring_radius = rng.uniform(8.0, 12.0)
                 ring_segments = 16
                 geom = bmesh.ops.create_circle(bm, segments=ring_segments, radius=ring_radius)
@@ -599,12 +599,12 @@ class ZENV_OT_GenerateSword(Operator):
             mesh = bpy.data.meshes.new("Crossguard")
             bm.to_mesh(mesh)
             bm.free()
-            bm = None  # mark as freed (review (section)2.4)
+            bm = None  # mark as freed
 
             crossguard_obj = bpy.data.objects.new("Crossguard", mesh)
-            context.collection.objects.link(crossguard_obj)  # review (section)3.2
+            context.collection.objects.link(crossguard_obj)
 
-            # Assign a default steel material to the crossguard (review (section)3.6)
+            # Assign a default steel material to the crossguard
             self._assign_material(crossguard_obj, "SteelMaterial",
                                   base_color=(0.4, 0.4, 0.42, 1.0),
                                   metallic=0.9, roughness=0.3)
@@ -642,14 +642,14 @@ class ZENV_OT_GenerateSword(Operator):
                 bm,
                 cap_ends=True,
                 cap_tris=False,
-                segments=segments,  # review (section)2.1: was 'segs' (undefined)
+                segments=segments,  # was 'segs' (undefined)
                 radius1=radius,
                 radius2=radius,  # same radius => cylinder
                 depth=length
             )
 
             # By default, the cylinder is along Z from -depth/2 to +depth/2 in local coords
-            # We want it along Y, from 0 to -length. So rotate 90 deg to make it along Y
+            # The cylinder should be along Y, from 0 to -length. Rotate 90 deg to make it along Y
             bmesh.ops.rotate(
                 bm,
                 verts=[v for v in bm.verts],
@@ -658,7 +658,7 @@ class ZENV_OT_GenerateSword(Operator):
             )
 
             # Now the cylinder extends from -length/2 to +length/2 along Y.
-            # Let's shift it so that its top is at y=0, bottom is at y=-length
+            # Shift it so that its top is at y=0, bottom is at y=-length
             translate_vec = Vector((0, -length/2, 0))
             bmesh.ops.translate(bm, verts=[v for v in bm.verts], vec=translate_vec)
 
@@ -677,7 +677,7 @@ class ZENV_OT_GenerateSword(Operator):
 
             # Additional wrap geometry - created as a separate object so
             # the wrap has its own faces and does not leave disconnected
-            # wire edges inside the grip mesh (review (section)3.1).
+            # wire edges inside the grip mesh.
             wrap_obj = None
             if props.grip_style == 'LEATHER':
                 wrap_obj = self.add_leather_wrap(context, length)
@@ -688,12 +688,12 @@ class ZENV_OT_GenerateSword(Operator):
             mesh = bpy.data.meshes.new("Grip")
             bm.to_mesh(mesh)
             bm.free()
-            bm = None  # mark as freed (review (section)2.4)
+            bm = None  # mark as freed
 
             grip_obj = bpy.data.objects.new("Grip", mesh)
-            context.collection.objects.link(grip_obj)  # review (section)3.2
+            context.collection.objects.link(grip_obj)
 
-            # Assign a default leather/wood material to the grip (review (section)3.6)
+            # Assign a default leather/wood material to the grip
             self._assign_material(grip_obj, "GripMaterial",
                                   base_color=(0.2, 0.12, 0.06, 1.0),
                                   metallic=0.0, roughness=0.7)
@@ -734,7 +734,7 @@ class ZENV_OT_GenerateSword(Operator):
                     bm,
                     cap_ends=True,
                     cap_tris=False,
-                    segments=segments,  # review (section)2.2: was 'segs' (undefined)
+                    segments=segments,  # was 'segs' (undefined)
                     radius1=radius,
                     radius2=radius,  # same radius => cylinder
                     depth=thickness
@@ -773,7 +773,7 @@ class ZENV_OT_GenerateSword(Operator):
                     matrix=Matrix.Rotation(math.radians(-90.0), 3, 'X')
                 )
 
-                # Shift top to y=0 (review (section)4.11: was -height, should be -height/2)
+                # Shift top to y=0 (was -height, should be -height/2)
                 bmesh.ops.translate(bm, verts=[v for v in bm.verts], vec=(0, -height/2, 0))
 
             elif props.pommel_type == 'FISHTAIL':
@@ -803,7 +803,7 @@ class ZENV_OT_GenerateSword(Operator):
                     cent=(0,0,0),
                     matrix=Matrix.Rotation(math.radians(-90.0), 3, 'X')
                 )
-                # Shift so top is at y=0 (review (section)4.10: comment said "bottom to y=0" but
+                # Shift so top is at y=0 (comment said "bottom to y=0" but
                 # behavior should match other pommel types: top at y=0)
                 bmesh.ops.translate(bm, verts=[v for v in bm.verts], vec=(0, -radius, 0))
 
@@ -822,12 +822,12 @@ class ZENV_OT_GenerateSword(Operator):
             mesh = bpy.data.meshes.new("Pommel")
             bm.to_mesh(mesh)
             bm.free()
-            bm = None  # mark as freed (review (section)2.4)
+            bm = None  # mark as freed
 
             pommel_obj = bpy.data.objects.new("Pommel", mesh)
-            context.collection.objects.link(pommel_obj)  # review (section)3.2
+            context.collection.objects.link(pommel_obj)
 
-            # Assign a default steel material to the pommel (review (section)3.6)
+            # Assign a default steel material to the pommel
             self._assign_material(pommel_obj, "SteelMaterial",
                                   base_color=(0.4, 0.4, 0.42, 1.0),
                                   metallic=0.9, roughness=0.3)
@@ -837,7 +837,7 @@ class ZENV_OT_GenerateSword(Operator):
             grip_length = props.grip_length  # We'll guess ~
             # Move pommel so top is at y = -grip_length
             # We already built the geometry so top is at y=0, bottom negative.
-            # So let's just shift it by -grip_length
+            # So shift it by -grip_length
             pommel_obj.location.y = -grip_length
 
             return pommel_obj
@@ -856,7 +856,7 @@ class ZENV_OT_GenerateSword(Operator):
         """
         Creates banding geometry as a separate object to simulate leather
         strips on the grip. Each band is a torus-like ring with actual
-        faces (review (section)3.1: was disconnected wire geometry).
+        faces (was disconnected wire geometry).
         """
         rng = self._rng
         bm = bmesh.new()
@@ -907,7 +907,7 @@ class ZENV_OT_GenerateSword(Operator):
     def add_cord_wrap(self, context, length):
         """
         Create crisscross wrap geometry as a separate object with actual
-        faces (review (section)3.1: was disconnected wire geometry).
+        faces (was disconnected wire geometry).
         Each cord is a thin tube following a spiral path.
         """
         rng = self._rng
@@ -971,7 +971,7 @@ class ZENV_OT_GenerateSword(Operator):
         """Assign or reuse a Principled BSDF material to ``obj``.
 
         If a material with ``mat_name`` already exists in bpy.data, it is
-        reused rather than recreated (review (section)3.6).
+        reused rather than recreated.
         """
         if mat_name in bpy.data.materials:
             mat = bpy.data.materials[mat_name]
@@ -1059,7 +1059,7 @@ class ZENV_OT_GenerateSword(Operator):
         Adds a Voronoi-based overlay for ETCHED, INLAID, or ENGRAVED.
 
         Uses a second material slot so it does not overwrite the pattern
-        welding material in slot 0 (review (section)3.7).
+        welding material in slot 0.
         """
         rng = self._rng
         # Always create a new decoration material in a new slot so the
@@ -1188,7 +1188,7 @@ classes = (
 
 def register():
     _install_logger()
-    # Double-registration guard (review (section)4.5)
+    # Double-registration guard
     for cls in classes:
         try:
             bpy.utils.register_class(cls)
@@ -1204,7 +1204,7 @@ def register():
         bpy.types.Scene.sword_decoration = PointerProperty(type=ZENV_PG_SwordDecoration)
 
 def unregister():
-    # Unregister classes BEFORE deleting properties (review (section)3.5)
+    # Unregister classes BEFORE deleting properties
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)

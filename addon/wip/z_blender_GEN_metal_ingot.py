@@ -302,7 +302,7 @@ class ZENV_MetalIngot_Utils:
                 edge_vertices.add(edge.verts[1])
 
         def cellular_noise(pos, offset):
-            """Enhanced Manhattan distance cellular noise."""
+            """Manhattan distance cellular noise."""
             scaled_pos = (pos * scale) + Vector((offset, offset, offset))
             p = Vector((int(scaled_pos.x), int(scaled_pos.y), int(scaled_pos.z)))
 
@@ -330,7 +330,7 @@ class ZENV_MetalIngot_Utils:
             diff = (second_min_dist - min_dist) / scale
             return math.tanh(diff * 3.0) * 2.0 - 1.0
 
-        # Light smoothing - does not destroy base shape (was factor=0.5)
+        # Light smoothing - preserves base shape (was factor=0.5)
         bmesh.ops.smooth_vert(bm, verts=list(bm.verts), factor=0.1,
                               use_axis_x=True, use_axis_y=True, use_axis_z=True)
 
@@ -467,7 +467,7 @@ class ZENV_MetalIngot_Utils:
 #endregion
 #region OP
 class ZENV_OT_MetalIngot(Operator):
-    """Generate a metal ingot with realistic surface details"""
+    """Generate a metal ingot with surface details"""
     bl_idname = "zenv.metal_ingot"
     bl_label = "Generate Metal Ingot"
     bl_description = "Generate a metal ingot mesh with surface imperfections"

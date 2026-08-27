@@ -189,7 +189,7 @@ class ZENV_OT_RenameMaterialsByTexture(Operator):
                         self.report({'WARNING'}, f"Error processing material: {str(e)}")
                         continue
                 else:
-                    # Just rename the material
+                    # Rename the material
                     for mat in materials_list:
                         if mat and mat.name in bpy.data.materials:
                             mat.name = final_name

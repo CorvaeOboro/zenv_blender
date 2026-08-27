@@ -4,7 +4,7 @@ bl_info = {
     "blender": (4, 0, 0),
     "category": 'ZENV',
     "version": '20260825',
-    "description": 'Generate monster teeth with realistic features',
+    "description": 'Generate monster teeth with procedural features',
     "status": 'wip',
     "approved": False,
     "group": 'Generative',
@@ -12,11 +12,11 @@ bl_info = {
     "group_order": 30,
     "addon_order": 30,
     "tags": ['mesh', 'tooth', 'procedural', 'monster', 'organic'],
-    "description_short": 'Generate monster teeth with realistic features',
+    "description_short": 'Generate monster teeth with procedural features',
     "description_medium": 'Generates procedural monster teeth (canine, molar, incisor) with surface noise, striations, root extrusion, and optional voxel remeshing.',
     "description_long": """
     Tooth Generator
-Generates detailed monster teeth with realistic striations and patterns.
+Generates detailed monster teeth with striations and patterns.
 Supports three tooth types (canine, molar, incisor), each with type-specific
 shaping, surface noise displacement, random asymmetry, root extrusion, and
 optional voxel remeshing for clean topology.""",
@@ -122,7 +122,7 @@ class ZENV_PG_ToothGenerator(PropertyGroup):
 #endregion
 #region OP
 class ZENV_OT_GenerateTooth(Operator):
-    """Generate a detailed tooth mesh with realistic features"""
+    """Generate a detailed tooth mesh with procedural features"""
     bl_idname = "zenv.generate_tooth"
     bl_label = "Generate Tooth"
     bl_options = {'REGISTER', 'UNDO'}
@@ -143,7 +143,7 @@ class ZENV_OT_GenerateTooth(Operator):
         return context.scene.zenv_tooth_generator_props
 
     def apply_molar_details(self, bm, context):
-        """Add realistic molar-specific features with optimized complexity.
+        """Add molar-specific features with reduced complexity.
 
         Fixes from review:
         - Collect top-face edges before subdividing to avoid invalidating
@@ -189,7 +189,7 @@ class ZENV_OT_GenerateTooth(Operator):
                 v.co.z -= 0.1 * size
 
     def apply_canine_details(self, bm, context):
-        """Add realistic canine-specific features with improved shape.
+        """Add canine-specific features with shaped geometry.
 
         Fixes from review:
         - Compute the ridge angle *after* the twist so the ridge aligns
@@ -223,7 +223,7 @@ class ZENV_OT_GenerateTooth(Operator):
             if abs(angle) < 0.5:
                 v.co += v.normal * 0.1 * size * (1 - height_ratio)
 
-        # Sharpen the tip more naturally
+        # Sharpen the tip with progressive narrowing
         top_verts = [v for v in bm.verts if v.co.z > size * 0.8]
         for v in top_verts:
             tip_factor = (v.co.z - size * 0.8) / (size * 1.2)
@@ -234,7 +234,7 @@ class ZENV_OT_GenerateTooth(Operator):
             v.co.y += tip_factor * 0.2 * size
 
     def apply_incisor_details(self, bm, context):
-        """Add realistic incisor-specific features.
+        """Add incisor-specific features.
 
         Fixes from review:
         - Derive the width divisor from the actual mesh bounds instead of
@@ -271,7 +271,7 @@ class ZENV_OT_GenerateTooth(Operator):
             v.co.y -= scoop
 
     def apply_surface_noise(self, bm, context):
-        """Add realistic surface imperfections and micro-detail.
+        """Add surface imperfections and micro-detail.
 
         Fixes from review:
         - Scale noise frequencies by tooth_size so texture is consistent
@@ -309,7 +309,7 @@ class ZENV_OT_GenerateTooth(Operator):
                 radius2=0.15 * props.tooth_size,
                 depth=2.0 * props.tooth_size
             )
-            # Add extra loop cuts for better deformation
+            # Add extra loop cuts for deformation control
             bmesh.ops.subdivide_edges(
                 bm,
                 edges=[e for e in bm.edges if any(v.co.z > 0 for v in e.verts)],
@@ -318,7 +318,7 @@ class ZENV_OT_GenerateTooth(Operator):
             self.apply_canine_details(bm, context)
 
         elif self.tooth_type == 'MOLAR':
-            # Create optimized base for molar
+            # Create base for molar
             bmesh.ops.create_cube(
                 bm,
                 size=props.tooth_size
@@ -337,7 +337,7 @@ class ZENV_OT_GenerateTooth(Operator):
                 bm,
                 size=props.tooth_size
             )
-            # Add more subdivisions for better deformation
+            # Add more subdivisions for deformation control
             bmesh.ops.subdivide_edges(
                 bm,
                 edges=bm.edges[:],
@@ -350,7 +350,7 @@ class ZENV_OT_GenerateTooth(Operator):
         return bm
 
     def add_surface_detail(self, bm, context):
-        """Add realistic surface details.
+        """Add surface details.
 
         Fixes from review:
         - Use a local random.Random(seed) instead of the global random module.

@@ -42,7 +42,7 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
 
     @classmethod
     def get_materials_in_use(cls, obj):
-        """Get set of materials actually used by faces in this object."""
+        """Get set of materials used by faces in this object."""
         materials_in_use = set()
         if not obj or obj.type != 'MESH' or not obj.data.materials:
             return materials_in_use
@@ -54,7 +54,7 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
             materials_in_use.update(mat for mat in mesh.materials if mat)
             return materials_in_use
 
-        # Find which materials are actually used by faces
+        # Find which materials are used by faces
         for polygon in mesh.polygons:
             if polygon.material_index < len(mesh.materials):
                 mat = mesh.materials[polygon.material_index]
@@ -68,7 +68,7 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
 
         Removes slots that are not referenced by any polygon. Blender's
         ``mesh.materials.pop()`` automatically adjusts polygon
-        ``material_index`` values when a slot is removed, so no explicit
+        ``material_index`` values when a slot is removed, so no
         remapping is needed. Slots are popped from highest index to
         lowest to avoid index shifting during iteration.
         """
@@ -97,7 +97,7 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
 
         # Remove the unused slots from highest index to lowest.
         # Blender's materials.pop() automatically adjusts polygon
-        # material_index values, so no explicit remapping is needed.
+        # material_index values, so no remapping is needed.
         for slot_idx in sorted(slots_to_remove, reverse=True):
             mesh.materials.pop(index=slot_idx)
 
@@ -106,7 +106,7 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
     def execute(self, context):
         """Execute the material removal operation."""
         try:
-            # Track materials actually in use by faces
+            # Track materials in use by faces
             used_materials = set()
             total_slots_removed = 0
             objects_cleaned = 0
@@ -123,7 +123,7 @@ class ZENV_OT_RemoveUnusedMaterials(Operator):
                             objects_cleaned += 1
                             total_slots_removed += slots_removed
 
-                        # Add materials that are actually used by faces
+                        # Add materials that are used by faces
                         used_materials.update(self.get_materials_in_use(obj))
 
             # Remove unused materials from the scene

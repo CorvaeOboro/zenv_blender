@@ -500,7 +500,7 @@ class ZENV_PlanetProcedural_Utils:
         ocean_obj = bpy.data.objects.new(f"Ocean_{suffix}", mesh)
         bpy.context.scene.collection.objects.link(ocean_obj)
 
-        # Defensive: a freshly created mesh has no slots, but make this explicit
+        # Defensive: a freshly created mesh has no slots, but clear here
         # so a stray pre-existing material data-block can never get attached.
         ocean_obj.data.materials.clear()
 
@@ -700,7 +700,7 @@ class ZENV_OT_PlanetProcedural_Generate(Operator):
         try:
             props = context.scene.zenv_planet_procedural_props
 
-            # Resolve a concrete generation seed. When the user leaves
+            # Resolve a generation seed. When the user leaves
             # random_seed=0 we draw a fresh random integer so every
             # generation gets a unique suffix and a unique world.
             if props.random_seed > 0:

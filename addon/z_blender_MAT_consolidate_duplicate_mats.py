@@ -44,7 +44,7 @@ class ZENV_OT_ConsolidateMaterials(bpy.types.Operator):
         """Consolidate materials on the active object based on base color texture.
 
         Only the active object's material slots are modified. Materials that
-        are no longer used anywhere in the file (including by other objects)
+        are unused anywhere in the file (including by other objects)
         may be purged from ``bpy.data.materials`` at the end, but materials
         still referenced elsewhere are left intact.
 
@@ -97,8 +97,8 @@ class ZENV_OT_ConsolidateMaterials(bpy.types.Operator):
             if not duplicate_slots:
                 continue
 
-            # Track materials that will no longer be referenced by this obj
-            # so we can consider them for a global purge afterwards.
+            # Track materials that will be unreferenced by this obj
+            # so they can be considered for a global purge afterwards.
             for si in duplicate_slots:
                 dup_mat = mats[si]
                 if dup_mat is not None and dup_mat != base_mat:
@@ -111,14 +111,14 @@ class ZENV_OT_ConsolidateMaterials(bpy.types.Operator):
                     slots_reassigned += 1
 
             # Point the duplicate slots at the base material so this object
-            # no longer references the duplicates at all. This is what drops
+            # does not reference the duplicates at all. This is what drops
             # the user count for the duplicate materials.
             for si in duplicate_slots:
                 if mats[si] != base_mat:
                     mats[si] = base_mat
 
         # Only purge materials from the blend file when nothing else in the
-        # scene references them. This prevents silently wiping material
+        # scene references them. This prevents wiping material
         # assignments on other objects.
         purged = 0
         for mat in list(purge_candidates):

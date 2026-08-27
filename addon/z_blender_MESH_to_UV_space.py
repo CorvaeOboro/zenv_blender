@@ -56,7 +56,7 @@ class ZENV_PG_MeshToUVSpace(PropertyGroup):
     do_phase_4: bpy.props.BoolProperty(
         name="Phase 4: Merge Vertices",
         default=False,
-        description="Merge vertices and UVs at very small distances to reconstruct the mesh"
+        description="Merge vertices and UVs at small distances to reconstruct the mesh"
     )
 #endregion
 
@@ -95,9 +95,9 @@ class ZENV_OT_MeshToUVSpace(Operator):
 
     def phase_0_prepare_and_store(self, obj):
         """
-        Prepare mesh by completely separating into individual triangles:
+        Prepare mesh by separating into individual triangles:
         1) Triangulate the mesh
-        2) Create new mesh with completely separate triangles
+        2) Create new mesh with separate triangles
         3) Store UV and original position data for each vertex
         """
         self.log_msg("=== PHASE 0: Prepare Mesh + Store Original Positions ===")
@@ -127,7 +127,7 @@ class ZENV_OT_MeshToUVSpace(Operator):
         
         triangle_count = 0
         
-        # Process each triangle, creating completely new vertices for each
+        # Process each triangle, creating new vertices for each
         for face in bm_orig.faces:
             # Create three new vertices for this triangle
             new_verts = []
@@ -219,7 +219,7 @@ class ZENV_OT_MeshToUVSpace(Operator):
         return {'FINISHED'}
 
     def phase_4_merge_by_distance(self, obj):
-        """Merge vertices and UVs at very small distances to reconstruct the mesh"""
+        """Merge vertices and UVs at small distances to reconstruct the mesh"""
         self.log_msg("=== PHASE 4: Merging Vertices and UVs ===")
 
         if obj.mode != 'OBJECT':
@@ -235,7 +235,7 @@ class ZENV_OT_MeshToUVSpace(Operator):
 
         uv_layer = bm.loops.layers.uv.verify()
         
-        # Use very small merge distances
+        # Use small merge distances
         MERGE_DISTANCE = 0.00001  # For vertex positions
         UV_GRID_SIZE = 0.000001   # For UV coordinate binning
         

@@ -305,7 +305,7 @@ class ZENV_OT_FungusMush(Operator):
         """Shelf/bracket cap - semicircular fan extending horizontally in +X.
 
         The flat back lies along the Y axis (x=0) where it would attach to
-        a tree trunk.  Top and bottom surfaces plus rim and back edges are
+        a tree trunk.  Top and bottom faces plus rim and back edges are
         all closed so the result is a watertight solid for voxel remesh.
         """
         n_seg = max(8, props.resolution // 2)
@@ -512,7 +512,7 @@ class ZENV_OT_FungusMush(Operator):
         principled = nodes.new('ShaderNodeBsdfPrincipled')
 
         # Set material properties - cap_color is a 3-component RGB
-        # FloatVectorProperty (size=3), so append alpha explicitly.
+        # FloatVectorProperty (size=3), so append alpha here.
         color = list(props.cap_color)
         if len(color) == 3:
             color.append(1.0)

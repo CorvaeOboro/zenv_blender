@@ -115,7 +115,7 @@ class ZENV_OT_MeshSeparateByUVIsland(bpy.types.Operator):
     def duplicate_island(self, context, src_bm, obj, island_faces, uv_layer):
         """Create a new object from the given UV island.
 
-        All UV layers on the source mesh (not just the active one used for
+        All UV layers on the source mesh (not only the active one used for
         island detection) are copied with full precision.
         """
         new_mesh = bpy.data.meshes.new(name=f"{obj.name}_island")

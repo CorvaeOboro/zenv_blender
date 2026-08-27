@@ -133,7 +133,7 @@ class ZENV_PG_GrassCluster_Props(PropertyGroup):
         description="Type of grass to generate",
         items=[
             ('MEADOW', "Meadow Grass", "Thin, delicate grass blades"),
-            ('WHEAT', "Wheat Grass", "Thicker, more robust grass"),
+            ('WHEAT', "Wheat Grass", "Thicker, sturdier grass"),
             ('TUSSOCK', "Tussock Grass", "Dense, clustering grass")
         ],
         default='MEADOW'
@@ -150,7 +150,7 @@ class ZENV_PG_GrassCluster_Props(PropertyGroup):
 #   5. execute                  - orchestrates the above
 
 class ZENV_OT_GrassCluster(Operator):
-    """Generate a cluster of grass with realistic distribution"""
+    """Generate a cluster of grass with procedural distribution"""
     bl_idname = "zenv.plant_grass_cluster"
     bl_label = "Generate Grass Cluster"
     bl_options = {'REGISTER', 'UNDO'}
@@ -161,9 +161,9 @@ class ZENV_OT_GrassCluster(Operator):
 
     def create_base_strand_mesh(self, context, length, width, segments):
         """Create a single grass strand mesh with UVs"""
-        # Increase resolution for better shaping
+        # Increase resolution for shaping
         segments = max(segments * 2, 8)  # Minimum 8 segments
-        side_segments = 3  # Segments across width for better edge detail
+        side_segments = 3  # Segments across width for edge detail
 
         # Create vertices
         verts = []
@@ -245,7 +245,7 @@ class ZENV_OT_GrassCluster(Operator):
 
         # Clean up temporary objects
         bpy.data.objects.remove(obj)
-        # user_clear() was removed in Blender 4.x; just remove the mesh
+        # user_clear() was removed in Blender 4.x; remove the mesh
         if mesh.users == 0:
             bpy.data.meshes.remove(mesh)
 
@@ -442,9 +442,9 @@ class ZENV_PT_GrassCluster(Panel):
         box.prop(props, "radius")
         box.prop(props, "density")
 
-        # Advanced Parameters
+        # Additional Parameters
         box = layout.box()
-        box.label(text="Advanced Parameters:")
+        box.label(text="Additional Parameters:")
         box.prop(props, "density_falloff")
         box.prop(props, "min_distance")
         box.prop(props, "intersection_checks")

@@ -66,8 +66,8 @@ class ZENV_OT_SeparateByAxis(Operator):
 
         Returns ``True`` on success, ``False`` on failure.
         """
-        # Store original name before renaming so we can build the
-        # negative-side name without fragile string splitting.
+        # Store original name before renaming so the negative-side
+        # name can be built without fragile string splitting.
         original_name = obj.name
         # Track original mode for restoration.
         original_mode = obj.mode

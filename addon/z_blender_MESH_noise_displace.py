@@ -4,7 +4,7 @@ bl_info = {
     "blender": (4, 0, 0),
     "category": 'ZENV',
     "version": '20260822',
-    "description": 'Apply world-space 3D noise patterns to mesh surfaces',
+    "description": 'Apply world-space 3D noise patterns to mesh geometry',
     "status": 'working',
     "approved": True,
     "group": 'Mesh',
@@ -13,9 +13,9 @@ bl_info = {
     "addon_order": 60,
     "tags": ['mesh', 'noise', 'displace', 'surface', 'texture', 'procedural'],
     "description_short": '3D noise-based surface displacement with presets',
-    "description_medium": 'Applies world-space 3D noise patterns to mesh surfaces using Blender mathutils.noise. First cuts the mesh along a world-space grid to increase geometry density, then displaces vertices using one of four preset noise types: Wood Grain, Cracks, Chipped Paint, or Rock Surface. Supports normal-based and Z-axis displacement.',
+    "description_medium": 'Applies world-space 3D noise patterns to mesh geometry using Blender mathutils.noise. First cuts the mesh along a world-space grid to increase geometry density, then displaces vertices using one of four preset noise types: Wood Grain, Cracks, Chipped Paint, or Rock Surface. Supports normal-based and Z-axis displacement.',
     "description_long": """
-MESH Noise Surface Displacement - A Blender addon for realistic surface effects.
+MESH Noise Surface Displacement - A Blender addon for procedural surface effects.
 Applies world-space 3D noise patterns using bricker-style resolution.
 """,
     "image_overview": 'zenv_blender_MESH_noise_displace.png',
@@ -168,7 +168,7 @@ class ZENV_PG_NoiseDisplaceProps(PropertyGroup):
 # Operator that applies noise displacement to the active mesh.
 
 class ZENV_OT_NoiseDisplace(Operator):
-    """Apply realistic surface effects using world-space 3D noise"""
+    """Apply procedural surface effects using world-space 3D noise"""
     bl_idname = "zenv.noise_displace"
     bl_label = "Apply Effect"
     bl_options = {'REGISTER', 'UNDO'}

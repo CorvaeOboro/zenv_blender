@@ -86,7 +86,7 @@ class ZENV_UVIslandFacingCenterMask_Properties:
             items=(
                 ('UV', "UV Continuity", "Groups faces by UV continuity across shared mesh edges"),
                 ('MESH_EDGE', "Mesh (Edge Connected)", "Groups faces by mesh connectivity (UV seams ignored)"),
-                ('MESH_VERT', "Mesh (Vertex Connected)", "Groups faces by any shared vertex (very loose connectivity)"),
+                ('MESH_VERT', "Mesh (Vertex Connected)", "Groups faces by any shared vertex (loose connectivity)"),
             ),
             default='UV',
         )

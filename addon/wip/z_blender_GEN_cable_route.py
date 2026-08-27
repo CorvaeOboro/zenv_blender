@@ -13,10 +13,10 @@ bl_info = {
     "addon_order": 30,
     "tags": ['curve', 'cable', 'procedural', 'routing', 'projection'],
     "description_short": 'Generate cable routes with proper overlapping',
-    "description_medium": 'Projects and routes cables along surfaces with proper overlapping and stacking behavior based on cable priority.',
+    "description_medium": 'Projects and routes cables along meshes with proper overlapping and stacking behavior based on cable priority.',
     "description_long": """
     CABLE ROUTE GENERATOR
-    Projects and routes cables along surfaces with proper overlapping and stacking behavior.
+    Projects and routes cables along meshes with proper overlapping and stacking behavior.
     Supports per-cable thickness, color, priority, and subdivision. Detects intersections
     between projected curves and offsets higher-priority cables above lower-priority ones.""",
     "location": 'View3D > ZENV',
@@ -230,7 +230,7 @@ class ZENV_OT_CableRoute(Operator):
         return None, None
 
     def _segments_intersect(self, p1, p2, p3, p4, threshold=1e-6):
-        """Check if two 3D line segments actually intersect (or pass very close).
+        """Check if two 3D line segments intersect (or pass close).
 
         Uses ``intersect_line_line`` but validates that the closest points
         are within both segments and the distance between them is below
@@ -384,7 +384,7 @@ class ZENV_OT_CableRoute(Operator):
         # Set material properties (Blender 4.0 compatible).
         principled.inputs['Base Color'].default_value = (color[0], color[1], color[2], 1)
         principled.inputs['Roughness'].default_value = 0.3
-        # In Blender 4.0, 'Specular' was replaced by 'Specular IOR Level'.
+        # In Blender 4.0, 'Specular' was renamed to 'Specular IOR Level'.
         if 'Specular IOR Level' in principled.inputs:
             principled.inputs['Specular IOR Level'].default_value = 0.5
         elif 'Specular' in principled.inputs:

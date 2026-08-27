@@ -81,7 +81,7 @@ class ZENV_TextureProj_Properties:
         if context.scene.zenv_texture_path:
             cleaned_path = ZENV_TextureProj_Properties.clean_filepath(context.scene.zenv_texture_path)
             
-            # Only update if the path actually changed (avoid infinite recursion)
+            # Only update if the path changed (avoid infinite recursion)
             if cleaned_path != context.scene.zenv_texture_path:
                 # Temporarily disable the update callback to avoid recursion
                 context.scene.zenv_texture_path = cleaned_path
@@ -279,7 +279,7 @@ class ZENV_TextureProj_Utils:
         if context.scene.zenv_square_camera:
             return True
         
-        # Check if resolution is actually square even in non-square mode
+        # Check if resolution is square even in non-square mode
         cam_res_x, cam_res_y = ZENV_TextureProj_Utils.get_camera_resolution(context)
         return cam_res_x == cam_res_y
     
@@ -307,7 +307,7 @@ class ZENV_TextureProj_Utils:
         ``image.filepath``. If the scene already contains a block named
         ``texture.png`` whose ``filepath`` is missing,
         the naive ``if name in bpy.data.images: image.reload()`` pattern
-        will silently reload the *wrong* (or broken) file, and the
+        will reload the *wrong* (or broken) file, and the
         subsequent bake a pink/empty image.
 
         This helper:
@@ -315,7 +315,7 @@ class ZENV_TextureProj_Utils:
           filepath against the requested path.
         - Repoints ``filepath`` and forces ``source='FILE'`` before
           reloading, so a name collision with a different/missing file
-          is recovered rather than silently baked.
+          is recovered rather than baked as a wrong image.
         - Falls back to ``bpy.data.images.load`` with
           ``check_existing=False`` so we don't get handed a broken block.
         - Returns the image; the caller should verify ``image.size``
@@ -352,7 +352,7 @@ class ZENV_TextureProj_Utils:
             image.source = 'FILE'
 
         # Recovery pass: if the header still didn't decode (size is 0),
-        # force one more reload from the explicit path before giving up.
+        # force one more reload from the configured path before giving up.
         # Note: ``has_data`` is intentionally NOT checked here -- pixel
         # data is loaded lazily, so ``has_data`` can legitimately be
         # ``False`` on a valid image until first sample.
@@ -421,7 +421,7 @@ class ZENV_TextureProj_Utils:
         """Configure render settings for baking"""
         context.scene.render.engine = 'CYCLES'
         context.scene.cycles.device = 'GPU'
-        context.scene.cycles.samples = 32  # Increased samples for better quality
+        context.scene.cycles.samples = 32  # 32 samples for low noise
         context.scene.cycles.bake_type = 'DIFFUSE'
         context.scene.render.bake.use_pass_direct = True
         context.scene.render.bake.use_pass_indirect = False
@@ -429,7 +429,7 @@ class ZENV_TextureProj_Utils:
         context.scene.render.bake.margin = context.scene.zenv_bake_margin
         context.scene.render.bake.use_clear = True  # Clear image before baking
         
-        # Set high quality settings
+        # Enable denoising and the use_high_quality_normals setting
         context.scene.cycles.use_denoising = True
         context.scene.cycles.preview_denoiser = 'OPTIX'
         context.scene.cycles.use_high_quality_normals = True
@@ -638,7 +638,7 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
            - Keeps original mesh's UVs
            - Gets simple material with only empty image node
            - NO camera projection
-           - Just shell modifier for better baking
+           - Shell modifier for baking
            - Receives bake using original UVs
         """
         if not self.initial_checks(context):
@@ -768,11 +768,11 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         # Load image and ensure it's fresh. ``load_or_refresh_image``
         # repairs the case where a stale data-block of the same name
         # already exists with a missing/different filepath -- otherwise
-        # ``image.reload()`` would silently reload nothing and the bake
+        # ``image.reload()`` would reload nothing and the bake
         # would produce a pink texture.
         image = ZENV_TextureProj_Utils.load_or_refresh_image(image_path)
         # Validate via ``size`` only -- ``has_data`` is lazy and may be
-        # ``False`` on a valid image until the bake actually samples it.
+        # ``False`` on a valid image until the bake samples it.
         if image.size[0] == 0 or image.size[1] == 0:
             self.report(
                 {'ERROR'},
@@ -858,7 +858,7 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         - Keeps original mesh's UVs
         - Gets simple material with only empty image node
         - NO camera projection
-        - Just shell modifier for better baking
+        - Shell modifier for baking
         - Receives bake using original UVs
         """
         bpy.ops.object.select_all(action='DESELECT')
@@ -879,7 +879,7 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         while target.data.materials:
             target.data.materials.pop()
             
-        # Create target material (just an empty image texture node)
+        # Create target material (an empty image texture node)
         target_mat = bpy.data.materials.new(name="TEMP_TARGET_MATERIAL")
         target_mat.use_nodes = True
         nodes = target_mat.node_tree.nodes
@@ -893,9 +893,9 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         # Assign material
         target.data.materials.append(target_mat)
         
-        # Add shell modifier for better baking
+        # Add shell modifier for baking
         shell = target.modifiers.new(name="Shell", type='SOLIDIFY')
-        shell.thickness = 0.001  # Very small thickness for better results
+        shell.thickness = 0.001  # Small thickness to avoid self-occlusion
         shell.offset = 1.0
         shell.use_rim = False
         
@@ -1251,7 +1251,7 @@ class ZENV_OT_TextureProj_BakeTexture(bpy.types.Operator):
         links.new(mapping.outputs['Vector'], tex_image.inputs['Vector'])
         links.new(tex_image.outputs['Color'], bsdf.inputs['Base Color'])
         
-        # Only wire the alpha channel when the user explicitly opted in
+        # Only wire the alpha channel when the user opted in
         # via "Use Visibility Mask as Alpha". Our bake images are always
         # created with ``alpha=True`` (RGBA), so a plain
         # ``image.channels == 4`` test would force every bake into a
@@ -1572,7 +1572,7 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
         For perspective cameras the rays fan out from the camera origin
         using the field of view.  For orthographic cameras the rays are
         parallel and evenly spaced across the orthographic scale, which
-        matches how an orthographic projection actually works.
+        matches how an orthographic projection works.
         """
         render = context.scene.render
         res_x = render.resolution_x
@@ -1745,7 +1745,7 @@ class ZENV_OT_TextureProj_BakeVisibilityMask(bpy.types.Operator):
                 # Create gradient: 1.0 at center, 0.0 at falloff distance
                 gradient = np.clip(distance_from_edge / falloff_pixels, 0, 1)
             else:
-                # No falloff, just use binary mask
+                # No falloff, use binary mask
                 gradient = binary_mask.astype(np.float32)
             
             # Flip back for Blender

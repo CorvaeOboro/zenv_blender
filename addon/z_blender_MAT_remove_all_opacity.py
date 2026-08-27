@@ -105,7 +105,7 @@ class ZENV_OT_MATRemoveOpacity(Operator):
 
             # Handle Transmission Weight (Blender 4.x API name).
             # Fall back to the legacy 'Transmission' name for older
-            # Blender versions just in case.
+            # Blender versions.
             transmission_input = connected_node.inputs.get('Transmission Weight')
             if transmission_input is None:
                 transmission_input = connected_node.inputs.get('Transmission')
@@ -164,10 +164,10 @@ class ZENV_OT_MATRemoveOpacity(Operator):
                         modified = True
 
         # Set material blend mode to opaque. On Blender 5.1+ the
-        # 'OPAQUE' blend_method may be silently coerced to 'HASHED' (a
+        # 'OPAQUE' blend_method may be coerced to 'HASHED' (a
         # Blender API limitation where setting OPAQUE resets
         # surface_render_method to DITHERED). Only flag modified when
-        # the value actually changes so the return value stays honest.
+        # the value changes so the return value stays honest.
         if material.blend_method != 'OPAQUE':
             previous = material.blend_method
             material.blend_method = 'OPAQUE'

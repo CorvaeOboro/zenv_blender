@@ -124,7 +124,7 @@ class ZENV_OT_SetTextureByMaterialName(Operator):
                 # file ordering).
                 untyped_files.append(tex_file)
 
-        # Assign the first untyped file as color if no explicit color
+        # Assign the first untyped file as color if no color
         # texture was found. This is independent of file ordering.
         if 'color' not in matching_textures and untyped_files:
             matching_textures['color'] = untyped_files[0]

@@ -178,7 +178,7 @@ class ZENV_OT_UVIslandOptimizer(Operator):
                     bm.free()
 
             logger.info("UV optimize complete: %d/%d islands moved", moved, len(islands))
-            self.report({'INFO'}, f"Optimized {moved}/{len(islands)} UV islands")
+            self.report({'INFO'}, f"Shifted {moved}/{len(islands)} UV islands")
             return {'FINISHED'}
 
         except Exception as e:

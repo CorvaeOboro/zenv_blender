@@ -46,9 +46,9 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
         """Only enable when the scene has an active camera."""
         return context.scene.camera is not None
 
-    # Subset of EEVEE attributes that we may disable to get a flat unlit
+    # Subset of EEVEE attributes that may be disabled to get a flat unlit
     # render. Each one is guarded because Blender 4.2+ removed
-    # ``use_bloom`` / ``use_ssr`` entirely.
+    # ``use_bloom`` / ``use_ssr``.
     _EEVEE_FLAGS = ('use_gtao', 'use_bloom', 'use_ssr')
 
     @staticmethod
@@ -105,7 +105,7 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
             self.cleanup_temp_materials(temp_materials)
 
     def store_original_render_state(self, context):
-        """Capture every render setting we are going to modify."""
+        """Capture every render setting that will be modified."""
         scene = context.scene
         render = scene.render
         state = {
@@ -142,7 +142,7 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
         """Snapshot per-slot material assignments for every mesh object.
 
         Keys are the objects themselves (not their names) so an object
-        rename between store and restore no longer silently drops the
+        rename between store and restore does not drop the
         mapping. Stale references are filtered during restore.
         """
         original_materials = {}
@@ -176,7 +176,7 @@ class ZENV_OT_RenderColorOnly(bpy.types.Operator):
         context.scene.view_settings.view_transform = 'Standard'
 
         # Disable unnecessary effects, tolerating Blender versions that
-        # have removed some of these attributes (notably 4.2+).
+        # have removed some of these attributes (4.2+).
         eevee = getattr(context.scene, 'eevee', None)
         if eevee is not None:
             for flag in self._EEVEE_FLAGS:

@@ -17,7 +17,7 @@ bl_info = {
     "description_long": """
 POTION GENERATOR
 - generates procedural potion bottles with modular components
-- useful for creating fantasy potions with various decorative elements
+- useful for creating fantasy potions with modular decorative elements
 """,
     "image_overview": 'zenv_blender_ITEM_potion.png',
     "addon_image": 'zenv_blender_ITEM_potion.png',
@@ -57,7 +57,7 @@ class ZENV_PotionGenerator_Materials:
         output = nodes.new('ShaderNodeOutputMaterial')
         principled = nodes.new('ShaderNodeBsdfPrincipled')
         
-        # Setup principled BSDF for realistic glass
+        # Setup principled BSDF for glass
         principled.inputs['Base Color'].default_value = (0.9, 0.92, 0.95, 1.0)  # Slight blue tint
         principled.inputs['Metallic'].default_value = 0.0
         principled.inputs['Roughness'].default_value = 0.1  # Slightly rough for realism
@@ -72,7 +72,7 @@ class ZENV_PotionGenerator_Materials:
 
     @classmethod
     def create_liquid_material(cls, color):
-        """Create advanced liquid material with subsurface and volume"""
+        """Create liquid material with subsurface and volume"""
         mat = bpy.data.materials.new(name="Potion_Liquid")
         mat.use_nodes = True
         mat.blend_method = 'BLEND'
@@ -87,17 +87,17 @@ class ZENV_PotionGenerator_Materials:
         principled = nodes.new('ShaderNodeBsdfPrincipled')
         
         # Setup principled BSDF for liquid with subsurface
-        # NOTE: Transmission Weight kept low so the Base Color is actually visible.
+        # NOTE: Transmission Weight kept low so the Base Color is visible.
         #       High transmission turns the liquid into glass and hides the chosen color.
         principled.inputs['Base Color'].default_value = color
         principled.inputs['Metallic'].default_value = 0.0
-        principled.inputs['Roughness'].default_value = 0.05  # Very smooth liquid surface
+        principled.inputs['Roughness'].default_value = 0.05  # Smooth liquid surface
         principled.inputs['IOR'].default_value = 1.33  # Water IOR
         principled.inputs['Transmission Weight'].default_value = 0.05  # Mostly opaque so color reads
         principled.inputs['Alpha'].default_value = 1.0  # Fully opaque
 
         # Add subsurface scattering for depth. Subsurface Radius is in scene units,
-        # so scaling the 0..1 color values makes the scattering actually visible.
+        # so scaling the 0..1 color values makes the scattering visible.
         principled.inputs['Subsurface Weight'].default_value = 0.8
         principled.inputs['Subsurface Radius'].default_value = (
             max(color[0] * 5.0, 0.01),
@@ -590,7 +590,7 @@ class ZENV_OT_PotionGenerator(bpy.types.Operator):
         return lip
 
     def create_liquid(self, context, bottle, props):
-        """Create liquid using SAME CURVE as bottle for perfect sync"""
+        """Create liquid using SAME CURVE as bottle for matching sync"""
         height = props.bottle_height
         width = props.bottle_width
         
@@ -819,7 +819,7 @@ class ZENV_OT_PotionGenerator(bpy.types.Operator):
         bpy.ops.mesh.primitive_cylinder_add(
             radius=cork_radius,
             depth=cork_height,
-            vertices=32  # Increased from 16 for better detail
+            vertices=32  # Increased from 16 for finer detail
         )
         cork = context.active_object
         cork.name = "Bottle_Cork"
@@ -875,7 +875,7 @@ class ZENV_OT_PotionGenerator(bpy.types.Operator):
         bool_spiral.object = spiral
         bool_spiral.operation = 'DIFFERENCE'
         
-        # Add high-res remesh for better detail
+        # Add high-res remesh for finer detail
         remesh = cork.modifiers.new(name="Remesh", type='REMESH')
         remesh.mode = 'SHARP'
         remesh.octree_depth = 7  # Higher resolution
@@ -928,7 +928,7 @@ class ZENV_OT_PotionGenerator(bpy.types.Operator):
         wood_noise.inputs['Detail'].default_value = 2.0
         wood_noise.inputs['Roughness'].default_value = 0.5  # Changed from Dimension for Noise node
         
-        # Setup color ramp for realistic cork colors
+        # Setup color ramp for cork colors
         color_ramp.color_ramp.elements[0].position = 0.35
         color_ramp.color_ramp.elements[0].color = (0.45, 0.28, 0.15, 1)  # Darker cork
         color_ramp.color_ramp.elements[1].position = 0.65
@@ -939,7 +939,7 @@ class ZENV_OT_PotionGenerator(bpy.types.Operator):
         bump.inputs['Distance'].default_value = 0.015
         
         # Setup principled BSDF for cork material
-        principled.inputs['Roughness'].default_value = 0.85  # Cork is quite rough
+        principled.inputs['Roughness'].default_value = 0.85  # Cork is rough
         principled.inputs['Specular IOR Level'].default_value = 0.15  # Low specularity
         principled.inputs['Sheen Weight'].default_value = 0.2  # Slight sheen for realism
         
@@ -964,7 +964,7 @@ class ZENV_OT_PotionGenerator(bpy.types.Operator):
             except Exception:
                 pass
         
-        # IMPORTANT: Delete the spiral helper object completely
+        # Invariant: Delete the spiral helper object
         if spiral and spiral.name in bpy.data.objects:
             bpy.data.objects.remove(spiral, do_unlink=True)
         
@@ -1222,7 +1222,7 @@ class ZENV_PT_PotionGenerator_Panel(bpy.types.Panel):
         layout = self.layout
         props = context.scene.zenv_potion_props
 
-        # Seed controls at the very top of the panel
+        # Seed controls at the top of the panel
         box = layout.box()
         box.label(text="Seed", icon='HELP')
         box.prop(props, "seed", text="Seed")

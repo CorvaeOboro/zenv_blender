@@ -36,7 +36,7 @@ _zenv_depth_console_handler = None
 
 # Blender 5.0 unified the compositor: many CompositorNode* types were removed
 # in favor of their ShaderNode* counterparts, the Composite output node was
-# replaced by Group Output, and scene.node_tree became compositing_node_group.
+# dropped in favor of Group Output, and scene.node_tree became compositing_node_group.
 _IS_BLENDER_5 = bpy.app.version >= (5, 0, 0)
 #endregion
 
@@ -83,7 +83,7 @@ class ZENV_OT_RenderDepthOnly(bpy.types.Operator):
             'filepath': render.filepath,
             'node_tree': self.store_node_tree(scene) if scene.use_nodes else None,
             # On Blender 5.x, store the original compositor node group
-            # reference so we can restore/reassign it after rendering.
+            # reference so it can be restored/reassigned after rendering.
             'original_comp_group': getattr(scene, 'compositing_node_group', None),
         }
         
@@ -287,7 +287,7 @@ class ZENV_OT_RenderDepthOnly(bpy.types.Operator):
         # The original 4.x code used a separate Invert node to flip the
         # normalized depth (so closer = brighter). On 5.0, CompositorNodeInvert
         # was removed and ShaderNodeInvert is not unified (it can't be added
-        # to a compositor tree). Instead, we simply swap To Min/To Max to
+        # to a compositor tree). Instead, swap To Min/To Max to
         # achieve the same inversion in a single node.
         map_range_node.inputs['From Min'].default_value = min_depth
         map_range_node.inputs['From Max'].default_value = max_depth
@@ -299,7 +299,7 @@ class ZENV_OT_RenderDepthOnly(bpy.types.Operator):
             map_range_node.use_clamp = True
         
         # Create output node.
-        # Blender 5.0: CompositorNodeComposite was removed, replaced by
+        # Blender 5.0: CompositorNodeComposite was removed; use Group Output
         # Group Output. An interface socket must be created for the input.
         if _IS_BLENDER_5:
             composite_node = node_tree.nodes.new('NodeGroupOutput')
@@ -312,7 +312,7 @@ class ZENV_OT_RenderDepthOnly(bpy.types.Operator):
         node_tree.links.new(render_layer_node.outputs['Depth'], map_range_node.inputs[0])
         node_tree.links.new(map_range_node.outputs[0], composite_node.inputs['Image'])
         
-        # Position nodes for better organization
+        # Position nodes for organization
         render_layer_node.location = (-300, 0)
         map_range_node.location = (0, 0)
         composite_node.location = (300, 0)

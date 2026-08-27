@@ -201,7 +201,7 @@ class ZENV_OT_VolumetricCloud(Operator):
                 # Volumetric distribution with vertical bias
                 angle = random.uniform(0, math.pi * 2)
                 z = random.uniform(-0.5, 1.0)  # More upward spread
-                r = math.sqrt(random.uniform(0, 1)) * base_radius  # Square root for better distribution
+                r = math.sqrt(random.uniform(0, 1)) * base_radius  # Square root for uniform-area distribution
                 pos = Vector((
                     r * math.cos(angle),
                     r * math.sin(angle),
@@ -269,7 +269,7 @@ class ZENV_OT_VolumetricCloud(Operator):
             search_radius = props.advection_strength * 2.0  # Wider influence
             force_scale = 0.05  # Gentler movement
         elif props.cloud_type == 'CIRRUS':
-            search_radius = props.advection_strength * 3.0  # Very wide influence
+            search_radius = props.advection_strength * 3.0  # Wide influence
             force_scale = 0.15  # Stronger movement
         else:  # CUMULUS
             search_radius = props.advection_strength  # Normal influence
@@ -301,7 +301,7 @@ class ZENV_OT_VolumetricCloud(Operator):
                         if props.cloud_type == 'STRATUS':
                             direction.z *= 0.2  # Limit vertical movement
                         elif props.cloud_type == 'CIRRUS':
-                            direction.z *= 0.1  # Very limited vertical
+                            direction.z *= 0.1  # Limited vertical
                             direction.x *= 1.5  # Emphasize horizontal
                             direction.y *= 1.5
 
@@ -489,7 +489,7 @@ class ZENV_OT_VolumetricCloud(Operator):
                 # Enter edit mode
                 bpy.ops.object.mode_set(mode='EDIT')
 
-                # Smooth multiple times for better results
+                # Smooth multiple times for consistent results
                 for _ in range(props.smoothing_iterations):
                     # Select all vertices
                     bpy.ops.mesh.select_all(action='SELECT')
@@ -533,7 +533,7 @@ class ZENV_OT_VolumetricCloud(Operator):
             # Step 1: Create base sphere cluster
             spheres = self.create_base_sphere_cluster(context, props)
 
-            # Step 2: Sample points on sphere surfaces
+            # Step 2: Sample points on sphere meshes
             points = []
             points_per_sphere = max(1, props.point_count // len(spheres))
             for sphere_pos, radius in spheres:

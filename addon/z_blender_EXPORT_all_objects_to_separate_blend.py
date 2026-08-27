@@ -107,7 +107,7 @@ class ZENV_OT_SaveToSeparateBlends(bpy.types.Operator):
     def _sanitize_filename(cls, name, fallback="object"):
         """Return ``name`` with characters that are invalid in filenames replaced.
 
-        Trailing dots / spaces (which Windows Explorer silently strips) and
+        Trailing dots / spaces (which Windows Explorer strips) and
         reserved DOS device names (``CON``, ``PRN``, ``AUX``, ``NUL``,
         ``COM1`` .. ``LPT9``) are also handled.
         """
@@ -139,7 +139,7 @@ class ZENV_OT_SaveToSeparateBlends(bpy.types.Operator):
             self.report({'ERROR'}, f"Invalid export directory: {export_path!r}")
             return {'CANCELLED'}
 
-        # Respect the user's scope: just the current scene (optionally
+        # Respect the user's scope: the current scene (optionally
         # further narrowed to the active selection). Avoid iterate
         # ``bpy.data.objects`` blindly -- that pulls in other scenes and
         # library-linked data.
@@ -169,7 +169,7 @@ class ZENV_OT_SaveToSeparateBlends(bpy.types.Operator):
 
             # Skip library-linked source data; writing a proxy would
             # produce a broken output. Track separately from failures so
-            # the report is honest about what actually went wrong.
+            # the report is honest about what went wrong.
             if obj.library is not None:
                 skipped_linked += 1
                 continue

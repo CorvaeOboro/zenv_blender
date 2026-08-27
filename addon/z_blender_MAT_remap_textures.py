@@ -13,7 +13,7 @@ bl_info = {
     "addon_order": 80,
     "tags": ['material', 'texture', 'remap', 'path', 'relink', 'repair'],
     "description_short": 'remap texture paths in materials',
-    "description_medium": 'Scans all materials in the blend file, finds image texture nodes whose filepath contains a user-specified old path prefix, and replaces that prefix with a new path while optionally changing the file extension. Only remaps if the target file actually exists on disk. Forces image updates and area redraws after remapping.',
+    "description_medium": 'Scans all materials in the blend file, finds image texture nodes whose filepath contains a user-specified old path prefix, and replaces that prefix with a new path while optionally changing the file extension. Only remaps if the target file exists on disk. Forces image updates and area redraws after remapping.',
     "description_long": """
 MAT Remap Textures - A Blender addon for texture path remapping.
 remap texture paths in materials, switch between texture sets.

@@ -130,7 +130,7 @@ class ZENV_TexExportDated_Utils:
 
     @staticmethod
     def collect_candidate_names(image, material=None):
-        """Build the ordered list of names we will try to match folders against."""
+        """Build the ordered list of names to try to match folders against."""
         names = []
         if image is not None:
             # filename of the image on disk (without extension)
@@ -359,8 +359,8 @@ class ZENV_TexExportDated_Properties:
             default=True,
         )
         bpy.types.Scene.zenv_texexp_show_advanced = bpy.props.BoolProperty(
-            name="Advanced",
-            description="Show advanced options and per-object export controls",
+            name="Additional",
+            description="Show additional options and per-object export controls",
             default=False,
         )
 

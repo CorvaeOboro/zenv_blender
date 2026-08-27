@@ -132,7 +132,7 @@ class ZENV_OT_CreateRandomTiles(Operator):
         links.new(principled_bsdf.outputs['BSDF'], 
                  output_node.inputs['Surface'])
         
-        # Position nodes for better organization
+        # Position nodes for readable layout
         output_node.location = (300, 0)
         principled_bsdf.location = (0, 0)
         texture_node.location = (-300, 0)

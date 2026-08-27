@@ -162,7 +162,7 @@ class ZENV_TextureVariantViewRank_Utils:
         img_tex_node.image = bpy.data.images.load(current_texture, check_existing=True)
         mat.node_tree.links.new(bsdf.inputs['Base Color'], img_tex_node.outputs['Color'])
 
-        # Force the 3D viewport to pick up the new texture. Just swapping the
+        # Force the 3D viewport to pick up the new texture. Swapping the
         # image on an existing TexImage node does not always trigger a
         # viewport redraw -- the user had to manually select the node in the
         # Shader editor to make it appear. Replicate that here by:
@@ -302,7 +302,7 @@ class ZENV_OT_TextureVariantViewRank_CopyToFolder(Operator):
 
             texture_name = os.path.basename(current_texture_path)
             new_texture_path = os.path.join(subfolder_path, texture_name)
-            # Don't silently clobber an earlier ranking decision.
+            # Do not clobber an earlier ranking decision.
             if os.path.exists(new_texture_path):
                 self.report({'WARNING'}, f"Skipped: '{new_texture_path}' already exists.")
                 return {'CANCELLED'}

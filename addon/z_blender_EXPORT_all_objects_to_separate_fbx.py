@@ -4,7 +4,7 @@ bl_info = {
     "blender": (4, 0, 0),
     "category": 'ZENV',
     "version": '20260822',
-    "description": 'Save each object in the scene to its own FBX file with UE4-optimized settings',
+    "description": 'Save each object in the scene to its own FBX file with UE4-tuned settings',
     "status": 'working',
     "approved": True,
     "group": 'Export',
@@ -13,7 +13,7 @@ bl_info = {
     "addon_order": 20,
     "tags": ['export', 'batch', 'fbx', 'ue4', 'unreal', 'asset'],
     "description_short": 'batch export selected objects to separate FBX files',
-    "description_medium": 'Batch-export each object in the current scene (or current selection) to its own standalone .fbx file with Unreal Engine 4-optimized settings via bpy.ops.export_scene.fbx. Handles filename sanitization, collision disambiguation, overwrite control, suffix customization, animation baking, and path remapping options.',
+    "description_medium": 'Batch-export each object in the current scene (or current selection) to its own standalone .fbx file with Unreal Engine 4-tuned settings via bpy.ops.export_scene.fbx. Handles filename sanitization, collision disambiguation, overwrite control, suffix customization, animation baking, and path remapping options.',
     "description_long": """
 EXPORT Objects to FBX Files
 batch export each object in the current scene to its own separate .fbx file.
@@ -49,17 +49,16 @@ _RESERVED_DOS_NAMES = (
 
 #region OP
 # FBX export operator - batch-writes each object to its own .fbx file with
-# UE4-optimized settings via bpy.ops.export_scene.fbx.
+# UE4-tuned settings via bpy.ops.export_scene.fbx.
 
 class ZENV_OT_SaveToSeparateFbxUE4(bpy.types.Operator):
     """Export each object in the scene to a separate FBX file with UE4-compatible settings.
 
     This operator creates individual .fbx files for each object in the current
-    scene, with export settings optimized for Unreal Engine 4. Each file will
+    scene, with export settings tuned for Unreal Engine 4. Each file will
     contain only the exported object with proper scale and orientation.
 
-    Note:
-        If no export directory is chosen, files are saved in the same
+    If no export directory is chosen, files are saved in the same
         directory as the current blend file (which must be saved first).
 
     Warning:
@@ -140,7 +139,7 @@ class ZENV_OT_SaveToSeparateFbxUE4(bpy.types.Operator):
     def execute(self, context):
         """Execute the FBX export operation.
 
-        Creates a new .fbx file for each object in the scene with UE4-optimized
+        Creates a new .fbx file for each object in the scene with UE4-tuned
         settings.
 
         Args:
@@ -161,8 +160,8 @@ class ZENV_OT_SaveToSeparateFbxUE4(bpy.types.Operator):
 
         view_layer = context.view_layer
 
-        # Store the current selection and active object so we can restore
-        # the viewport state after we are done.
+        # Store the current selection and active object so the viewport
+        # state can be restored afterwards.
         original_selection = [o for o in context.selected_objects if o]
         original_active = view_layer.objects.active
 
@@ -212,7 +211,7 @@ class ZENV_OT_SaveToSeparateFbxUE4(bpy.types.Operator):
                 obj.select_set(True)
                 view_layer.objects.active = obj
             except RuntimeError:
-                # Object is not in this view layer; skip cleanly instead of
+                # Object is not in this view layer; skip instead of
                 # failing the whole batch.
                 failures += 1
                 continue

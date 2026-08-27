@@ -132,7 +132,7 @@ class ZENV_OT_CleanUnusedTextures(bpy.types.Operator):
         for img in bpy.data.images[:]:
             if img in used_images:
                 continue
-            # Never drop images the user explicitly pinned, packed data,
+            # Never drop images the user pinned, packed data,
             # or library-linked data (Blender refuses to remove linked
             # data anyway, but skipping keeps the reported count honest).
             if img.packed_file:
@@ -160,7 +160,7 @@ class ZENV_OT_CleanMissingTextures(bpy.types.Operator):
     bl_idname = "zenv.clean_missing_textures"
     bl_label = "Clean Missing Textures"
     bl_description = (
-        "Remove image datablocks whose referenced file no longer exists on disk"
+        "Remove image datablocks whose referenced file is missing on disk"
     )
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -173,7 +173,7 @@ class ZENV_OT_CleanMissingTextures(bpy.types.Operator):
             set: {'FINISHED'} if the operation was successful.
         """
         # Image sources that do not correspond to a file on disk and must
-        # never be removed just because their filepath is empty / missing.
+        # never be removed because their filepath is empty / missing.
         SKIP_SOURCES = {'GENERATED', 'VIEWER', 'RENDER_RESULT', 'SEQUENCE', 'MOVIE'}
 
         removed_count = 0
@@ -231,7 +231,7 @@ class ZENV_OT_CleanUnusedMaterials(bpy.types.Operator):
         used_materials = set()
 
         # Find all used materials across every object type that exposes
-        # material slots (meshes, curves, surfaces, texts, metaballs,
+        # material slots (meshes, curves, NURBS, texts, metaballs,
         # volumes, grease pencil, hair, point clouds, ...). Restricting to
         # MESH only would delete materials still assigned to non-mesh
         # geometry.
@@ -249,7 +249,7 @@ class ZENV_OT_CleanUnusedMaterials(bpy.types.Operator):
             if mat in used_materials:
                 continue
             # Respect user-pinned materials, library-linked data, and
-            # library overrides - none of these should be silently deleted.
+            # library overrides - none of these should be deleted without a report.
             if mat.use_fake_user:
                 continue
             if mat.library is not None or mat.override_library is not None:
@@ -267,7 +267,7 @@ class ZENV_OT_CleanDuplicateMaterials(bpy.types.Operator):
 
     Finds materials whose names share the same base name once the trailing
     Blender `.001`/`.002`/... numeric suffix is stripped, and whose shader
-    setup is equivalent. Only materials that actually match are merged.
+    setup is equivalent. Only materials that match are merged.
     """
     bl_idname = "zenv.clean_duplicate_materials"
     bl_label = "Remove Duplicate Materials"
@@ -331,7 +331,7 @@ class ZENV_OT_CleanDuplicateMaterials(bpy.types.Operator):
 
         Links are expressed by a stable per-node index derived from the
         sorted node signatures (not by node name), so renaming a node no
-        longer breaks equivalence.
+        longer invalidates equivalence.
         """
         sig = [
             bool(mat.use_nodes),
@@ -405,7 +405,7 @@ class ZENV_OT_CleanDuplicateMaterials(bpy.types.Operator):
             for dup_mat in mats[1:]:
                 # Replace all uses of the duplicate with the primary material
                 # across every object type that exposes material slots
-                # (meshes, curves, surfaces, texts, metaballs, volumes,
+                # (meshes, curves, NURBS, texts, metaballs, volumes,
                 # grease pencil, hair, point clouds, ...).
                 for obj in bpy.data.objects:
                     slots = getattr(obj, "material_slots", None)
@@ -424,7 +424,7 @@ class ZENV_OT_CleanDuplicateMaterials(bpy.types.Operator):
                     bpy.data.materials.remove(dup_mat)
                     merged_count += 1
                 # If the duplicate still has users (e.g. fake_user pin or
-                # a reference we could not repoint), it was not actually
+                # a reference that could not be repointed), it was not
                 # merged away - do not inflate the count.
 
         self.report({'INFO'}, f"Merged {merged_count} duplicate materials")
@@ -501,7 +501,7 @@ class ZENV_OT_CleanMeshData(bpy.types.Operator):
         scene = context.scene
         view_layer = context.view_layer
 
-        # Remember state we may change so we can restore it afterwards.
+        # Remember state that may change so it can be restored afterwards.
         original_active = view_layer.objects.active
         original_selection = [o for o in context.selected_objects]
         original_mode = 'OBJECT'
@@ -579,7 +579,7 @@ class ZENV_OT_CleanMeshData(bpy.types.Operator):
                 cleaned_objects += 1
             except Exception as e:
                 failures += 1
-                # Make sure we are not stuck in EDIT mode on this object.
+                # Make sure the object is not stuck in EDIT mode.
                 if obj.mode != 'OBJECT':
                     try:
                         bpy.ops.object.mode_set(mode='OBJECT')
@@ -587,7 +587,7 @@ class ZENV_OT_CleanMeshData(bpy.types.Operator):
                         pass
                 self.report({'WARNING'}, f"Skipped '{obj.name}': {e}")
 
-        # Restore original selection / active / mode as best we can.
+        # Restore original selection / active / mode as best possible.
         try:
             bpy.ops.object.select_all(action='DESELECT')
         except RuntimeError:
@@ -637,7 +637,7 @@ class ZENV_OT_RemoveEmptyVertexGroups(bpy.types.Operator):
     _WEIGHT_EPSILON = 1e-6
 
     # Modifier RNA property names that store a vertex-group *name* and would
-    # break if the referenced group were deleted. This is a conservative
+    # be invalidated if the referenced group were deleted. This is a conservative
     # superset covering the common deform / mask / weight modifiers.
     _MODIFIER_VG_PROPS = (
         'vertex_group', 'subtarget',
@@ -651,8 +651,8 @@ class ZENV_OT_RemoveEmptyVertexGroups(bpy.types.Operator):
         modifier, driver, shape key, or the object's paint mask on `obj`.
 
         Vertex groups are referenced by name (not by index) in many places,
-        so deleting a group whose name is still cited elsewhere silently
-        breaks those references.
+        so deleting a group whose name is still cited elsewhere invalidates
+        those references without warning.
         """
         referenced = set()
 

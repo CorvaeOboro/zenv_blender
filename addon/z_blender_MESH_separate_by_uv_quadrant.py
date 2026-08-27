@@ -104,9 +104,9 @@ class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
 
     def phase_0_prepare_and_store(self, obj):
         """
-        Prepare mesh by completely separating into individual triangles:
+        Prepare mesh by separating into individual triangles:
         1) Triangulate the mesh
-        2) Create new mesh with completely separate triangles
+        2) Create new mesh with separate triangles
         3) Store UV and original position data for each vertex
         4) Apply all transforms and unparent the object, storing its original world matrix
         5) Store original materials for later restoration
@@ -148,7 +148,7 @@ class ZENV_OT_MeshSeparateByUVQuadrant(Operator):
         pos_layer = bm_new.verts.layers.float_vector.new("original_position")
         uv_layer_new = bm_new.loops.layers.uv.new("UVMap")
         triangle_count = 0
-        # Process each triangle, creating completely new vertices for each
+        # Process each triangle, creating new vertices for each
         for face in bm_orig.faces:
             new_verts = []
             uvs = []

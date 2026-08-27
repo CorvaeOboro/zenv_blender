@@ -13,7 +13,7 @@ bl_info = {
     "addon_order": 40,
     "tags": ['material', 'rename', 'prefix', 'suffix', 'affix', 'name'],
     "description_short": 'add or remove prefix or suffix on materials',
-    "description_medium": 'Provides two operators (Add Affix and Remove Affix) that add or remove a configurable prefix or suffix to/from material names. Supports both prefix and suffix modes, and can apply to all materials in the file or just the active object materials. Shared logic via a mixin class.',
+    "description_medium": 'Provides two operators (Add Affix and Remove Affix) that add or remove a configurable prefix or suffix to/from material names. Supports both prefix and suffix modes, and can apply to all materials in the file or the active object materials. Shared logic via a mixin class.',
     "description_long": """
 MATERIAL RENAME AFFIX
  prefix and suffix addition or removal for material names
@@ -186,7 +186,7 @@ class ZENV_PG_RenameByMaterialProps(PropertyGroup):
     )
     apply_to_all: BoolProperty(
         name="Apply to All Materials",
-        description="Apply changes to all materials in the scene instead of just selected object",
+        description="Apply changes to all materials in the scene instead of the selected object",
         default=False
     )
 #endregion
