@@ -1,33 +1,32 @@
+#region META
 bl_info = {
     "name": 'GEN Planet Procedural',
     "blender": (4, 0, 0),
     "category": 'ZENV',
     "version": '20260825',
     "description": 'Generate procedural planets with layered terrain',
-    "status": 'wip',
-    "approved": False,
+    "status": 'working',
+    "approved": True,
     "group": 'Generative',
     "group_prefix": 'GEN',
     "group_order": 30,
     "addon_order": 30,
     "tags": ['generative', 'planet', 'procedural', 'terrain', 'noise', 'icosphere'],
     "description_short": 'Generate procedural planets with layered terrain.',
-    "description_medium": 'Builds a high-resolution icosphere base, radial displacement '
-                          'through combined fBm + ridged-multifractal noise for continents '
-                          'and mountains. Optionally adds an ocean shell, impact craters, '
-                          'and a volumetric atmosphere shell.',
-    "description_long": """
+    "description_medium": 'Builds a high-resolution icosphere base, radial displacement through combined fBm + ridged-multifractal noise for continents and mountains. Optionally adds an ocean shell, impact craters, and a volumetric atmosphere shell.',
+    "description_long": """\
 GEN Planet Procedural - Generate procedural planets with layered terrain.
 Builds a high-resolution icosphere base, radial displacement through
 combined fBm + ridged-multifractal noise for continents and mountains.
 Optionally adds an ocean shell, impact craters, and a volumetric atmosphere shell.""",
     "addon_image": 'zenv_blender_GEN_planet.png',
-    "image_overview": '',
     "location": 'View3D > ZENV > GEN Planet Procedural',
     "warning": '',
     "doc_url": '',
 }
+#endregion
 
+#region IMPORT
 import bpy
 import bmesh
 import logging
@@ -42,10 +41,10 @@ from bpy.props import (
     PointerProperty,
 )
 from bpy.types import Panel, Operator, PropertyGroup
+#endregion
 
-# ------------------------------------------------------------------------
-#    Logging
-# ------------------------------------------------------------------------
+#region LOG
+# Module logger setup with idempotent install/uninstall helpers.
 
 logger = logging.getLogger(__name__)
 _zenv_planet_procedural_console_handler = None
@@ -74,10 +73,10 @@ def _uninstall_logger():
     except ValueError:
         pass
     _zenv_planet_procedural_console_handler = None
+#endregion
 
-# ------------------------------------------------------------------------
-#    Property Group
-# ------------------------------------------------------------------------
+#region PROPS
+# Property group for procedural planet generation settings, registered on Scene.
 
 class ZENV_PG_PlanetProcedural_Properties(PropertyGroup):
     """Properties for procedural planet generation"""
@@ -286,17 +285,14 @@ class ZENV_PG_PlanetProcedural_Properties(PropertyGroup):
         description="Reserved for future cloud layer generation",
         default=False,
     )
+#endregion
 
-# ------------------------------------------------------------------------
-#    Utilities
-# ------------------------------------------------------------------------
+#region NOISE
+# Noise primitives: fBm, ridged multifractal, and turbulence wrappers
+# used by the terrain displacement stage.
 
 class ZENV_PlanetProcedural_Utils:
     """Shared procedural-planet helpers used by the operator."""
-
-    # ------------------------------------------------------------------
-    # Noise primitives
-    # ------------------------------------------------------------------
 
     @staticmethod
     def fbm(point, octaves, lacunarity, gain):
@@ -340,10 +336,11 @@ class ZENV_PlanetProcedural_Utils:
         """Turbulence wrapper using Blender's built-in (positional-arg safe)."""
         # noise.turbulence_vector requires (position, octaves, hard) as positional args.
         return noise.turbulence_vector(point, octaves, True).x
+#endregion
 
-    # ------------------------------------------------------------------
-    # Mesh creation
-    # ------------------------------------------------------------------
+#region MESH
+# Base sphere creation: resolution mapping, seed suffix formatting, and
+# icosphere generation with optional extra subdivisions.
 
     @staticmethod
     def resolution_to_subdivisions(resolution):
@@ -397,10 +394,11 @@ class ZENV_PlanetProcedural_Utils:
             len(mesh.vertices),
         )
         return obj
+#endregion
 
-    # ------------------------------------------------------------------
-    # Terrain displacement
-    # ------------------------------------------------------------------
+#region TERRAIN
+# Layered radial displacement: continents (fBm), coastal ridges, mountains
+# (ridged multifractal), and fine detail — all applied per-vertex.
 
     @staticmethod
     def apply_terrain_displacement(obj, props, generation_seed):
@@ -478,62 +476,11 @@ class ZENV_PlanetProcedural_Utils:
 
         mesh.update()
         logger.info("Applied layered terrain displacement to %d vertices", len(mesh.vertices))
+#endregion
 
-    # ------------------------------------------------------------------
-    # Ocean / Atmosphere / Craters
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def create_ocean_sphere(planet_obj, props, generation_seed):
-        """Create an ocean shell sphere with translucent (~75%) opacity."""
-        suffix = ZENV_PlanetProcedural_Utils.make_seed_suffix(generation_seed)
-        radius = props.planet_radius * (1.0 + props.ocean_level)
-
-        bm = bmesh.new()
-        try:
-            bmesh.ops.create_icosphere(bm, subdivisions=5, radius=radius)
-            mesh = bpy.data.meshes.new(f"Ocean_{suffix}")
-            bm.to_mesh(mesh)
-        finally:
-            bm.free()
-
-        ocean_obj = bpy.data.objects.new(f"Ocean_{suffix}", mesh)
-        bpy.context.scene.collection.objects.link(ocean_obj)
-
-        # Defensive: a freshly created mesh has no slots, but clear here
-        # so a stray pre-existing material data-block can never get attached.
-        ocean_obj.data.materials.clear()
-
-        material = bpy.data.materials.new(name=f"Ocean_Material_{suffix}")
-        material.use_nodes = True
-        material.blend_method = 'BLEND'
-        # Backwards-compatible: shadow_method removed in Blender 4.2+.
-        if hasattr(material, 'shadow_method'):
-            material.shadow_method = 'HASHED'
-
-        nodes = material.node_tree.nodes
-        links = material.node_tree.links
-        nodes.clear()
-
-        output_node = nodes.new('ShaderNodeOutputMaterial')
-        principled_node = nodes.new('ShaderNodeBsdfPrincipled')
-
-        principled_node.inputs['Base Color'].default_value = (*props.ocean_color, 1.0)
-        principled_node.inputs['Roughness'].default_value = 0.05
-        principled_node.inputs['Alpha'].default_value = props.ocean_opacity
-
-        # Transmission/IOR for water-like refraction; input names changed in 4.0.
-        if 'Transmission Weight' in principled_node.inputs:
-            principled_node.inputs['Transmission Weight'].default_value = 0.6
-        elif 'Transmission' in principled_node.inputs:
-            principled_node.inputs['Transmission'].default_value = 0.6
-        if 'IOR' in principled_node.inputs:
-            principled_node.inputs['IOR'].default_value = 1.33
-
-        links.new(principled_node.outputs['BSDF'], output_node.inputs[0])
-
-        ocean_obj.data.materials.append(material)
-        return ocean_obj
+#region SHELL
+# Post-terrain features: topographic surface material, ocean shell, impact
+# craters, and volumetric atmosphere shell.
 
     @staticmethod
     def create_surface_material(obj, props, generation_seed):
@@ -650,6 +597,58 @@ class ZENV_PlanetProcedural_Utils:
             bm.free()
 
     @staticmethod
+    def create_ocean_sphere(planet_obj, props, generation_seed):
+        """Create an ocean shell sphere with translucent (~75%) opacity."""
+        suffix = ZENV_PlanetProcedural_Utils.make_seed_suffix(generation_seed)
+        radius = props.planet_radius * (1.0 + props.ocean_level)
+
+        bm = bmesh.new()
+        try:
+            bmesh.ops.create_icosphere(bm, subdivisions=5, radius=radius)
+            mesh = bpy.data.meshes.new(f"Ocean_{suffix}")
+            bm.to_mesh(mesh)
+        finally:
+            bm.free()
+
+        ocean_obj = bpy.data.objects.new(f"Ocean_{suffix}", mesh)
+        bpy.context.scene.collection.objects.link(ocean_obj)
+
+        # Defensive: a freshly created mesh has no slots, but clear here
+        # so a stray pre-existing material data-block can never get attached.
+        ocean_obj.data.materials.clear()
+
+        material = bpy.data.materials.new(name=f"Ocean_Material_{suffix}")
+        material.use_nodes = True
+        material.blend_method = 'BLEND'
+        # Backwards-compatible: shadow_method removed in Blender 4.2+.
+        if hasattr(material, 'shadow_method'):
+            material.shadow_method = 'HASHED'
+
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        nodes.clear()
+
+        output_node = nodes.new('ShaderNodeOutputMaterial')
+        principled_node = nodes.new('ShaderNodeBsdfPrincipled')
+
+        principled_node.inputs['Base Color'].default_value = (*props.ocean_color, 1.0)
+        principled_node.inputs['Roughness'].default_value = 0.05
+        principled_node.inputs['Alpha'].default_value = props.ocean_opacity
+
+        # Transmission/IOR for water-like refraction; input names changed in 4.0.
+        if 'Transmission Weight' in principled_node.inputs:
+            principled_node.inputs['Transmission Weight'].default_value = 0.6
+        elif 'Transmission' in principled_node.inputs:
+            principled_node.inputs['Transmission'].default_value = 0.6
+        if 'IOR' in principled_node.inputs:
+            principled_node.inputs['IOR'].default_value = 1.33
+
+        links.new(principled_node.outputs['BSDF'], output_node.inputs[0])
+
+        ocean_obj.data.materials.append(material)
+        return ocean_obj
+
+    @staticmethod
     def create_atmosphere(planet_obj, props, generation_seed):
         """Create a volumetric atmosphere shell as a copy of the planet mesh."""
         suffix = ZENV_PlanetProcedural_Utils.make_seed_suffix(generation_seed)
@@ -680,10 +679,11 @@ class ZENV_PlanetProcedural_Utils:
 
         atmosphere_obj.data.materials.append(material)
         return atmosphere_obj
+#endregion
 
-# ------------------------------------------------------------------------
-#    Operator
-# ------------------------------------------------------------------------
+#region OP
+# Operator that generates a procedural planet by orchestrating the workflow:
+# base sphere -> terrain displacement -> surface material -> craters -> ocean -> atmosphere.
 
 class ZENV_OT_PlanetProcedural_Generate(Operator):
     """Generate a procedural planet"""
@@ -750,10 +750,10 @@ class ZENV_OT_PlanetProcedural_Generate(Operator):
             logger.error("Error generating planet: %s", exception_caught)
             self.report({'ERROR'}, f"Planet generation failed: {exception_caught}")
             return {'CANCELLED'}
+#endregion
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
+#region PANEL
+# Sidebar panel in the ZENV category of the 3D Viewport.
 
 class ZENV_PT_PlanetProcedural(Panel):
     """Panel for procedural planet generator"""
@@ -819,11 +819,9 @@ class ZENV_PT_PlanetProcedural(Panel):
         feature_box.prop(props, "generate_clouds")
 
         layout.operator(ZENV_OT_PlanetProcedural_Generate.bl_idname, icon='WORLD_DATA')
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#region REG
 classes = (
     ZENV_PG_PlanetProcedural_Properties,
     ZENV_OT_PlanetProcedural_Generate,
@@ -857,3 +855,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+#endregion

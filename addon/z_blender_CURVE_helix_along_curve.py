@@ -5,8 +5,8 @@ bl_info = {
     "category": 'ZENV',
     "version": '20260825',
     "description": 'Generate helical curves that follow a base curve',
-    "status": 'wip',
-    "approved": False,
+    "status": 'working',
+    "approved": True,
     "group": 'Curve',
     "group_prefix": 'CURVE',
     "group_order": 60,
@@ -14,13 +14,13 @@ bl_info = {
     "tags": ['curve', 'helix', 'generative', 'spiral'],
     "description_short": 'Generate helical curves that follow a base curve',
     "description_medium": 'Creates evenly distributed helical curves that follow a selected base curve, with configurable radius, rotation length, resolution, and bevel depth.',
-    "description_long": """
-    Helix Along Curve Generator
+    "description_long": """\
+Helix Along Curve Generator
 Creates evenly distributed helical curves that follow a base curve.
 Useful for generating coils, vines, or decorative patterns.""",
-    "location": 'View3D > Sidebar > ZENV > CURVE Helix Generator',
     "image_overview": 'zenv_blender_MESH_helix.png',
     "addon_image": 'zenv_blender_MESH_helix.png',
+    "location": 'View3D > Sidebar > ZENV > CURVE Helix Generator',
     "warning": '',
     "doc_url": '',
 }

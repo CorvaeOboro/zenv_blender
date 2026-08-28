@@ -1,3 +1,4 @@
+#region blinfo
 bl_info = {
     "name": 'GEN Stone Wall Physics Voronoi',
     "blender": (4, 0, 0),
@@ -26,7 +27,9 @@ per layer, configurable wall dimensions, and seed-based reproducibility.""",
     "warning": '',
     "doc_url": '',
 }
+#endregion
 
+#region imports
 import bpy
 import bmesh
 import random
@@ -36,7 +39,9 @@ from mathutils.bvhtree import BVHTree
 from bpy.types import Operator, Panel, PropertyGroup
 from bpy.props import FloatProperty, IntProperty, PointerProperty
 import logging
+#endregion
 
+#region logging
 logger = logging.getLogger(__name__)
 _log_handler = None
 
@@ -58,14 +63,12 @@ def _uninstall_logger():
     if _log_handler is not None:
         logger.removeHandler(_log_handler)
         _log_handler = None
+#endregion
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
-
+#region props
 class ZENV_PG_StoneWallProperties(PropertyGroup):
     """Properties for stone wall generation."""
-    
+
     wall_width: FloatProperty(
         name="Wall Width",
         default=10.0,
@@ -74,7 +77,7 @@ class ZENV_PG_StoneWallProperties(PropertyGroup):
         unit='LENGTH',
         description="Total width of the wall (X-axis extent)"
     )
-    
+
     layers: IntProperty(
         name="Layers",
         default=3,
@@ -82,7 +85,7 @@ class ZENV_PG_StoneWallProperties(PropertyGroup):
         max=10,
         description="Number of stone layers (levels)"
     )
-    
+
     stones_per_layer: IntProperty(
         name="Large Stones per Layer",
         default=5,
@@ -90,7 +93,7 @@ class ZENV_PG_StoneWallProperties(PropertyGroup):
         max=20,
         description="How many large stones to create in each layer"
     )
-    
+
     stone_size_min: FloatProperty(
         name="Stone Size Min",
         default=1.0,
@@ -117,7 +120,7 @@ class ZENV_PG_StoneWallProperties(PropertyGroup):
         unit='LENGTH',
         description="Size of the filler stones"
     )
-    
+
     grid_divisions: IntProperty(
         name="Grid Divisions for Fillers",
         default=10,
@@ -125,7 +128,7 @@ class ZENV_PG_StoneWallProperties(PropertyGroup):
         max=50,
         description="Number of grid cells along X used to place filler stones"
     )
-    
+
     simulation_frames: IntProperty(
         name="Simulation Frames",
         default=20,
@@ -133,7 +136,7 @@ class ZENV_PG_StoneWallProperties(PropertyGroup):
         max=100,
         description="How many frames to advance in the physics simulation"
     )
-    
+
     wall_bound_min: FloatProperty(
         name="Wall Bound Min",
         default=-5.0,
@@ -184,11 +187,9 @@ class ZENV_PG_StoneWallProperties(PropertyGroup):
         max=200,
         description="Number of frames the inward clump force stays active before fading to zero. After this, only gravity affects the stones."
     )
+#endregion
 
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
-
+#region operator
 class ZENV_OT_GenerateStoneWall(Operator):
     """Generate a stacked stone wall using physics and voronoi-like filler placement."""
     bl_idname = "zenv.generate_stone_wall"
@@ -199,164 +200,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
     def poll(cls, context):
         return context.mode == 'OBJECT' and context.scene is not None
 
-    @staticmethod
-    def create_stone(context, rng, name, location, size, detail=0.2):
-        """Create a rectangular stone mesh with proper detailing."""
-        # Create mesh data first
-        mesh = bpy.data.meshes.new(name=f"{name}_mesh")
-        stone = bpy.data.objects.new(name, mesh)
-        context.scene.collection.objects.link(stone)
-
-        # Create base cube vertices
-        stretch_x = rng.uniform(1.2, 1.5)
-        stretch_y = rng.uniform(0.6, 0.8)
-        verts = [
-            (-0.5 * size * stretch_x, -0.5 * size * stretch_y, -0.5 * size),
-            ( 0.5 * size * stretch_x, -0.5 * size * stretch_y, -0.5 * size),
-            ( 0.5 * size * stretch_x,  0.5 * size * stretch_y, -0.5 * size),
-            (-0.5 * size * stretch_x,  0.5 * size * stretch_y, -0.5 * size),
-            (-0.5 * size * stretch_x, -0.5 * size * stretch_y,  0.5 * size),
-            ( 0.5 * size * stretch_x, -0.5 * size * stretch_y,  0.5 * size),
-            ( 0.5 * size * stretch_x,  0.5 * size * stretch_y,  0.5 * size),
-            (-0.5 * size * stretch_x,  0.5 * size * stretch_y,  0.5 * size),
-        ]
-        
-        # Define faces
-        faces = [
-            (0, 1, 2, 3),  # bottom
-            (4, 5, 6, 7),  # top
-            (0, 4, 7, 3),  # left
-            (1, 5, 6, 2),  # right
-            (0, 1, 5, 4),  # front
-            (3, 2, 6, 7),  # back
-        ]
-        
-        # Create the mesh
-        mesh.from_pydata(verts, [], faces)
-        mesh.update()
-        
-        # Set location
-        stone.location = location
-        
-        # Make active and select - deselect all first
-        bpy.ops.object.select_all(action='DESELECT')
-        context.view_layer.objects.active = stone
-        stone.select_set(True)
-        
-        # Add slight random rotation (less on X and Y to keep stones more level)
-        stone.rotation_euler = (
-            rng.uniform(-0.1, 0.1),
-            rng.uniform(-0.1, 0.1),
-            rng.uniform(-0.3, 0.3)
-        )
-        
-        # Apply rotation
-        bpy.ops.object.transform_apply(rotation=True)
-
-        # Wrap edit-mode operations in try/finally for cleanup
-        noise_tex = None
-        try:
-            # --- Bevel FIRST on the clean cube edges so the chunky
-            # chamfered corners are pristine.  Later operations are kept
-            # subtle enough not to deform the bevel geometry. ---
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-
-            # Low-poly single-face chamfer on all 12 cube edges.
-            # segments=1 + profile=0.5 = a single flat cut at 45°,
-            bpy.ops.mesh.bevel(
-                offset=0.025,
-                offset_type='WIDTH',
-                segments=1,
-                profile=0.5,
-            )
-
-            # Subdivide flat faces to give the displacement modifier
-            # enough geometry for smooth natural surface variation.
-            bpy.ops.mesh.subdivide(number_cuts=1)
-
-
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-            # Subtle surface noise scaled by `detail` (≈2 mm for
-            # large stones, ≈1 mm for fillers)  
-            noise_tex = bpy.data.textures.new(name=f"{name}_noise", type='NOISE')
-            displace = stone.modifiers.new(name="Displacement", type='DISPLACE')
-            displace.texture = noise_tex
-            displace.texture_coords = 'GLOBAL'
-            displace.direction = 'NORMAL'
-            displace.space = 'LOCAL'
-            displace.strength = detail * 0.01
-            displace.mid_level = 0.5
-            bpy.ops.object.modifier_apply(modifier="Displacement")
-
-            # Clean up any micro-doubles created by displacement.
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.mesh.remove_doubles(threshold=0.0005)
-            bpy.ops.mesh.delete_loose()
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-
-            # Smooth shading so the bevel rounds read smoothly.
-            bpy.ops.object.shade_smooth()
-
-            # Area-weighted custom normals: large flat faces dominate
-            # their vertices' normals (read as flat / chunky) while the
-            # small bevel faces blend smoothly — the "flat faces with
-            # solid chunky bevel" look.
-            bpy.ops.object.mode_set(mode='EDIT')
-            # No kwargs: the keep_custom/keep_sharp_edges arg only exists
-            # in Blender 4.5+, but this addon targets 4.0 (see bl_info).
-            bpy.ops.mesh.set_normals_from_faces()
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-        finally:
-            # Ensure we return to object mode
-            if stone.mode != 'OBJECT':
-                try:
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                except Exception:
-                    pass
-            # Clean up noise texture even if modifier_apply failed
-            if noise_tex is not None:
-                try:
-                    bpy.data.textures.remove(noise_tex)
-                except Exception:
-                    pass
-
-        return stone
-
-    @staticmethod
-    def create_bvh_tree(context, obj):
-        """Create a BVHTree from an object for precise collision detection."""
-        # Get the mesh data in world space
-        dg = context.evaluated_depsgraph_get()
-        obj_eval = obj.evaluated_get(dg)
-        mesh = obj_eval.to_mesh()
-        mesh.transform(obj.matrix_world)
-        
-        # Create BVHTree - must use triangulated faces
-        mesh.calc_loop_triangles()
-        bvh = BVHTree.FromPolygons(
-            [v.co for v in mesh.vertices],
-            [(tri.vertices[0], tri.vertices[1], tri.vertices[2]) for tri in mesh.loop_triangles],
-            epsilon=0.0001
-        )
-        obj_eval.to_mesh_clear()
-        return bvh
-
-    @staticmethod
-    def check_intersection(context, obj1, obj2):
-        """Check if two objects intersect using precise BVHTree intersection."""
-        # Create BVH trees for both objects
-        bvh1 = ZENV_OT_GenerateStoneWall.create_bvh_tree(context, obj1)
-        bvh2 = ZENV_OT_GenerateStoneWall.create_bvh_tree(context, obj2)
-        
-        # Find intersections
-        intersect = bvh1.overlap(bvh2)
-        return bool(intersect)
-
+    #region ground
     @staticmethod
     def create_ground_plane(context, wall_width=10.0):
         """Create a volumetric ground plane for proper collision detection."""
@@ -396,7 +240,9 @@ class ZENV_OT_GenerateStoneWall(Operator):
         ground.rigid_body.collision_margin = 0.0001
 
         return ground
+    #endregion
 
+    #region clump
     @staticmethod
     def create_clump_force(context, strength, clump_frames):
         """Create a Harmonic force field at the origin that pulls stones inward
@@ -473,7 +319,226 @@ class ZENV_OT_GenerateStoneWall(Operator):
         for obj in scene.objects:
             obj.select_set(False)
         return force_obj
+    #endregion
 
+    #region mesh
+    @staticmethod
+    def create_stone(context, rng, name, location, size, detail=0.2):
+        """Create a rectangular stone mesh with proper detailing."""
+        # Create mesh data first
+        mesh = bpy.data.meshes.new(name=f"{name}_mesh")
+        stone = bpy.data.objects.new(name, mesh)
+        context.scene.collection.objects.link(stone)
+
+        # Create base cube vertices
+        stretch_x = rng.uniform(1.2, 1.5)
+        stretch_y = rng.uniform(0.6, 0.8)
+        verts = [
+            (-0.5 * size * stretch_x, -0.5 * size * stretch_y, -0.5 * size),
+            ( 0.5 * size * stretch_x, -0.5 * size * stretch_y, -0.5 * size),
+            ( 0.5 * size * stretch_x,  0.5 * size * stretch_y, -0.5 * size),
+            (-0.5 * size * stretch_x,  0.5 * size * stretch_y, -0.5 * size),
+            (-0.5 * size * stretch_x, -0.5 * size * stretch_y,  0.5 * size),
+            ( 0.5 * size * stretch_x, -0.5 * size * stretch_y,  0.5 * size),
+            ( 0.5 * size * stretch_x,  0.5 * size * stretch_y,  0.5 * size),
+            (-0.5 * size * stretch_x,  0.5 * size * stretch_y,  0.5 * size),
+        ]
+
+        # Define faces
+        faces = [
+            (0, 1, 2, 3),  # bottom
+            (4, 5, 6, 7),  # top
+            (0, 4, 7, 3),  # left
+            (1, 5, 6, 2),  # right
+            (0, 1, 5, 4),  # front
+            (3, 2, 6, 7),  # back
+        ]
+
+        # Create the mesh
+        mesh.from_pydata(verts, [], faces)
+        mesh.update()
+
+        # Set location
+        stone.location = location
+
+        # Make active and select - deselect all first
+        bpy.ops.object.select_all(action='DESELECT')
+        context.view_layer.objects.active = stone
+        stone.select_set(True)
+
+        # Add slight random rotation (less on X and Y to keep stones more level)
+        stone.rotation_euler = (
+            rng.uniform(-0.1, 0.1),
+            rng.uniform(-0.1, 0.1),
+            rng.uniform(-0.3, 0.3)
+        )
+
+        # Apply rotation
+        bpy.ops.object.transform_apply(rotation=True)
+
+        # Wrap edit-mode operations in try/finally for cleanup
+        noise_tex = None
+        try:
+            # --- Bevel FIRST on the clean cube edges so the chunky
+            # chamfered corners are pristine.  Later operations are kept
+            # subtle enough not to deform the bevel geometry. ---
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+
+            # Low-poly single-face chamfer on all 12 cube edges.
+            # segments=1 + profile=0.5 = a single flat cut at 45°,
+            bpy.ops.mesh.bevel(
+                offset=0.025,
+                offset_type='WIDTH',
+                segments=1,
+                profile=0.5,
+            )
+
+            # Subdivide flat faces to give the displacement modifier
+            # enough geometry for smooth natural surface variation.
+            bpy.ops.mesh.subdivide(number_cuts=1)
+
+
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            # Subtle surface noise scaled by `detail` (≈2 mm for
+            # large stones, ≈1 mm for fillers)
+            noise_tex = bpy.data.textures.new(name=f"{name}_noise", type='NOISE')
+            displace = stone.modifiers.new(name="Displacement", type='DISPLACE')
+            displace.texture = noise_tex
+            displace.texture_coords = 'GLOBAL'
+            displace.direction = 'NORMAL'
+            displace.space = 'LOCAL'
+            displace.strength = detail * 0.01
+            displace.mid_level = 0.5
+            bpy.ops.object.modifier_apply(modifier="Displacement")
+
+            # Clean up any micro-doubles created by displacement.
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.remove_doubles(threshold=0.0005)
+            bpy.ops.mesh.delete_loose()
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+
+            # Smooth shading so the bevel rounds read smoothly.
+            bpy.ops.object.shade_smooth()
+
+            # Area-weighted custom normals: large flat faces dominate
+            # their vertices' normals (read as flat / chunky) while the
+            # small bevel faces blend smoothly — the "flat faces with
+            # solid chunky bevel" look.
+            bpy.ops.object.mode_set(mode='EDIT')
+            # No kwargs: the keep_custom/keep_sharp_edges arg only exists
+            # in Blender 4.5+, but this addon targets 4.0 (see bl_info).
+            bpy.ops.mesh.set_normals_from_faces()
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        finally:
+            # Ensure we return to object mode
+            if stone.mode != 'OBJECT':
+                try:
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                except Exception:
+                    pass
+            # Clean up noise texture even if modifier_apply failed
+            if noise_tex is not None:
+                try:
+                    bpy.data.textures.remove(noise_tex)
+                except Exception:
+                    pass
+
+        return stone
+    #endregion
+
+    #region rigidbody
+    @staticmethod
+    def add_rigidbody(context, stone, body_type='ACTIVE'):
+        """Add rigid body physics with proper mesh collision."""
+        bpy.ops.object.select_all(action='DESELECT')
+        context.view_layer.objects.active = stone
+        stone.select_set(True)
+
+        # Ensure mesh is finalized
+        stone.data.validate()
+        stone.data.update()
+
+        # Add rigid body
+        if not stone.rigid_body:
+            result = bpy.ops.rigidbody.object_add()
+            # bpy.ops.rigidbody.object_add() can return without error
+            # {'CANCELLED'} when invoked from the sidebar panel context
+            # (no proper 3D viewport region), leaving rigid_body as
+            # None.  Catch that here with a clear error instead of the
+            # cryptic "'NoneType' object has no attribute 'type'".
+            if stone.rigid_body is None:
+                raise RuntimeError(
+                    f"add_rigidbody: bpy.ops.rigidbody.object_add() failed "
+                    f"to create rigid body for '{stone.name}' "
+                    f"(result={result}). The operator may have been "
+                    f"cancelled due to wrong context."
+                )
+
+        stone.rigid_body.type = body_type
+        # CONVEX_HULL is the stable choice for active rigid bodies in Bullet.
+        # MESH (GImpact) on active bodies causes violent self-resolving
+        # intersections when shapes are concave/noisy (bevel+displace+decimate).
+        stone.rigid_body.collision_shape = 'CONVEX_HULL'
+        stone.rigid_body.mesh_source = 'FINAL'
+        stone.rigid_body.use_deform = False
+
+        # Collision settings
+        stone.rigid_body.collision_margin = 0.001
+        stone.rigid_body.use_margin = True
+        stone.rigid_body.friction = 0.8
+        stone.rigid_body.restitution = 0.1
+        stone.rigid_body.linear_damping = 0.9
+        stone.rigid_body.angular_damping = 0.9
+
+        # Set mass from bounding-box volume times a stone density.
+        # Real stone ~2700 kg/m^3; using 2000 as a sane default so impulses
+        # don't fling light bodies around. Bounding-box volume overestimates
+        # true volume, which partially compensates for the convex-hull gap.
+        volume = stone.dimensions.x * stone.dimensions.y * stone.dimensions.z
+        density = 2000.0 if stone.name.startswith("Large") else 1800.0
+        stone.rigid_body.mass = max(volume * density, 0.1)
+
+        stone.select_set(False)
+    #endregion
+
+    #region bvh
+    @staticmethod
+    def create_bvh_tree(context, obj):
+        """Create a BVHTree from an object for precise collision detection."""
+        # Get the mesh data in world space
+        dg = context.evaluated_depsgraph_get()
+        obj_eval = obj.evaluated_get(dg)
+        mesh = obj_eval.to_mesh()
+        mesh.transform(obj.matrix_world)
+
+        # Create BVHTree - must use triangulated faces
+        mesh.calc_loop_triangles()
+        bvh = BVHTree.FromPolygons(
+            [v.co for v in mesh.vertices],
+            [(tri.vertices[0], tri.vertices[1], tri.vertices[2]) for tri in mesh.loop_triangles],
+            epsilon=0.0001
+        )
+        obj_eval.to_mesh_clear()
+        return bvh
+
+    @staticmethod
+    def check_intersection(context, obj1, obj2):
+        """Check if two objects intersect using precise BVHTree intersection."""
+        # Create BVH trees for both objects
+        bvh1 = ZENV_OT_GenerateStoneWall.create_bvh_tree(context, obj1)
+        bvh2 = ZENV_OT_GenerateStoneWall.create_bvh_tree(context, obj2)
+
+        # Find intersections
+        intersect = bvh1.overlap(bvh2)
+        return bool(intersect)
+    #endregion
+
+    #region spatialgrid
     @staticmethod
     def create_spatial_grid(cell_size=1.0):
         """Create a spatial grid for efficient neighbor finding."""
@@ -501,7 +566,7 @@ class ZENV_OT_GenerateStoneWall(Operator):
         """Get stones from neighboring grid cells."""
         grid_coords = ZENV_OT_GenerateStoneWall.get_grid_coords(location, cell_size)
         nearby = []
-        
+
         # Check 27 neighboring cells (3x3x3 grid around point)
         for dx in range(-1, 2):
             for dy in range(-1, 2):
@@ -514,7 +579,9 @@ class ZENV_OT_GenerateStoneWall(Operator):
                     if check_coords in spatial_grid:
                         nearby.extend(spatial_grid[check_coords])
         return nearby
+    #endregion
 
+    #region overlap
     @staticmethod
     def check_stone_overlap(context, new_stone, spatial_grid, ground_plane, margin=0.1, cell_size=1.0):
         """Check if a stone overlaps with nearby stones using spatial partitioning."""
@@ -545,7 +612,9 @@ class ZENV_OT_GenerateStoneWall(Operator):
                 if ZENV_OT_GenerateStoneWall.check_intersection(context, new_stone, stone):
                     return True
         return False
+    #endregion
 
+    #region layer
     @staticmethod
     def create_layer_stones(context, rng, layer_z, wall_width, stone_size_range, count, is_large=True, spatial_grid=None, ground_plane=None, cell_size=1.0):
         """Create stones for one layer using spatial partitioning."""
@@ -590,60 +659,9 @@ class ZENV_OT_GenerateStoneWall(Operator):
             logger.warning(f"Layer at z={layer_z:.2f}: placed {len(stones)}/{count} stones after {attempts} attempts")
 
         return stones, spatial_grid
+    #endregion
 
-    @staticmethod
-    def add_rigidbody(context, stone, body_type='ACTIVE'):
-        """Add rigid body physics with proper mesh collision."""
-        bpy.ops.object.select_all(action='DESELECT')
-        context.view_layer.objects.active = stone
-        stone.select_set(True)
-        
-        # Ensure mesh is finalized
-        stone.data.validate()
-        stone.data.update()
-        
-        # Add rigid body
-        if not stone.rigid_body:
-            result = bpy.ops.rigidbody.object_add()
-            # bpy.ops.rigidbody.object_add() can return without error
-            # {'CANCELLED'} when invoked from the sidebar panel context
-            # (no proper 3D viewport region), leaving rigid_body as
-            # None.  Catch that here with a clear error instead of the
-            # cryptic "'NoneType' object has no attribute 'type'".
-            if stone.rigid_body is None:
-                raise RuntimeError(
-                    f"add_rigidbody: bpy.ops.rigidbody.object_add() failed "
-                    f"to create rigid body for '{stone.name}' "
-                    f"(result={result}). The operator may have been "
-                    f"cancelled due to wrong context."
-                )
-
-        stone.rigid_body.type = body_type
-        # CONVEX_HULL is the stable choice for active rigid bodies in Bullet.
-        # MESH (GImpact) on active bodies causes violent self-resolving
-        # intersections when shapes are concave/noisy (bevel+displace+decimate).
-        stone.rigid_body.collision_shape = 'CONVEX_HULL'
-        stone.rigid_body.mesh_source = 'FINAL'
-        stone.rigid_body.use_deform = False
-
-        # Collision settings
-        stone.rigid_body.collision_margin = 0.001
-        stone.rigid_body.use_margin = True
-        stone.rigid_body.friction = 0.8
-        stone.rigid_body.restitution = 0.1
-        stone.rigid_body.linear_damping = 0.9
-        stone.rigid_body.angular_damping = 0.9
-
-        # Set mass from bounding-box volume times a stone density.
-        # Real stone ~2700 kg/m^3; using 2000 as a sane default so impulses
-        # don't fling light bodies around. Bounding-box volume overestimates
-        # true volume, which partially compensates for the convex-hull gap.
-        volume = stone.dimensions.x * stone.dimensions.y * stone.dimensions.z
-        density = 2000.0 if stone.name.startswith("Large") else 1800.0
-        stone.rigid_body.mass = max(volume * density, 0.1)
-        
-        stone.select_set(False)
-
+    #region simulate
     @staticmethod
     def simulate_physics(context, frames, bounds, z_bound=-1.0, clump_frames=30):
         """Run physics simulation with configured settings.
@@ -676,14 +694,14 @@ class ZENV_OT_GenerateStoneWall(Operator):
         chunk_size = 10
         for i in range(0, effective_frames, chunk_size):
             chunk_end = min(i + chunk_size, effective_frames)
-            
+
             # Update scene to current frame
             scene.frame_set(scene.frame_start + i)
-            
+
             # Step through frames in this chunk
             for frame in range(i, chunk_end):
                 scene.frame_set(scene.frame_start + frame)
-                
+
                 # Check if any objects are out of bounds and remove them
                 # Collect first, then remove - avoids mutation-during-iteration
                 to_remove = [
@@ -695,10 +713,12 @@ class ZENV_OT_GenerateStoneWall(Operator):
                 ]
                 for obj in to_remove:
                     bpy.data.objects.remove(obj, do_unlink=True)
-            
+
             # Force update of physics
             context.view_layer.update()
+    #endregion
 
+    #region execute
     def execute(self, context):
         # Track created objects for cleanup on failure
         created_objects = []
@@ -804,11 +824,10 @@ class ZENV_OT_GenerateStoneWall(Operator):
                 scene.frame_set(original_frame)
             except Exception:
                 pass
+    #endregion
+#endregion
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
-
+#region panel
 class ZENV_PT_StoneWallPanel(Panel):
     """Panel for stone wall generation settings."""
     bl_label = "GEN Stone Wall Generator"
@@ -829,14 +848,14 @@ class ZENV_PT_StoneWallPanel(Panel):
         col.prop(props, "wall_width")
         col.prop(props, "layers")
         col.prop(props, "stones_per_layer")
-        
+
         box = layout.box()
         box.label(text="Stone Sizes")
         col = box.column(align=True)
         col.prop(props, "stone_size_min")
         col.prop(props, "stone_size_max")
         col.prop(props, "filler_stone_size")
-        
+
         box = layout.box()
         box.label(text="Generation Settings")
         col = box.column(align=True)
@@ -852,13 +871,11 @@ class ZENV_PT_StoneWallPanel(Panel):
         col = box.column(align=True)
         col.prop(props, "clump_strength")
         col.prop(props, "clump_frames")
-        
+
         layout.operator("zenv.generate_stone_wall")
+#endregion
 
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#region register
 classes = (
     ZENV_PG_StoneWallProperties,
     ZENV_OT_GenerateStoneWall,
@@ -889,3 +906,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+#endregion

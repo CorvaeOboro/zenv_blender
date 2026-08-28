@@ -1,22 +1,44 @@
-# TEXTURE TRANSITION by UV STITCHING
-# two meshes that are touching , merge them and weld their UVs
-# creating a seamless texture transition by UV stitching , where the target uv island is snapped to match
-# then texture bake the merged onto the target mesh
-# bakes saved to "00_bake_texture" subfolder by target object name
+"""
+TEX Transition Bake by UV Stitch - Create texture transitions between two meshes.
 
+Two meshes that are touching are merged and their UVs welded, creating a
+texture transition by UV stitching where the target UV island is snapped to match.
+Then texture bake the merged onto the target mesh.
+Bakes saved to "00_bake_texture" subfolder by target object name.
+"""
+
+#region blinfo
 bl_info = {
     "name": 'TEX Transition Bake by UV Stitch',
     "blender": (4, 0, 0),
     "category": 'ZENV',
-    "version": '20250402',
+    "version": '20260825',
     "description": 'Create a transition between two meshes by UV stitching',
     "status": 'wip',
-    "approved": True,
+    "approved": False,
     "group": 'Texture',
     "group_prefix": 'TEX',
+    "group_order": 70,
+    "addon_order": 70,
     "location": 'View3D > ZENV',
+    "tags": ['texture', 'transition', 'uv', 'weld', 'bake', 'stitch'],
+    "description_short": 'Create texture transitions by UV stitching between two meshes.',
+    "description_medium": 'Merges two touching meshes, welds their UVs, stitches the target '
+                          'UV island to match the source, and bakes the merged result onto '
+                          'the target mesh. Supports flip X/Y and cleanup options.',
+    "description_long": 'UV stitching workflow for texture transitions. Finds shared '
+                        'edges between source and target meshes in world space, merges them '
+                        'into a single BMesh, welds the seam vertices, copies UVs, stitches '
+                        'the target-side UV edges, and bakes the result via Cycles. Output '
+                        'saved to 00_bake_texture subfolder.',
+    "image_overview": '',
+    "addon_image": '',
+    "warning": '',
+    "doc_url": '',
 }
+#endregion
 
+#region imports
 import bpy
 import bmesh
 import mathutils
@@ -25,52 +47,62 @@ import math
 import os
 import tempfile
 import re
+import logging
 import numpy as np
+from bpy.types import Operator, Panel
+from bpy.props import BoolProperty, IntProperty
+#endregion
 
-# ------------------------------------------------------------------------
-#    Setup Logging
-# ------------------------------------------------------------------------
+#region logger
+logger = logging.getLogger(__name__)
+_log_handler = None
 
-class ZENV_TEXTransitionBakeByUVWeld_Logger:
-    """Logger class for UV welding operations"""
-    
-    @staticmethod
-    def log_info(message, category="INFO"):
-        print(f"[{category}] {message}")
-    
-    @staticmethod
-    def log_error(message):
-        print(f"[ERROR] {message}")
 
-# ------------------------------------------------------------------------
-#    Properties
-# ------------------------------------------------------------------------
+def _install_logger():
+    """Install a stream handler on the module logger (idempotent)."""
+    global _log_handler
+    if _log_handler is not None:
+        return
+    _log_handler = logging.StreamHandler()
+    _log_handler.setFormatter(logging.Formatter("[%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_log_handler)
+    logger.setLevel(logging.INFO)
 
+
+def _uninstall_logger():
+    """Remove the stream handler from the module logger (idempotent)."""
+    global _log_handler
+    if _log_handler is not None:
+        logger.removeHandler(_log_handler)
+        _log_handler = None
+#endregion
+
+#region props
 class ZENV_TEXTransitionBakeByUVWeld_Properties:
     """Property management for UV welding addon"""
     
     @classmethod
     def register(cls):
-        bpy.types.Scene.zenv_weld_debug = bpy.props.BoolProperty(
+        bpy.types.Scene.zenv_weld_debug = BoolProperty(
             name="Debug Mode",
             description="Enable debug logging",
             default=False
         )
         
-        bpy.types.Scene.zenv_weld_steps = bpy.props.BoolProperty(
+        bpy.types.Scene.zenv_weld_steps = BoolProperty(
             name="Step Mode",
             description="Execute steps separately for debugging",
             default=False
         )
         
-        bpy.types.Scene.zenv_weld_cleanup = bpy.props.BoolProperty(
+        bpy.types.Scene.zenv_weld_cleanup = BoolProperty(
             name="Cleanup After Baking",
             description="Remove temporary objects and materials after baking",
             default=True
         )
 
         # Baking properties
-        bpy.types.Scene.zenv_weld_resolution = bpy.props.IntProperty(
+        bpy.types.Scene.zenv_weld_resolution = IntProperty(
             name="Bake Resolution",
             description="Resolution of the baked texture",
             default=1024,
@@ -78,13 +110,13 @@ class ZENV_TEXTransitionBakeByUVWeld_Properties:
             max=8192
         )
         
-        bpy.types.Scene.zenv_weld_flip_x = bpy.props.BoolProperty(
+        bpy.types.Scene.zenv_weld_flip_x = BoolProperty(
             name="Flip X",
             description="Mirror the texture horizontally before baking",
             default=False
         )
         
-        bpy.types.Scene.zenv_weld_flip_y = bpy.props.BoolProperty(
+        bpy.types.Scene.zenv_weld_flip_y = BoolProperty(
             name="Flip Y",
             description="Mirror the texture vertically before baking",
             default=False
@@ -98,20 +130,81 @@ class ZENV_TEXTransitionBakeByUVWeld_Properties:
         del bpy.types.Scene.zenv_weld_resolution
         del bpy.types.Scene.zenv_weld_flip_x
         del bpy.types.Scene.zenv_weld_flip_y
+#endregion
 
-# ------------------------------------------------------------------------
-#    Utilities
-# ------------------------------------------------------------------------
-
+#region utils
 class ZENV_TEXTransitionBakeByUVWeld_Utils:
-    """Utility functions for UV welding"""
+    """Utility functions for UV welding, ordered by workflow stage:
+    validate -> edge detect -> merge -> stitch -> material setup -> render -> cleanup -> helpers
+    """
+
+    #region validate
+    # Pre-flight checks: UV range and material validation before any work begins.
+    
+    @staticmethod
+    def validate_uv_space(obj):
+        """Check if UVs are within 0-1 space"""
+        if not obj.data.uv_layers.active:
+            logger.error(f"No UV layer found on {obj.name}")
+            return False
+        
+        uv_layer = obj.data.uv_layers.active
+        outside_uvs = []
+        for poly in obj.data.polygons:
+            for loop_idx in poly.loop_indices:
+                uv = uv_layer.data[loop_idx].uv
+                if uv.x < -0.1 or uv.x > 1.1 or uv.y < -0.1 or uv.y > 1.1:
+                    outside_uvs.append((poly.index, loop_idx, (uv.x, uv.y)))
+        
+        if outside_uvs:
+            logger.error(f"Found {len(outside_uvs)} UV coordinates outside 0-1 space in {obj.name}")
+            for poly_idx, loop_idx, uv_coords in outside_uvs[:5]:  # Show first 5 examples
+                logger.error(f"  Polygon {poly_idx}, UV: {uv_coords}")
+            logger.warning(f"{obj.name} has UVs outside 0-1 space. Baking may be unpredictable.")
+            return False
+        return True
 
     @staticmethod
+    def validate_materials(obj):
+        """Check if materials have valid diffuse textures"""
+        if not obj.material_slots:
+            logger.error(f"No materials found on {obj.name}")
+            return False
+            
+        valid_textures = False
+        for slot in obj.material_slots:
+            if not slot.material:
+                logger.error(f"Empty material slot found on {obj.name}")
+                continue
+                
+            mat = slot.material
+            if not mat.use_nodes:
+                logger.error(f"Material {mat.name} not using nodes")
+                continue
+                
+            # Check for image texture nodes connected to diffuse
+            for node in mat.node_tree.nodes:
+                if node.type == 'BSDF_PRINCIPLED':
+                    # Trace back from color input
+                    for link in mat.node_tree.links:
+                        if link.to_socket == node.inputs['Base Color']:
+                            if link.from_node.type == 'TEX_IMAGE':
+                                if link.from_node.image:
+                                    valid_textures = True
+                                    logger.info(f"Found valid texture in {mat.name}: {link.from_node.image.name}")
+                                else:
+                                    logger.error(f"Empty image texture node in {mat.name}")
+            
+        return valid_textures
+    #endregion
+
+    #region edgedetect
+    # Find edges that are touching between source and target meshes in world space.
+    
+    @staticmethod
     def get_shared_edges(source_obj, target_obj):
-        """Find edges that are touching (very close) between two meshes (in world-space), using segment-to-segment sampling for robust detection."""
-        import numpy as np
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
-        logger.log_info(f"Starting advanced segment-sampling edge analysis between {source_obj.name} and {target_obj.name}", "EDGE DETECTION")
+        """Find edges that are touching (close) between two meshes (in world-space), using segment-to-segment sampling for detection."""
+        logger.info(f"Starting segment-sampling edge analysis between {source_obj.name} and {target_obj.name}")
 
         bm1 = bmesh.new()
         bm1.from_mesh(source_obj.data)
@@ -154,10 +247,34 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
 
         SAMPLE_COUNT = 7
         DIST_THRESH = 0.02  # Blender units
+
+        # Build a KD-tree on target edge midpoints for spatial culling
+        # so we only do expensive segment-segment checks on candidate
+        # pairs, reducing O(NxM) to O(N log M).
+        from mathutils.kdtree import KDTree
+        tgt_midpoints = []
+        for te in tgt_edges:
+            mid = (te['v0'] + te['v1']) * 0.5
+            tgt_midpoints.append(mid)
+        kd_tgt = KDTree(len(tgt_midpoints))
+        for i, mid in enumerate(tgt_midpoints):
+            # KDTree expects a Vector; convert from numpy array
+            kd_tgt.insert(Vector((float(mid[0]), float(mid[1]), float(mid[2]))), i)
+        kd_tgt.balance()
+
         shared_edges = []
         for src in src_edges:
             src_samples = sample_edge(src['v0'], src['v1'], SAMPLE_COUNT)
-            for tgt in tgt_edges:
+            src_mid = (src['v0'] + src['v1']) * 0.5
+            # Query the KDTree for target edges within DIST_THRESH of the
+            # source edge midpoint. This dramatically reduces the number
+            # of expensive segment-segment distance checks.
+            candidates = kd_tgt.find_range(
+                Vector((float(src_mid[0]), float(src_mid[1]), float(src_mid[2]))),
+                DIST_THRESH * 2,  # generous radius to catch nearby edges
+            )
+            for _, tgt_idx, _ in candidates:
+                tgt = tgt_edges[tgt_idx]
                 # For each sample point on source edge, find min distance to target segment
                 min_dist = min(point_to_segment_distance(pt, tgt['v0'], tgt['v1']) for pt in src_samples)
                 if min_dist < DIST_THRESH:
@@ -169,7 +286,7 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                             'sample_count': SAMPLE_COUNT
                         }
                     ))
-        logger.log_info(f"Found {len(shared_edges)} advanced shared edges (segment sampling)", "EDGE DETECTION COMPLETE")
+        logger.info(f"Found {len(shared_edges)} shared edges (segment sampling)", "EDGE DETECTION COMPLETE")
         bm1.free()
         bm2.free()
         # Format for downstream compatibility
@@ -187,27 +304,19 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                 }
             ))
         return formatted
+    #endregion
 
+    #region merge
+    # Merge source + target into a single BMesh, weld the seam, copy UVs,
+    # build vertex groups, and store face sets in custom properties.
+    
     @staticmethod
     def create_merged_mesh(source_obj, target_obj, shared_edges):
         """
         Merge source + target into a single BMesh, weld the seam, 
         build final vertex groups, and store final face sets in custom props.
         """
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
-        logger.log_info("===== CREATE_MERGED_MESH: START =====")
-
-        # Duplicates for debugging
-        def duplicate_object(obj, suffix):
-            new_data = obj.data.copy()
-            new_obj = obj.copy()
-            new_obj.data = new_data
-            new_obj.name = f"_TEMP_{obj.name}_{suffix}"
-            bpy.context.scene.collection.objects.link(new_obj)
-            return new_obj
-        
-        temp_source = duplicate_object(source_obj, "source")
-        temp_target = duplicate_object(target_obj, "target")
+        logger.info("===== CREATE_MERGED_MESH: START =====")
 
         # Create new mesh + object to hold merged
         merged_mesh = bpy.data.meshes.new(name=f"{source_obj.name}_merged")
@@ -230,257 +339,230 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
         bm_target.edges.ensure_lookup_table()
         bm_target.faces.ensure_lookup_table()
 
-        logger.log_info(f"Source BMesh: {len(bm_source.verts)} verts, {len(bm_source.edges)} edges, {len(bm_source.faces)} faces")
-        logger.log_info(f"Target BMesh: {len(bm_target.verts)} verts, {len(bm_target.edges)} edges, {len(bm_target.faces)} faces")
+        try:
+            logger.info(f"Source BMesh: {len(bm_source.verts)} verts, {len(bm_source.edges)} edges, {len(bm_source.faces)} faces")
+            logger.info(f"Target BMesh: {len(bm_target.verts)} verts, {len(bm_target.edges)} edges, {len(bm_target.faces)} faces")
 
-        source_map = {}
-        target_map = {}
+            source_map = {}
+            target_map = {}
 
-        # (A) Copy source geometry in world space
-        src_mat = source_obj.matrix_world
-        for v in bm_source.verts:
-            new_v = bm.verts.new(src_mat @ v.co)
-            source_map[v] = new_v
-        
-        bm.verts.ensure_lookup_table()
+            # (A) Copy source geometry in world space
+            src_mat = source_obj.matrix_world
+            for v in bm_source.verts:
+                new_v = bm.verts.new(src_mat @ v.co)
+                source_map[v] = new_v
 
-        source_face_map = {}
-        for f in bm_source.faces:
-            new_f = bm.faces.new(source_map[v] for v in f.verts)
-            source_face_map[f] = new_f
-        
-        bm.faces.ensure_lookup_table()
+            bm.verts.ensure_lookup_table()
 
-        # (B) Copy target geometry in world space
-        tgt_mat = target_obj.matrix_world
-        for v in bm_target.verts:
-            new_v = bm.verts.new(tgt_mat @ v.co)
-            target_map[v] = new_v
-        
-        bm.verts.ensure_lookup_table()
+            source_face_map = {}
+            for f in bm_source.faces:
+                new_f = bm.faces.new(source_map[v] for v in f.verts)
+                source_face_map[f] = new_f
 
-        target_face_map = {}
-        for f in bm_target.faces:
-            try:
-                new_f = bm.faces.new(target_map[v] for v in f.verts)
-                target_face_map[f] = new_f
-            except ValueError:
-                logger.log_info("Skipping duplicate face in target mesh", "MERGE")
-        
-        bm.faces.ensure_lookup_table()
-        logger.log_info(f"Post-copy, merged BMesh has {len(bm.verts)} verts, {len(bm.edges)} edges, {len(bm.faces)} faces", "MERGE")
+            bm.faces.ensure_lookup_table()
 
-        # (C) Prepare the weld map from shared_edges
-        weld_map = {}
-        old_source_seam_verts = set()
-        old_target_seam_verts = set()
+            # (B) Copy target geometry in world space
+            tgt_mat = target_obj.matrix_world
+            for v in bm_target.verts:
+                new_v = bm.verts.new(tgt_mat @ v.co)
+                target_map[v] = new_v
 
-        # Distance threshold for welding (adjust if needed)
-        WELD_DISTANCE_THRESHOLD = 0.001
+            bm.verts.ensure_lookup_table()
 
-        for i, edge_info in enumerate(shared_edges):
-            s_vs = edge_info[2]['source_verts']  # [v1, v2]
-            t_vs = edge_info[2]['target_verts']  # [v3, v4]
+            target_face_map = {}
+            for f in bm_target.faces:
+                try:
+                    new_f = bm.faces.new(target_map[v] for v in f.verts)
+                    target_face_map[f] = new_f
+                except ValueError:
+                    logger.info("Skipping duplicate face in target mesh")
 
-            s0 = bm_source.verts[s_vs[0]]
-            s1 = bm_source.verts[s_vs[1]]
-            t0 = bm_target.verts[t_vs[0]]
-            t1 = bm_target.verts[t_vs[1]]
+            bm.faces.ensure_lookup_table()
+            logger.info(f"Post-copy, merged BMesh has {len(bm.verts)} verts, {len(bm.edges)} edges, {len(bm.faces)} faces")
 
-            old_source_seam_verts.update([s0, s1])
-            old_target_seam_verts.update([t0, t1])
+            # (C) Prepare the weld map from shared_edges
+            weld_map = {}
+            old_source_seam_verts = set()
+            old_target_seam_verts = set()
 
-            new_s0 = source_map[s0]
-            new_s1 = source_map[s1]
-            new_t0 = target_map[t0]
-            new_t1 = target_map[t1]
+            # Distance threshold for welding (adjust if needed)
+            WELD_DISTANCE_THRESHOLD = 0.001
 
-            # Only weld if vertices are close enough
-            if (new_s0.co - new_t0.co).length <= WELD_DISTANCE_THRESHOLD:
-                weld_map[new_t0] = new_s0
-            if (new_s1.co - new_t1.co).length <= WELD_DISTANCE_THRESHOLD:
-                weld_map[new_t1] = new_s1
-        
-        logger.log_info(f"Will weld {len(weld_map)} target verts into source verts", "WELD")
+            for i, edge_info in enumerate(shared_edges):
+                s_vs = edge_info[2]['source_verts']  # [v1, v2]
+                t_vs = edge_info[2]['target_verts']  # [v3, v4]
 
-        # Only perform weld if we have vertices to weld
-        if weld_map:
-            bmesh.ops.weld_verts(bm, targetmap=weld_map)
+                s0 = bm_source.verts[s_vs[0]]
+                s1 = bm_source.verts[s_vs[1]]
+                t0 = bm_target.verts[t_vs[0]]
+                t1 = bm_target.verts[t_vs[1]]
 
-        bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=WELD_DISTANCE_THRESHOLD)
-        bm.normal_update()
+                old_source_seam_verts.update([s0, s1])
+                old_target_seam_verts.update([t0, t1])
 
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-        logger.log_info(f"After weld, merged BMesh has {len(bm.verts)} verts, {len(bm.edges)} edges, {len(bm.faces)} faces", "WELD")
+                new_s0 = source_map[s0]
+                new_s1 = source_map[s1]
+                new_t0 = target_map[t0]
+                new_t1 = target_map[t1]
 
-        # (D) Create a final UV layer
-        uv_layer = bm.loops.layers.uv.new()
-        src_uv_layer = bm_source.loops.layers.uv.active
-        tgt_uv_layer = bm_target.loops.layers.uv.active
+                # Only weld if vertices are close enough
+                if (new_s0.co - new_t0.co).length <= WELD_DISTANCE_THRESHOLD:
+                    weld_map[new_t0] = new_s0
+                if (new_s1.co - new_t1.co).length <= WELD_DISTANCE_THRESHOLD:
+                    weld_map[new_t1] = new_s1
 
-        # Copy UVs from source
-        if src_uv_layer:
-            for old_f, new_f in source_face_map.items():
+            logger.info(f"Will weld {len(weld_map)} target verts into source verts", "WELD")
+
+            # Use remove_doubles for welding. The deprecated bmesh.ops.weld_verts
+            # was removed in Blender 4.x; remove_doubles with the same threshold
+            # achieves the same result.
+            bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=WELD_DISTANCE_THRESHOLD)
+            bm.normal_update()
+
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            logger.info(f"After weld, merged BMesh has {len(bm.verts)} verts, {len(bm.edges)} edges, {len(bm.faces)} faces")
+
+            # (D) Create a final UV layer
+            uv_layer = bm.loops.layers.uv.new()
+            src_uv_layer = bm_source.loops.layers.uv.active
+            tgt_uv_layer = bm_target.loops.layers.uv.active
+
+            # Copy UVs from source
+            if src_uv_layer:
+                for old_f, new_f in source_face_map.items():
+                    if new_f and new_f.is_valid:
+                        for old_loop, new_loop in zip(old_f.loops, new_f.loops):
+                            new_loop[uv_layer].uv = old_loop[src_uv_layer].uv.copy()
+
+            # Copy UVs from target
+            if tgt_uv_layer:
+                for old_f, new_f in target_face_map.items():
+                    if new_f and new_f.is_valid:
+                        for old_loop, new_loop in zip(old_f.loops, new_f.loops):
+                            new_loop[uv_layer].uv = old_loop[tgt_uv_layer].uv.copy()
+
+            bm.normal_update()
+
+            # (E) Build face-index sets so 'stitch_uvs' can identify boundary edges
+            bm.faces.ensure_lookup_table()
+            source_face_indices = set()
+            target_face_indices = set()
+
+            for sf, new_f in source_face_map.items():
                 if new_f and new_f.is_valid:
-                    for old_loop, new_loop in zip(old_f.loops, new_f.loops):
-                        new_loop[uv_layer].uv = old_loop[src_uv_layer].uv.copy()
-
-        # Copy UVs from target
-        if tgt_uv_layer:
-            for old_f, new_f in target_face_map.items():
+                    source_face_indices.add(new_f.index)
+            for tf, new_f in target_face_map.items():
                 if new_f and new_f.is_valid:
-                    for old_loop, new_loop in zip(old_f.loops, new_f.loops):
-                        new_loop[uv_layer].uv = old_loop[tgt_uv_layer].uv.copy()
+                    target_face_indices.add(new_f.index)
 
-        bm.normal_update()
+            # (F) Convert BMesh -> mesh
+            bm.to_mesh(merged_mesh)
+            bm.free()
+            bm = None  # mark as freed
 
-        # (E) Build face‐index sets so 'stitch_uvs' can identify boundary edges
-        bm.faces.ensure_lookup_table()
-        source_face_indices = set()
-        target_face_indices = set()
+            # Save face sets in custom props
+            merged_obj["source_faces"] = list(source_face_indices)
+            merged_obj["target_faces"] = list(target_face_indices)
 
-        for sf, new_f in source_face_map.items():
-            if new_f and new_f.is_valid:
-                source_face_indices.add(new_f.index)
-        for tf, new_f in target_face_map.items():
-            if new_f and new_f.is_valid:
-                target_face_indices.add(new_f.index)
+            # (G) Build vertex groups
+            logger.info("Building vertex groups after weld...")
+            grp_source = merged_obj.vertex_groups.new(name="source_verts")
+            grp_target = merged_obj.vertex_groups.new(name="target_verts")
+            grp_seam   = merged_obj.vertex_groups.new(name="seam_verts")
 
-        # (F) Convert BMesh → mesh
-        bm.to_mesh(merged_mesh)
-        bm.free()
+            # Make an array of final world coords and build a spatial index
+            # for O(1) lookup instead of O(N) linear scan.
+            final_coords = [merged_obj.matrix_world @ v.co for v in merged_mesh.vertices]
 
-        merged_obj["temp_source"] = temp_source.name
-        merged_obj["temp_target"] = temp_target.name
-
-        # Save face sets in custom props
-        merged_obj["source_faces"] = list(source_face_indices)
-        merged_obj["target_faces"] = list(target_face_indices)
-
-        # (G) Build vertex groups
-        logger.log_info("Building vertex groups after weld...", "GROUPS")
-        grp_source = merged_obj.vertex_groups.new(name="source_verts")
-        grp_target = merged_obj.vertex_groups.new(name="target_verts")
-        grp_seam   = merged_obj.vertex_groups.new(name="seam_verts")
-
-        # Make an array of final world coords:
-        final_coords = [merged_obj.matrix_world @ v.co for v in merged_mesh.vertices]
-
-        def find_final_index(world_co, tolerance=1e-6):
-            # find a match in final_coords
+            # Build a dict keyed by rounded coordinates for fast lookup.
+            # The key precision (6 decimals) is finer than the weld threshold.
+            _final_index_map = {}
             for i, c in enumerate(final_coords):
-                if (c - world_co).length <= tolerance:
-                    return i
-            return None
+                key = (round(c.x, 6), round(c.y, 6), round(c.z, 6))
+                _final_index_map[key] = i
 
-        # Build sets for final source, target, seam
-        final_source_indices = set()
-        final_target_indices = set()
-        final_seam_indices = set()
+            def find_final_index(world_co, tolerance=1e-6):
+                # Fast dict lookup by rounded coordinates.
+                key = (round(world_co.x, 6), round(world_co.y, 6), round(world_co.z, 6))
+                idx = _final_index_map.get(key)
+                if idx is not None:
+                    return idx
+                # Fallback: linear scan for edge cases where rounding differs
+                for i, c in enumerate(final_coords):
+                    if (c - world_co).length <= tolerance:
+                        return i
+                return None
 
-        # For each old source vertex -> find final index
-        for old_v in bm_source.verts:
-            wc = source_obj.matrix_world @ old_v.co
-            idx = find_final_index(wc)
-            if idx is not None:
-                final_source_indices.add(idx)
+            # Build sets for final source, target, seam
+            final_source_indices = set()
+            final_target_indices = set()
+            final_seam_indices = set()
 
-        # For each old target vertex
-        for old_v in bm_target.verts:
-            wc = target_obj.matrix_world @ old_v.co
-            idx = find_final_index(wc)
-            if idx is not None:
-                final_target_indices.add(idx)
+            # For each old source vertex -> find final index
+            for old_v in bm_source.verts:
+                wc = source_obj.matrix_world @ old_v.co
+                idx = find_final_index(wc)
+                if idx is not None:
+                    final_source_indices.add(idx)
 
-        # For seam
-        for old_v in old_source_seam_verts:
-            wc = source_obj.matrix_world @ old_v.co
-            idx = find_final_index(wc)
-            if idx is not None:
-                final_seam_indices.add(idx)
-        for old_v in old_target_seam_verts:
-            wc = target_obj.matrix_world @ old_v.co
-            idx = find_final_index(wc)
-            if idx is not None:
-                final_seam_indices.add(idx)
+            # For each old target vertex
+            for old_v in bm_target.verts:
+                wc = target_obj.matrix_world @ old_v.co
+                idx = find_final_index(wc)
+                if idx is not None:
+                    final_target_indices.add(idx)
 
-        if final_source_indices:
-            grp_source.add(list(final_source_indices), 1.0, 'ADD')
-        if final_target_indices:
-            grp_target.add(list(final_target_indices), 1.0, 'ADD')
-        if final_seam_indices:
-            grp_seam.add(list(final_seam_indices), 1.0, 'ADD')
+            # For seam
+            for old_v in old_source_seam_verts:
+                wc = source_obj.matrix_world @ old_v.co
+                idx = find_final_index(wc)
+                if idx is not None:
+                    final_seam_indices.add(idx)
+            for old_v in old_target_seam_verts:
+                wc = target_obj.matrix_world @ old_v.co
+                idx = find_final_index(wc)
+                if idx is not None:
+                    final_seam_indices.add(idx)
 
-        logger.log_info(f"source_verts group size = {len(final_source_indices)}", "GROUPS")
-        logger.log_info(f"target_verts group size = {len(final_target_indices)}", "GROUPS")
-        logger.log_info(f"seam_verts group size   = {len(final_seam_indices)}", "GROUPS")
+            if final_source_indices:
+                grp_source.add(list(final_source_indices), 1.0, 'ADD')
+            if final_target_indices:
+                grp_target.add(list(final_target_indices), 1.0, 'ADD')
+            if final_seam_indices:
+                grp_seam.add(list(final_seam_indices), 1.0, 'ADD')
 
-        logger.log_info("===== CREATE_MERGED_MESH: END =====")
-        return merged_obj
+            logger.info(f"source_verts group size = {len(final_source_indices)}", "GROUPS")
+            logger.info(f"target_verts group size = {len(final_target_indices)}", "GROUPS")
+            logger.info(f"seam_verts group size   = {len(final_seam_indices)}", "GROUPS")
 
-    @staticmethod
-    def validate_uv_space(obj):
-        """Check if UVs are within 0-1 space"""
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
-        if not obj.data.uv_layers.active:
-            logger.log_error(f"No UV layer found on {obj.name}")
-            return False
-        
-        uv_layer = obj.data.uv_layers.active
-        outside_uvs = []
-        for poly in obj.data.polygons:
-            for loop_idx in poly.loop_indices:
-                uv = uv_layer.data[loop_idx].uv
-                if uv.x < -0.1 or uv.x > 1.1 or uv.y < -0.1 or uv.y > 1.1:
-                    outside_uvs.append((poly.index, loop_idx, (uv.x, uv.y)))
-        
-        if outside_uvs:
-            logger.log_error(f"Found {len(outside_uvs)} UV coordinates outside 0-1 space in {obj.name}")
-            for poly_idx, loop_idx, uv_coords in outside_uvs[:5]:  # Show first 5 examples
-                logger.log_error(f"  Polygon {poly_idx}, UV: {uv_coords}")
-            import warnings
-            warnings.warn(f"[ZENV] Warning: {obj.name} has UVs outside 0-1 space. Baking may be unpredictable.")
-            logger.log_info(f"[ZENV] Warning: {obj.name} has UVs outside 0-1 space. Baking may be unpredictable.", "WARNING")
-            return True
-        return True
+            logger.info("===== CREATE_MERGED_MESH: END =====")
+            return merged_obj
 
-    @staticmethod
-    def validate_materials(obj):
-        """Check if materials have valid diffuse textures"""
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
-        if not obj.material_slots:
-            logger.log_error(f"No materials found on {obj.name}")
-            return False
-            
-        valid_textures = False
-        for slot in obj.material_slots:
-            if not slot.material:
-                logger.log_error(f"Empty material slot found on {obj.name}")
-                continue
-                
-            mat = slot.material
-            if not mat.use_nodes:
-                logger.log_error(f"Material {mat.name} not using nodes")
-                continue
-                
-            # Check for image texture nodes connected to diffuse
-            for node in mat.node_tree.nodes:
-                if node.type == 'BSDF_PRINCIPLED':
-                    bsdf = node
-                    # Trace back from color input
-                    for link in mat.node_tree.links:
-                        if link.to_socket == bsdf.inputs['Base Color']:
-                            if link.from_node.type == 'TEX_IMAGE':
-                                if link.from_node.image:
-                                    valid_textures = True
-                                    logger.log_info(f"Found valid texture in {mat.name}: {link.from_node.image.name}")
-                                else:
-                                    logger.log_error(f"Empty image texture node in {mat.name}")
-            
-        return valid_textures
+        finally:
+            # Free BMeshes on exception.
+            if bm is not None:
+                try:
+                    bm.free()
+                except Exception:
+                    pass
+            if bm_source is not None:
+                try:
+                    bm_source.free()
+                except Exception:
+                    pass
+            if bm_target is not None:
+                try:
+                    bm_target.free()
+                except Exception:
+                    pass
+    #endregion
 
+    #region stitch
+    # Stitch only the target-side UV edges along the seam, keeping UV Sync
+    # selection ON and using face selection mode. Optionally flip target UVs.
+    
     @staticmethod
     def stitch_uvs(obj, shared_edges):
         """
@@ -490,8 +572,7 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
         This version avoids bpy.ops.uv.select_all (which can fail in a context override)
         by manually deselecting/selecting loops in BMesh.
         """
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
-        logger.log_info("===== stitch_uvs: START (stitch target side) =====")
+        logger.info("===== stitch_uvs: START (stitch target side) =====")
 
         # --- Store original states for proper restoration ---
         original_mode = obj.mode
@@ -527,7 +608,7 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                     break
 
             if not region:
-                logger.log_error("Could not find a WINDOW region in IMAGE_EDITOR; aborting stitch.")
+                logger.error("Could not find a WINDOW region in IMAGE_EDITOR; aborting stitch.")
                 return obj
 
             # Prepare a context override so uv.stitch sees an IMAGE_EDITOR context
@@ -543,9 +624,9 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                 screen=screen
             ):
                 # Log basic context info
-                logger.log_info(f"Context area type: {area.type}", "CONTEXT")
-                logger.log_info(f"Context mode: {obj.mode}", "CONTEXT")
-                logger.log_info(f"Context active object: {bpy.context.active_object.name}", "CONTEXT")
+                logger.info(f"Context area type: {area.type}")
+                logger.info(f"Context mode: {obj.mode}")
+                logger.info(f"Context active object: {bpy.context.active_object.name}")
 
                 # Keep sync selection ON
                 bpy.context.scene.tool_settings.use_uv_select_sync = True
@@ -554,9 +635,9 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                 bpy.context.tool_settings.mesh_select_mode = (False, False, True)
                 bpy.context.tool_settings.uv_select_mode = 'FACE'
 
-                logger.log_info(f"mesh_select_mode: {bpy.context.tool_settings.mesh_select_mode}", "DEBUG")
-                logger.log_info(f"uv_select_mode: {bpy.context.tool_settings.uv_select_mode}", "DEBUG")
-                logger.log_info(f"use_uv_select_sync: {bpy.context.scene.tool_settings.use_uv_select_sync}", "DEBUG")
+                logger.info(f"mesh_select_mode: {bpy.context.tool_settings.mesh_select_mode}")
+                logger.info(f"uv_select_mode: {bpy.context.tool_settings.uv_select_mode}")
+                logger.info(f"use_uv_select_sync: {bpy.context.scene.tool_settings.use_uv_select_sync}")
 
                 # 1) Select "source_verts" group in 3D
                 if "source_verts" in obj.vertex_groups:
@@ -569,7 +650,7 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
 
                     selected_verts_3d = [v for v in bm.verts if v.select]
                     selected_faces_3d = [f for f in bm.faces if f.select]
-                    logger.log_info(f"3D Selection: {len(selected_verts_3d)} verts, {len(selected_faces_3d)} faces", "DEBUG")
+                    logger.info(f"3D Selection: {len(selected_verts_3d)} verts, {len(selected_faces_3d)} faces", "DEBUG")
 
                     # 2) Manually clear UV selection, then set loops selected
                     uv_layer = bm.loops.layers.uv.active
@@ -591,25 +672,25 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                         for f in bm.faces:
                             if all(l[uv_layer].select for l in f.loops):
                                 uv_selected_faces += 1
-                        logger.log_info(f"UV Editor Selection: {uv_selected_faces} faces selected", "DEBUG")
+                        logger.info(f"UV Editor Selection: {uv_selected_faces} faces selected")
                     else:
-                        logger.log_info("No active UV layer found on the mesh!", "DEBUG")
+                        logger.info("No active UV layer found on the mesh!")
 
                 else:
-                    logger.log_error("source_verts vertex group not found; skipping stitch.")
+                    logger.error("source_verts vertex group not found; skipping stitch.")
                     return obj
 
                 # 3) Attempt the uv.stitch operator
                 try:
-                    logger.log_info("Calling bpy.ops.uv.stitch() ...", "DEBUG")
+                    logger.info("Calling bpy.ops.uv.stitch() ...", "DEBUG")
                     bpy.ops.uv.stitch(use_limit=False, snap_islands=True, limit=0.01)
-                    logger.log_info("UV stitch completed successfully", "STITCH")
+                    logger.info("UV stitch completed successfully")
                 except Exception as e:
-                    logger.log_error(f"UV stitch failed with error: {str(e)}")
-                    logger.log_info(f"Failed stitch context - Area: {area.type}", "ERROR")
-                    logger.log_info(f"Failed stitch context - Mode: {obj.mode}", "ERROR")
-                    logger.log_info(f"Failed stitch context - Active: {bpy.context.active_object.name}", "ERROR")
-                    logger.log_info(f"Failed stitch context - Region: {region.type}", "ERROR")
+                    logger.error(f"UV stitch failed with error: {str(e)}")
+                    logger.info(f"Failed stitch context - Area: {area.type}")
+                    logger.info(f"Failed stitch context - Mode: {obj.mode}")
+                    logger.info(f"Failed stitch context - Active: {bpy.context.active_object.name}")
+                    logger.info(f"Failed stitch context - Region: {region.type}")
 
                 # 4) Optional: Flip target UVs if requested
                 if bpy.context.scene.zenv_weld_flip_x or bpy.context.scene.zenv_weld_flip_y:
@@ -656,7 +737,7 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                     bmesh.update_edit_mesh(obj.data)
 
         except Exception as e:
-            logger.log_error(f"Error during UV operations: {str(e)}")
+            logger.error(f"Error during UV operations: {str(e)}")
 
         finally:
             # Restore any area changes
@@ -677,14 +758,17 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                 if original_mode != 'OBJECT':
                     bpy.ops.object.mode_set(mode=original_mode)
 
-        logger.log_info("===== stitch_uvs: END (stitch target side) =====")
+        logger.info("===== stitch_uvs: END (stitch target side) =====")
         return obj
+    #endregion
 
-
+    #region matsetup
+    # Create and configure material node trees for baking: simple display
+    # material, target bake material, and multi-texture source bake material.
+    
     @staticmethod
     def setup_material_nodes(material, image_texture):
         """Setup material nodes with optional texture flipping"""
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
         material.use_nodes = True
         nodes = material.node_tree.nodes
         links = material.node_tree.links
@@ -709,13 +793,12 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
         links.new(tex_image.outputs['Color'], principled.inputs['Base Color'])
         links.new(principled.outputs['BSDF'], output.inputs['Surface'])
         
-        logger.log_info(f"Setup material nodes for {material.name}")
+        logger.info(f"Setup material nodes for {material.name}")
         return tex_image
 
     @staticmethod
     def create_bake_material(context, image, obj):
         """Create material for baking with optional texture flipping"""
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
         material = bpy.data.materials.new(name=f"{obj.name}_bake")
         material.use_nodes = True
         nodes = material.node_tree.nodes
@@ -729,7 +812,7 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
         tex_image.image = image
         tex_image.extension = 'REPEAT'
         
-        # For baking target, we need both Principled BSDF and Image Texture
+        # For baking target, both Principled BSDF and Image Texture are needed
         principled = nodes.new('ShaderNodeBsdfPrincipled')
         output = nodes.new('ShaderNodeOutputMaterial')
         
@@ -745,19 +828,18 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
         tex_image.select = True
         nodes.active = tex_image
         
-        logger.log_info(f"Created bake material for {obj.name}")
+        logger.info(f"Created bake material for {obj.name}")
         return material, tex_image
 
     @staticmethod
     def setup_bake_materials(merged_obj, source_obj, context):
-        """Setup materials for baking with texture flipping support"""
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
-        
-        # Store original materials
-        original_materials = []
-        for mat in merged_obj.data.materials:
-            if mat:
-                original_materials.append(mat)
+        """Setup materials for baking with texture flipping support.
+
+        Uses Emission shaders instead of Principled BSDF so the EMIT bake
+        captures the exact texture color.  Principled BSDF in Blender 4.x
+        conserves energy between diffuse and specular, which causes a
+        DIFFUSE/COLOR bake to come out darker and desaturated.
+        """
         
         # Create new bake material
         bake_material = bpy.data.materials.new(name=f"{merged_obj.name}_bake_source")
@@ -798,16 +880,17 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                                 tex_image.extension = 'REPEAT'
                                 tex_image.location = (-600, 300 - texture_count * 300)
                                 
-                                # Create BSDF
-                                principled = nodes.new('ShaderNodeBsdfPrincipled')
-                                principled.location = (-300, 300 - texture_count * 300)
+                                # Use Emission shader so the EMIT bake captures
+                                # the exact texture color without BSDF energy loss.
+                                emission = nodes.new('ShaderNodeEmission')
+                                emission.location = (-300, 300 - texture_count * 300)
                                 
-                                # Link texture to BSDF
-                                links.new(tex_image.outputs['Color'], principled.inputs['Base Color'])
+                                # Link texture to Emission color
+                                links.new(tex_image.outputs['Color'], emission.inputs['Color'])
                                 
                                 if texture_count == 0:
                                     # First texture
-                                    links.new(principled.outputs['BSDF'], mix.inputs[1])
+                                    links.new(emission.outputs['Emission'], mix.inputs[1])
                                 else:
                                     # Additional textures
                                     new_mix = nodes.new('ShaderNodeMixShader')
@@ -816,13 +899,13 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
                                     
                                     if last_mix:
                                         links.new(last_mix.outputs[0], new_mix.inputs[1])
-                                    links.new(principled.outputs['BSDF'], new_mix.inputs[2])
+                                    links.new(emission.outputs['Emission'], new_mix.inputs[2])
                                     last_mix = new_mix
                                 
                                 texture_count += 1
-                                logger.log_info(f"Added texture {tex_image.image.name} to bake material")
+                                logger.info(f"Added texture {tex_image.image.name} to bake material")
         
-        # If we have more than one texture, connect the last mix
+        # If more than one texture exists, connect the last mix
         if last_mix:
             links.new(last_mix.outputs[0], mix.inputs[2])
         
@@ -832,9 +915,37 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
         # Assign new bake material
         merged_obj.data.materials.append(bake_material)
         
-        logger.log_info(f"Setup {texture_count} textures for baking")
+        logger.info(f"Setup {texture_count} textures for baking")
         return bake_material
+    #endregion
 
+    #region render
+    # Configure Cycles render settings for texture baking.
+    
+    @staticmethod
+    def setup_render_settings(context):
+        """Setup render settings for baking"""
+        logger.info("Setting up render settings...")
+        
+        # Store original render engine
+        original_engine = context.scene.render.engine
+        
+        # Set to Cycles for baking
+        context.scene.render.engine = 'CYCLES'
+        
+        # Configure Cycles settings
+        if hasattr(context.scene, 'cycles'):
+            context.scene.cycles.samples = 512  # Increase samples
+            context.scene.cycles.use_denoising = True
+            context.scene.cycles.use_adaptive_sampling = True
+            context.scene.cycles.adaptive_threshold = 0.01
+        
+        return original_engine
+    #endregion
+
+    #region cleanup
+    # Restore materials and remove temporary objects created during the workflow.
+    
     @staticmethod
     def restore_materials(obj, materials):
         obj.data.materials.clear()
@@ -843,60 +954,44 @@ class ZENV_TEXTransitionBakeByUVWeld_Utils:
 
     @staticmethod
     def cleanup_temp_objects(obj):
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
         temp_source_name = obj.get("temp_source", None)
         temp_target_name = obj.get("temp_target", None)
         
         if temp_source_name:
             temp_source = bpy.data.objects.get(temp_source_name)
             if temp_source:
-                logger.log_info(f"Removing temp object: {temp_source.name}")
+                logger.info(f"Removing temp object: {temp_source.name}")
                 bpy.data.objects.remove(temp_source, do_unlink=True)
         
         if temp_target_name:
             temp_target = bpy.data.objects.get(temp_target_name)
             if temp_target:
-                logger.log_info(f"Removing temp object: {temp_target.name}")
+                logger.info(f"Removing temp object: {temp_target.name}")
                 bpy.data.objects.remove(temp_target, do_unlink=True)
+    #endregion
 
-    @staticmethod
-    def setup_render_settings(context):
-        """Setup render settings for baking"""
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
-        logger.log_info("Setting up render settings...")
-        
-        # Store original render engine
-        original_engine = context.scene.render.engine
-        
-        # Set to Cycles for baking
-        context.scene.render.engine = 'CYCLES'
-        
-        # Configure Cycles settings for best quality
-        if hasattr(context.scene, 'cycles'):
-            context.scene.cycles.samples = 512  # Increase samples for better quality
-            context.scene.cycles.use_denoising = True
-            context.scene.cycles.use_adaptive_sampling = True
-            context.scene.cycles.adaptive_threshold = 0.01
-            context.scene.cycles.use_high_quality_normals = True
-        
-        return original_engine
-
+    #region helpers
+    # Small utility helpers used across multiple workflow stages.
+    
     @staticmethod
     def safe_filename(name):
         # Remove unsafe characters for filenames
         name = re.sub(r'[^\w\-_. ]', '_', name)
-        return name.strip('_')
+        name = name.strip('_')
+        # Ensure the result is non-empty
+        return name if name else "unnamed"
+    #endregion
 
-# ------------------------------------------------------------------------
-#    Operators
-# ------------------------------------------------------------------------
+#endregion
 
-class ZENV_OT_TEXTransitionBakeByUVWeld_Bake(bpy.types.Operator):
+#region operator
+class ZENV_OT_TEXTransitionBakeByUVWeld_Bake(Operator):
     """Weld UVs between selected meshes, then stitch only the target side, and finally bake."""
     bl_idname = "zenv.transition_weld"
     bl_label = "Weld UVs / Stitch Target and Bake"
     bl_options = {'REGISTER', 'UNDO'}
     
+    #region poll
     @classmethod
     def poll(cls, context):
         sel = context.selected_objects
@@ -905,19 +1000,31 @@ class ZENV_OT_TEXTransitionBakeByUVWeld_Bake(bpy.types.Operator):
             all(obj.type == 'MESH' for obj in sel) and
             context.active_object in sel
         )
+    #endregion
     
+    #region execute
     def execute(self, context):
-        logger = ZENV_TEXTransitionBakeByUVWeld_Logger
         
+        #region init
+        # Pre-declare resources so the exception handler and finally block
+        # can safely check them.
+        bake_material = None
+        target_bake_mat = None
+        merged_obj = None
+        original_engine = None
+        original_target_materials = []
+        #endregion
+
         try:
+            #region precheck
             # Identify source vs target from selection
             target_obj = context.active_object
             source_obj = [obj for obj in context.selected_objects if obj != target_obj][0]
-            
-            logger.log_info("===== TRANSITION_WELD OPERATOR START =====")
-            logger.log_info(f"Source object (UV reference): {source_obj.name}")
-            logger.log_info(f"Target object (UV to transform): {target_obj.name}")
-            
+
+            logger.info("===== TRANSITION_WELD OPERATOR START =====")
+            logger.info(f"Source object (UV reference): {source_obj.name}")
+            logger.info(f"Target object (UV to transform): {target_obj.name}")
+
             # Validate UVs
             if not ZENV_TEXTransitionBakeByUVWeld_Utils.validate_uv_space(source_obj):
                 self.report({'ERROR'}, f"Source object {source_obj.name} has UVs outside 0-1 space")
@@ -925,154 +1032,215 @@ class ZENV_OT_TEXTransitionBakeByUVWeld_Bake(bpy.types.Operator):
             if not ZENV_TEXTransitionBakeByUVWeld_Utils.validate_uv_space(target_obj):
                 self.report({'ERROR'}, f"Target object {target_obj.name} has UVs outside 0-1 space")
                 return {'CANCELLED'}
-                
+
             # Validate materials
             if not ZENV_TEXTransitionBakeByUVWeld_Utils.validate_materials(source_obj):
                 self.report({'ERROR'}, f"Source object {source_obj.name} has no valid diffuse textures")
                 return {'CANCELLED'}
-            
+            #endregion
+
+            #region setup
             # 1) Setup render for baking
             original_engine = ZENV_TEXTransitionBakeByUVWeld_Utils.setup_render_settings(context)
-            
+
             # 2) Find shared edges
             shared_edges = ZENV_TEXTransitionBakeByUVWeld_Utils.get_shared_edges(source_obj, target_obj)
             if not shared_edges:
                 self.report({'ERROR'}, "No shared edges found between source and target.")
                 return {'CANCELLED'}
-            logger.log_info(f"Found {len(shared_edges)} shared edges")
-            
+            logger.info(f"Found {len(shared_edges)} shared edges")
+            #endregion
+
+            #region merge
             # 3) Merge and weld
             merged_obj = ZENV_TEXTransitionBakeByUVWeld_Utils.create_merged_mesh(source_obj, target_obj, shared_edges)
             if not merged_obj:
                 self.report({'ERROR'}, "Failed to create merged mesh.")
                 return {'CANCELLED'}
-            
+
             # Validate merged mesh UVs
             if not ZENV_TEXTransitionBakeByUVWeld_Utils.validate_uv_space(merged_obj):
                 self.report({'ERROR'}, "Merged mesh has UVs outside 0-1 space")
                 return {'CANCELLED'}
-            
+            #endregion
+
+            #region matsetup
             # 4) Setup materials for baking
             bake_material = ZENV_TEXTransitionBakeByUVWeld_Utils.setup_bake_materials(merged_obj, source_obj, context)
             if not bake_material:
                 self.report({'ERROR'}, "Failed to setup bake materials.")
                 return {'CANCELLED'}
+            #endregion
 
-            try:
-                # Create bake image
-                image_name = f"{ZENV_TEXTransitionBakeByUVWeld_Utils.safe_filename(target_obj.name)}_baked_from_{ZENV_TEXTransitionBakeByUVWeld_Utils.safe_filename(source_obj.name)}"
-                bake_image = bpy.data.images.new(
-                    image_name,
-                    width=context.scene.zenv_weld_resolution,
-                    height=context.scene.zenv_weld_resolution,
-                    alpha=True,
-                    float_buffer=True,
-                    is_data=False  # Ensure proper color space
-                )
-                
-                # Set color space for better accuracy
-                bake_image.colorspace_settings.name = 'sRGB'
-                
-                # Set filepath for the image
-                blend_filepath = bpy.data.filepath
-                if blend_filepath:
-                    # If blend file is saved, save next to it
-                    base_dir = os.path.dirname(blend_filepath)
-                else:
-                    # If blend file is not saved, use temp directory
-                    base_dir = tempfile.gettempdir()
-                
-                # Create 00_bake_texture subfolder if it doesn't exist
-                bake_folder = os.path.join(base_dir, "00_bake_texture")
-                os.makedirs(bake_folder, exist_ok=True)
-                
-                # Set the image filepath in the bake folder
-                image_filepath = os.path.join(bake_folder, image_name + ".png")
-                bake_image.filepath_raw = image_filepath
-                logger.log_info(f"Bake image will be saved to: {image_filepath}")
-                
-                # Create a temporary material for the target object
-                target_bake_mat = bpy.data.materials.new(name=f"{target_obj.name}_bake_target")
-                target_bake_mat, target_tex_image = ZENV_TEXTransitionBakeByUVWeld_Utils.create_bake_material(context, bake_image, target_obj)
-                
-                # Assign bake target material to target object
-                target_obj.data.materials.clear()
-                target_obj.data.materials.append(target_bake_mat)
-                
-                # 5) Perform UV weld
-                ZENV_TEXTransitionBakeByUVWeld_Utils.stitch_uvs(merged_obj, shared_edges)
-                
-                # 6) Setup objects for baking
-                # Deselect all objects first
-                bpy.ops.object.select_all(action='DESELECT')
-                
-                # Select merged object (source of bake)
-                merged_obj.select_set(True)
-                
-                # Make target object active (destination of bake)
-                context.view_layer.objects.active = target_obj
-                target_obj.select_set(True)
-                
-                # Configure bake settings
-                if hasattr(context.scene, 'cycles'):
-                    context.scene.cycles.bake_type = 'DIFFUSE'
-                    context.scene.render.bake.use_pass_direct = False
-                    context.scene.render.bake.use_pass_indirect = False
-                    context.scene.render.bake.use_pass_color = True
-                    context.scene.render.bake.margin = 16
-                    context.scene.render.bake.use_selected_to_active = True
-                    context.scene.render.bake.use_clear = True
-                    context.scene.render.bake.target = 'IMAGE_TEXTURES'
-                
-                # 7) Bake
-                logger.log_info("Starting bake...")
-                bpy.ops.object.bake(
-                    type='DIFFUSE',
-                    pass_filter={'COLOR'},
-                    use_selected_to_active=True,  # Bake from merged (selected) to target (active)
-                    margin=16,
-                    use_clear=True
-                )
-                
-                # 8) Save the baked image
-                bake_image.file_format = 'PNG'
-                bake_image.alpha_mode = 'STRAIGHT'
-                bake_image.save()
-                logger.log_info(f"Baked image saved to: {image_filepath}")
-                
-                # 9) Cleanup
-                if context.scene.zenv_weld_cleanup:
-                    bpy.data.objects.remove(merged_obj, do_unlink=True)
+            #region bakeimg
+            # Create bake image
+            image_name = f"{ZENV_TEXTransitionBakeByUVWeld_Utils.safe_filename(target_obj.name)}_baked_from_{ZENV_TEXTransitionBakeByUVWeld_Utils.safe_filename(source_obj.name)}"
+            bake_image = bpy.data.images.new(
+                image_name,
+                width=context.scene.zenv_weld_resolution,
+                height=context.scene.zenv_weld_resolution,
+                alpha=True,
+                float_buffer=False,  # PNG does not support float; use 8-bit
+                is_data=False
+            )
+
+            # Bake target images should be sRGB so that Cycles' linear bake
+            # output is gamma-encoded to sRGB on save, matching the original
+            # source albedo textures. (Non-Color would save raw linear values,
+            # producing a dark image.)
+            bake_image.colorspace_settings.name = 'sRGB'
+
+            # Set filepath for the image
+            blend_filepath = bpy.data.filepath
+            if blend_filepath:
+                base_dir = os.path.dirname(blend_filepath)
+            else:
+                base_dir = tempfile.gettempdir()
+
+            # Create 00_bake_texture subfolder if it doesn't exist
+            bake_folder = os.path.join(base_dir, "00_bake_texture")
+            os.makedirs(bake_folder, exist_ok=True)
+
+            # Set the image filepath in the bake folder
+            image_filepath = os.path.join(bake_folder, image_name + ".png")
+            bake_image.filepath_raw = image_filepath
+            logger.info(f"Bake image will be saved to: {image_filepath}")
+
+            # Create a temporary material for the target object
+            target_bake_mat = bpy.data.materials.new(name=f"{target_obj.name}_bake_target")
+            target_bake_mat, target_tex_image = ZENV_TEXTransitionBakeByUVWeld_Utils.create_bake_material(context, bake_image, target_obj)
+
+            # Capture and replace target object materials.
+            # Original materials are restored in the finally block.
+            original_target_materials = list(target_obj.data.materials)
+            target_obj.data.materials.clear()
+            target_obj.data.materials.append(target_bake_mat)
+            #endregion
+
+            #region stitch
+            # 5) Perform UV weld
+            ZENV_TEXTransitionBakeByUVWeld_Utils.stitch_uvs(merged_obj, shared_edges)
+            #endregion
+
+            #region bake
+            # 6) Setup objects for baking
+            bpy.ops.object.select_all(action='DESELECT')
+            merged_obj.select_set(True)
+            context.view_layer.objects.active = target_obj
+            target_obj.select_set(True)
+
+            # Configure bake settings
+            # EMIT bake captures the Emission shader color directly (the
+            # source texture), with no BSDF energy conservation loss that
+            # would darken/desaturate the result.
+            if hasattr(context.scene, 'cycles'):
+                context.scene.cycles.bake_type = 'EMIT'
+                context.scene.render.bake.margin = 16
+                context.scene.render.bake.use_selected_to_active = True
+                context.scene.render.bake.use_clear = True
+                context.scene.render.bake.target = 'IMAGE_TEXTURES'
+
+            # 7) Bake
+            logger.info("Starting bake...")
+            bpy.ops.object.bake(
+                type='EMIT',
+                use_selected_to_active=True,
+                margin=16,
+                use_clear=True
+            )
+            #endregion
+
+            #region save
+            # 8) Save the baked image
+            # Set alpha_mode BEFORE save so it affects the saved file.
+            bake_image.file_format = 'PNG'
+            bake_image.alpha_mode = 'STRAIGHT'
+            bake_image.save()
+            logger.info(f"Baked image saved to: {image_filepath}")
+            #endregion
+
+            #region cleanup_ok
+            # 9) Cleanup
+            if context.scene.zenv_weld_cleanup:
+                # Clean up temp duplicate objects before removing the merged
+                # object.
+                ZENV_TEXTransitionBakeByUVWeld_Utils.cleanup_temp_objects(merged_obj)
+                merged_mesh = merged_obj.data
+                bpy.data.objects.remove(merged_obj, do_unlink=True)
+                if merged_mesh.users == 0:
+                    bpy.data.meshes.remove(merged_mesh)
+                merged_obj = None  # mark as cleaned up
+                if bake_material and bake_material.users == 0:
                     bpy.data.materials.remove(bake_material, do_unlink=True)
+                    bake_material = None
+                if target_bake_mat and target_bake_mat.users == 0:
                     bpy.data.materials.remove(target_bake_mat, do_unlink=True)
-                
-                # 10) Restore render engine
-                context.scene.render.engine = original_engine
-                
-                logger.log_info("===== TRANSITION_WELD OPERATOR END =====")
-                self.report({'INFO'}, f"Baked image saved to: {image_filepath}")
-                return {'FINISHED'}
-                
-            except Exception as e:
-                if bake_material:
-                    bpy.data.materials.remove(bake_material, do_unlink=True)
-                if target_bake_mat:
-                    bpy.data.materials.remove(target_bake_mat, do_unlink=True)
-                if merged_obj:
-                    bpy.data.objects.remove(merged_obj, do_unlink=True)
-                raise e
-            
+                    target_bake_mat = None
+            #endregion
+
+            logger.info("===== TRANSITION_WELD OPERATOR END =====")
+            self.report({'INFO'}, f"Baked image saved to: {image_filepath}")
+            return {'FINISHED'}
+
+        #region except
         except Exception as e:
-            logger.log_error(f"Error during transition weld: {str(e)}")
+            logger.error(f"Error during transition weld: {str(e)}")
             self.report({'ERROR'}, str(e))
+
+            # Clean up resources created before the failure.
+            if bake_material is not None:
+                try:
+                    if bake_material.users == 0:
+                        bpy.data.materials.remove(bake_material, do_unlink=True)
+                except Exception:
+                    pass
+                bake_material = None
+            if target_bake_mat is not None:
+                try:
+                    if target_bake_mat.users == 0:
+                        bpy.data.materials.remove(target_bake_mat, do_unlink=True)
+                except Exception:
+                    pass
+                target_bake_mat = None
+            if merged_obj is not None:
+                try:
+                    ZENV_TEXTransitionBakeByUVWeld_Utils.cleanup_temp_objects(merged_obj)
+                    merged_mesh = merged_obj.data
+                    bpy.data.objects.remove(merged_obj, do_unlink=True)
+                    if merged_mesh.users == 0:
+                        bpy.data.meshes.remove(merged_mesh)
+                except Exception:
+                    pass
+                merged_obj = None
+
             return {'CANCELLED'}
+        #endregion
 
+        #region finally
+        finally:
+            # Restore target object's original materials.
+            try:
+                target_obj = context.active_object
+                if target_obj and original_target_materials:
+                    target_obj.data.materials.clear()
+                    for mat in original_target_materials:
+                        if mat:
+                            target_obj.data.materials.append(mat)
+            except Exception:
+                pass
 
-# ------------------------------------------------------------------------
-#    Panel
-# ------------------------------------------------------------------------
+            # Restore render engine.
+            if original_engine is not None:
+                try:
+                    context.scene.render.engine = original_engine
+                except Exception:
+                    pass
+        #endregion
+    #endregion
+#endregion
 
-class ZENV_PT_TEXTransitionBakeByUVWeld_Panel(bpy.types.Panel):
+#region panel
+class ZENV_PT_TEXTransitionBakeByUVWeld(Panel):
     """Panel for UV stitching tools"""
     bl_label = "TEX Transition by UV Weld"
     bl_idname = "ZENV_PT_transition_texture_weld"
@@ -1093,15 +1261,12 @@ class ZENV_PT_TEXTransitionBakeByUVWeld_Panel(bpy.types.Panel):
         layout.prop(scene, "zenv_weld_cleanup")
 
         layout.operator("zenv.transition_weld")
+#endregion
 
-
-# ------------------------------------------------------------------------
-#    Registration
-# ------------------------------------------------------------------------
-
+#region register
 classes = (
     ZENV_OT_TEXTransitionBakeByUVWeld_Bake,
-    ZENV_PT_TEXTransitionBakeByUVWeld_Panel,
+    ZENV_PT_TEXTransitionBakeByUVWeld,
 )
 
 def register():
@@ -1116,3 +1281,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+#endregion

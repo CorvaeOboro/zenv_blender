@@ -1,4 +1,4 @@
-
+#region blinfo
 bl_info = {
     "name": 'ITEM Sword Generator',
     "blender": (4, 0, 2),
@@ -25,7 +25,9 @@ bl_info = {
     "warning": '',
     "doc_url": '',
 }
+#endregion
 
+#region imports
 import bpy
 import bmesh
 import math
@@ -41,7 +43,10 @@ from bpy.props import (
     PointerProperty
 )
 from bpy.types import PropertyGroup, Operator, Panel
+#endregion
 
+#region logging
+# Module logger setup - stream handler install / uninstall
 logger = logging.getLogger(__name__)
 _log_handler = None
 
@@ -63,161 +68,10 @@ def _uninstall_logger():
     if _log_handler is not None:
         logger.removeHandler(_log_handler)
         _log_handler = None
+#endregion
 
-# ------------------------------------------------------------------------
-# Sword Options (CheckBoxes)
-# ------------------------------------------------------------------------
-class ZENV_PG_SwordOptions(PropertyGroup):
-    """Property group for basic sword generation options"""
-    enable_blade: BoolProperty(
-        name="Generate Blade",
-        default=True,
-        description="Enable or disable generating the blade"
-    )
-    enable_crossguard: BoolProperty(
-        name="Generate Crossguard",
-        default=True,
-        description="Enable or disable generating the crossguard"
-    )
-    enable_grip: BoolProperty(
-        name="Generate Grip",
-        default=True,
-        description="Enable or disable generating the grip"
-    )
-    enable_pommel: BoolProperty(
-        name="Generate Pommel",
-        default=True,
-        description="Enable or disable generating the pommel"
-    )
-    enable_pattern_welding: BoolProperty(
-        name="Apply Pattern Welding",
-        default=True,
-        description="Enable or disable the pattern welding effect"
-    )
-    enable_surface_decoration: BoolProperty(
-        name="Apply Surface Decoration",
-        default=True,
-        description="Enable or disable the surface decoration (Etched/Inlaid/Engraved)"
-    )
-
-# ------------------------------------------------------------------------
-# Sword Blade Properties
-# ------------------------------------------------------------------------
-class ZENV_PG_SwordBlade(PropertyGroup):
-    """Property group for blade-specific properties and customization"""
-    blade_type: EnumProperty(
-        name="Blade Type",
-        description="Historical blade classification",
-        items=[
-            ('LONGSWORD', "Longsword", "Two-handed European sword"),
-            ('KATANA', "Katana", "Japanese curved sword"),
-            ('RAPIER', "Rapier", "Thin thrusting sword"),
-            ('VIKING', "Viking", "Norse pattern-welded sword")
-        ],
-        default='LONGSWORD'
-    )
-    
-    blade_length: FloatProperty(
-        name="Blade Length",
-        description="Length of blade from crossguard to tip",
-        default=90.0, min=45.0, max=150.0,
-        unit='LENGTH'
-    )
-    
-    fuller_width: FloatProperty(
-        name="Fuller Width",
-        description="Width of the blood groove (fuller). A value of 0 means no fuller.",
-        default=2.0, min=0.0, max=5.0,
-        unit='LENGTH'
-    )
-    
-    distal_taper: FloatProperty(
-        name="Distal Taper",
-        description="Thickness reduction towards tip (0.3 = strong taper, 0.9 = slight taper)",
-        default=0.6, min=0.3, max=0.9
-    )
-    
-    edge_bevels: BoolProperty(
-        name="Edge Bevels",
-        description="Add cutting edge geometry to the blade (light chamfer at edges)",
-        default=True
-    )
-
-# ------------------------------------------------------------------------
-# Sword Hilt Properties
-# ------------------------------------------------------------------------
-class ZENV_PG_SwordHilt(PropertyGroup):
-    """Property group for hilt-specific properties including grip, pommel, and crossguard"""
-    grip_style: EnumProperty(
-        name="Grip Style",
-        items=[
-            ('LEATHER', "Leather Wrap", "Traditional leather grip"),
-            ('CORD', "Cord Wrap", "Japanese style cord wrap"),
-            ('WIRE', "Wire Wrap", "Twisted wire wrap"),
-            ('WOOD', "Wood Grip", "Carved wooden grip")
-        ],
-        default='LEATHER'
-    )
-    
-    grip_length: FloatProperty(
-        name="Grip Length",
-        description="Length of handle (extends in the -Y direction)",
-        default=15.0, min=8.0, max=30.0,
-        unit='LENGTH'
-    )
-    
-    pommel_type: EnumProperty(
-        name="Pommel Type",
-        items=[
-            ('WHEEL', "Wheel", "Circular pommel"),
-            ('SCENT_STOPPER', "Scent-stopper", "Tapered pommel"),
-            ('FISHTAIL', "Fishtail", "Spread pommel"),
-            ('PEAR', "Pear", "Rounded pommel")
-        ],
-        default='WHEEL'
-    )
-    
-    crossguard_style: EnumProperty(
-        name="Crossguard Style",
-        items=[
-            ('STRAIGHT', "Straight", "Simple straight crossguard"),
-            ('CURVED', "Curved", "Curved quillons"),
-            ('COMPLEX', "Complex", "Ornate design")
-        ],
-        default='STRAIGHT'
-    )
-
-# ------------------------------------------------------------------------
-# Sword Decoration Properties
-# ------------------------------------------------------------------------
-class ZENV_PG_SwordDecoration(PropertyGroup):
-    """Property group for decorative elements and surface treatments"""
-    pattern_welding: BoolProperty(
-        name="Pattern Welding",
-        description="Add Damascus-style patterns (if enabled)",
-        default=False
-    )
-    
-    surface_decoration: EnumProperty(
-        name="Surface Decoration",
-        items=[
-            ('NONE', "None", "No decoration"),
-            ('ETCHED', "Etched", "Acid-etched patterns"),
-            ('INLAID', "Inlaid", "Metal inlay work"),
-            ('ENGRAVED', "Engraved", "Engraved designs")
-        ],
-        default='NONE'
-    )
-    
-    decoration_density: FloatProperty(
-        name="Decoration Density",
-        description="Density of decorative patterns",
-        default=0.5, min=0.1, max=1.0
-    )
-
-# ------------------------------------------------------------------------
-# Sword Generator Operator
-# ------------------------------------------------------------------------
+#region ops
+# Operator - generate complete sword mesh: crossguard, blade, grip, pommel, decorations
 class ZENV_OT_GenerateSword(Operator):
     """Generate a historically referenced sword with customizable blade, hilt, and decorative properties.
     Creates a complete sword mesh with proper geometry, including bevels and optional pattern welding."""
@@ -230,6 +84,8 @@ class ZENV_OT_GenerateSword(Operator):
     def poll(cls, context):
         return context.mode == 'OBJECT'
 
+    #region ops-execute
+    # Execute - generate parts in order, apply decorations, cleanup on failure
     def execute(self, context):
         # Use a local RNG to avoid polluting the global random state
         self._rng = random.Random()
@@ -295,10 +151,121 @@ class ZENV_OT_GenerateSword(Operator):
                     pass
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
-    
-    # --------------------------------------------------------------------
-    # Create Blade: Geometry with subdivisions, fuller, bevel
-    # --------------------------------------------------------------------
+    #endregion
+
+    #region ops-crossguard
+    # Create crossguard at origin - straight, curved, or complex style
+    def create_crossguard(self, context, props):
+        """
+        Create a crossguard at (0,0,0). Blade extends +Y, grip extends -Y.
+        Subdivisions/bevels are added for shape definition.
+        """
+        rng = self._rng
+        bm = None
+
+        try:
+            bm = bmesh.new()
+
+            # Basic shape logic, with more detail
+            if props.crossguard_style == 'STRAIGHT':
+                width = rng.uniform(18.0, 22.0)
+                height = rng.uniform(1.5, 2.5)
+                depth = rng.uniform(3.0, 5.0)
+                bmesh.ops.create_cube(bm, size=1.0)
+                bm.verts.ensure_lookup_table()
+                bmesh.ops.scale(bm, vec=(width, depth, height), verts=[v for v in bm.verts])
+
+            elif props.crossguard_style == 'CURVED':
+                # Create a cylinder and then "bend" it or subdiv for shape
+                rad = rng.uniform(2.0, 3.0)
+                length = rng.uniform(20.0, 25.0)
+                segs = 16
+                geom = bmesh.ops.create_cone(
+                    bm,
+                    cap_ends=True,
+                    cap_tris=False,
+                    segments=segs,
+                    radius1=rad,
+                    radius2=rad,  # same radius => cylinder
+                    depth=length
+                )
+
+
+                # The cylinder should be aligned along X or Z, so rotate it.
+                # By default, create_cylinder is along Z. We'll rotate it so axis is X
+                bmesh.ops.rotate(
+                    bm,
+                    verts=[v for v in bm.verts],
+                    cent=(0,0,0),
+                    matrix=Matrix.Rotation(math.radians(90.0), 3, 'Y')
+                )
+
+                # Now the cylinder's length is along X. We'll flatten the center a bit
+                # or allow slight random curvature. We'll skip a fancy bend for brevity.
+
+            elif props.crossguard_style == 'COMPLEX':
+                # Create a filled circle, then extrude the face to produce
+                # solid geometry instead of a wireframe.
+                ring_radius = rng.uniform(8.0, 12.0)
+                ring_segments = 16
+                geom = bmesh.ops.create_circle(bm, segments=ring_segments, radius=ring_radius)
+
+                # Fill the circle with an n-gon face so extrusion creates
+                # solid geometry rather than floating wire edges.
+                bmesh.ops.contextual_create(bm, geom=geom['edges'])
+
+                # Now extrude the face to give the crossguard depth.
+                faces_to_extrude = [f for f in bm.faces]
+                if faces_to_extrude:
+                    ret = bmesh.ops.extrude_face_region(bm, geom=faces_to_extrude)
+                    new_verts = [v for v in ret['geom']
+                                 if isinstance(v, bmesh.types.BMVert)]
+                    bmesh.ops.translate(
+                        bm,
+                        verts=new_verts,
+                        vec=(0, rng.uniform(-1.0, 1.0), rng.uniform(1.0, 3.0))
+                    )
+
+            # Small bevel on perimeter edges
+            bm.edges.ensure_lookup_table()
+            perimeter_edges = [e for e in bm.edges if len(e.link_faces) < 2]
+            if perimeter_edges:
+                bmesh.ops.bevel(
+                    bm,
+                    geom=perimeter_edges,
+                    offset=0.2,
+                    segments=1,
+                    profile=0.7,
+                    affect='EDGES'
+                )
+
+            # Convert BMesh to Mesh
+            mesh = bpy.data.meshes.new("Crossguard")
+            bm.to_mesh(mesh)
+            bm.free()
+            bm = None  # mark as freed
+
+            crossguard_obj = bpy.data.objects.new("Crossguard", mesh)
+            context.collection.objects.link(crossguard_obj)
+
+            # Assign a default steel material to the crossguard
+            self._assign_material(crossguard_obj, "SteelMaterial",
+                                  base_color=(0.4, 0.4, 0.42, 1.0),
+                                  metallic=0.9, roughness=0.3)
+
+            # Crossguard is at origin by design, orientation as is.
+            return crossguard_obj
+
+        finally:
+            if bm is not None:
+                try:
+                    bm.free()
+                except Exception:
+                    pass
+    #endregion
+
+    #region ops-blade
+    # Create blade in +Y - spine curve, taper, fuller, edge bevel, high subdivisions
     def create_blade(self, context, props):
         """
         Create a subdivided blade mesh around (0,0,0) as the base (crossguard),
@@ -507,121 +474,10 @@ class ZENV_OT_GenerateSword(Operator):
                     bm.free()
                 except Exception:
                     pass
-    
-    # --------------------------------------------------------------------
-    # Create Crossguard: At Origin
-    # --------------------------------------------------------------------
-    def create_crossguard(self, context, props):
-        """
-        Create a crossguard at (0,0,0). Blade extends +Y, grip extends -Y.
-        Subdivisions/bevels are added for shape definition.
-        """
-        rng = self._rng
-        bm = None
+    #endregion
 
-        try:
-            bm = bmesh.new()
-
-            # Basic shape logic, with more detail
-            if props.crossguard_style == 'STRAIGHT':
-                width = rng.uniform(18.0, 22.0)
-                height = rng.uniform(1.5, 2.5)
-                depth = rng.uniform(3.0, 5.0)
-                bmesh.ops.create_cube(bm, size=1.0)
-                bm.verts.ensure_lookup_table()
-                bmesh.ops.scale(bm, vec=(width, depth, height), verts=[v for v in bm.verts])
-
-            elif props.crossguard_style == 'CURVED':
-                # Create a cylinder and then "bend" it or subdiv for shape
-                rad = rng.uniform(2.0, 3.0)
-                length = rng.uniform(20.0, 25.0)
-                segs = 16
-                geom = bmesh.ops.create_cone(
-                    bm,
-                    cap_ends=True,
-                    cap_tris=False,
-                    segments=segs,
-                    radius1=rad,
-                    radius2=rad,  # same radius => cylinder
-                    depth=length
-                )
-
-
-                # The cylinder should be aligned along X or Z, so rotate it.
-                # By default, create_cylinder is along Z. We'll rotate it so axis is X
-                bmesh.ops.rotate(
-                    bm,
-                    verts=[v for v in bm.verts],
-                    cent=(0,0,0),
-                    matrix=Matrix.Rotation(math.radians(90.0), 3, 'Y')
-                )
-
-                # Now the cylinder's length is along X. We'll flatten the center a bit
-                # or allow slight random curvature. We'll skip a fancy bend for brevity.
-
-            elif props.crossguard_style == 'COMPLEX':
-                # Create a filled circle, then extrude the face to produce
-                # solid geometry instead of a wireframe.
-                ring_radius = rng.uniform(8.0, 12.0)
-                ring_segments = 16
-                geom = bmesh.ops.create_circle(bm, segments=ring_segments, radius=ring_radius)
-
-                # Fill the circle with an n-gon face so extrusion creates
-                # solid geometry rather than floating wire edges.
-                bmesh.ops.contextual_create(bm, geom=geom['edges'])
-
-                # Now extrude the face to give the crossguard depth.
-                faces_to_extrude = [f for f in bm.faces]
-                if faces_to_extrude:
-                    ret = bmesh.ops.extrude_face_region(bm, geom=faces_to_extrude)
-                    new_verts = [v for v in ret['geom']
-                                 if isinstance(v, bmesh.types.BMVert)]
-                    bmesh.ops.translate(
-                        bm,
-                        verts=new_verts,
-                        vec=(0, rng.uniform(-1.0, 1.0), rng.uniform(1.0, 3.0))
-                    )
-
-            # Small bevel on perimeter edges
-            bm.edges.ensure_lookup_table()
-            perimeter_edges = [e for e in bm.edges if len(e.link_faces) < 2]
-            if perimeter_edges:
-                bmesh.ops.bevel(
-                    bm,
-                    geom=perimeter_edges,
-                    offset=0.2,
-                    segments=1,
-                    profile=0.7,
-                    affect='EDGES'
-                )
-
-            # Convert BMesh to Mesh
-            mesh = bpy.data.meshes.new("Crossguard")
-            bm.to_mesh(mesh)
-            bm.free()
-            bm = None  # mark as freed
-
-            crossguard_obj = bpy.data.objects.new("Crossguard", mesh)
-            context.collection.objects.link(crossguard_obj)
-
-            # Assign a default steel material to the crossguard
-            self._assign_material(crossguard_obj, "SteelMaterial",
-                                  base_color=(0.4, 0.4, 0.42, 1.0),
-                                  metallic=0.9, roughness=0.3)
-
-            # Crossguard is at origin by design, orientation as is.
-            return crossguard_obj
-
-        finally:
-            if bm is not None:
-                try:
-                    bm.free()
-                except Exception:
-                    pass
-    
-    # --------------------------------------------------------------------
-    # Create Grip: Extends in -Y from Origin
-    # --------------------------------------------------------------------
+    #region ops-grip
+    # Create grip in -Y - cylinder with optional leather/cord wrap
     def create_grip(self, context, props):
         """
         Create a grip that extends from y=0 (crossguard) to negative y.
@@ -710,10 +566,10 @@ class ZENV_OT_GenerateSword(Operator):
                     bm.free()
                 except Exception:
                     pass
-    
-    # --------------------------------------------------------------------
-    # Create Pommel: Attaches further at the base of the grip (-Y)
-    # --------------------------------------------------------------------
+    #endregion
+
+    #region ops-pommel
+    # Create pommel at base of grip (-Y) - wheel, scent-stopper, fishtail, or pear
     def create_pommel(self, context, props):
         """
         Create pommel geometry near the end of the grip (slightly below y = -grip_length).
@@ -848,10 +704,10 @@ class ZENV_OT_GenerateSword(Operator):
                     bm.free()
                 except Exception:
                     pass
-    
-    # --------------------------------------------------------------------
-    # Wraps & Decorations
-    # --------------------------------------------------------------------
+    #endregion
+
+    #region ops-wraps
+    # Grip wraps - leather bands and cord spirals as separate objects
     def add_leather_wrap(self, context, length):
         """
         Creates banding geometry as a separate object to simulate leather
@@ -965,7 +821,10 @@ class ZENV_OT_GenerateSword(Operator):
                     bm.free()
                 except Exception:
                     pass
-    
+    #endregion
+
+    #region ops-materials
+    # Material helpers - assign or reuse Principled BSDF materials
     def _assign_material(self, obj, mat_name, base_color=(0.5, 0.5, 0.5, 1.0),
                          metallic=0.0, roughness=0.5):
         """Assign or reuse a Principled BSDF material to ``obj``.
@@ -994,7 +853,10 @@ class ZENV_OT_GenerateSword(Operator):
             obj.data.materials.append(mat)
         else:
             obj.data.materials[0] = mat
+    #endregion
 
+    #region ops-decor
+    # Decorations - pattern welding (Damascus noise) and surface decoration (Voronoi)
     def apply_pattern_welding(self, obj, props):
         """
         Same as before: create or reuse a DamascusMaterial,
@@ -1120,10 +982,166 @@ class ZENV_OT_GenerateSword(Operator):
             )
             links.new(dec_tex.outputs['Distance'], mix_node.inputs['Fac'])
             links.new(mix_node.outputs['Color'], principled.inputs['Base Color'])
+    #endregion
+#endregion
 
-# ------------------------------------------------------------------------
-# UI Panel
-# ------------------------------------------------------------------------
+#region props
+# Property groups - options, blade, hilt, and decoration settings
+
+#region props-options
+# Sword options - enable/disable each component and decorative process
+class ZENV_PG_SwordOptions(PropertyGroup):
+    """Property group for basic sword generation options"""
+    enable_blade: BoolProperty(
+        name="Generate Blade",
+        default=True,
+        description="Enable or disable generating the blade"
+    )
+    enable_crossguard: BoolProperty(
+        name="Generate Crossguard",
+        default=True,
+        description="Enable or disable generating the crossguard"
+    )
+    enable_grip: BoolProperty(
+        name="Generate Grip",
+        default=True,
+        description="Enable or disable generating the grip"
+    )
+    enable_pommel: BoolProperty(
+        name="Generate Pommel",
+        default=True,
+        description="Enable or disable generating the pommel"
+    )
+    enable_pattern_welding: BoolProperty(
+        name="Apply Pattern Welding",
+        default=True,
+        description="Enable or disable the pattern welding effect"
+    )
+    enable_surface_decoration: BoolProperty(
+        name="Apply Surface Decoration",
+        default=True,
+        description="Enable or disable the surface decoration (Etched/Inlaid/Engraved)"
+    )
+#endregion
+
+#region props-blade
+# Blade properties - type, length, fuller width, distal taper, edge bevels
+class ZENV_PG_SwordBlade(PropertyGroup):
+    """Property group for blade-specific properties and customization"""
+    blade_type: EnumProperty(
+        name="Blade Type",
+        description="Historical blade classification",
+        items=[
+            ('LONGSWORD', "Longsword", "Two-handed European sword"),
+            ('KATANA', "Katana", "Japanese curved sword"),
+            ('RAPIER', "Rapier", "Thin thrusting sword"),
+            ('VIKING', "Viking", "Norse pattern-welded sword")
+        ],
+        default='LONGSWORD'
+    )
+
+    blade_length: FloatProperty(
+        name="Blade Length",
+        description="Length of blade from crossguard to tip",
+        default=90.0, min=45.0, max=150.0,
+        unit='LENGTH'
+    )
+
+    fuller_width: FloatProperty(
+        name="Fuller Width",
+        description="Width of the blood groove (fuller). A value of 0 means no fuller.",
+        default=2.0, min=0.0, max=5.0,
+        unit='LENGTH'
+    )
+
+    distal_taper: FloatProperty(
+        name="Distal Taper",
+        description="Thickness reduction towards tip (0.3 = strong taper, 0.9 = slight taper)",
+        default=0.6, min=0.3, max=0.9
+    )
+
+    edge_bevels: BoolProperty(
+        name="Edge Bevels",
+        description="Add cutting edge geometry to the blade (light chamfer at edges)",
+        default=True
+    )
+#endregion
+
+#region props-hilt
+# Hilt properties - grip style/length, pommel type, crossguard style
+class ZENV_PG_SwordHilt(PropertyGroup):
+    """Property group for hilt-specific properties including grip, pommel, and crossguard"""
+    grip_style: EnumProperty(
+        name="Grip Style",
+        items=[
+            ('LEATHER', "Leather Wrap", "Traditional leather grip"),
+            ('CORD', "Cord Wrap", "Japanese style cord wrap"),
+            ('WIRE', "Wire Wrap", "Twisted wire wrap"),
+            ('WOOD', "Wood Grip", "Carved wooden grip")
+        ],
+        default='LEATHER'
+    )
+
+    grip_length: FloatProperty(
+        name="Grip Length",
+        description="Length of handle (extends in the -Y direction)",
+        default=15.0, min=8.0, max=30.0,
+        unit='LENGTH'
+    )
+
+    pommel_type: EnumProperty(
+        name="Pommel Type",
+        items=[
+            ('WHEEL', "Wheel", "Circular pommel"),
+            ('SCENT_STOPPER', "Scent-stopper", "Tapered pommel"),
+            ('FISHTAIL', "Fishtail", "Spread pommel"),
+            ('PEAR', "Pear", "Rounded pommel")
+        ],
+        default='WHEEL'
+    )
+
+    crossguard_style: EnumProperty(
+        name="Crossguard Style",
+        items=[
+            ('STRAIGHT', "Straight", "Simple straight crossguard"),
+            ('CURVED', "Curved", "Curved quillons"),
+            ('COMPLEX', "Complex", "Ornate design")
+        ],
+        default='STRAIGHT'
+    )
+#endregion
+
+#region props-decor
+# Decoration properties - pattern welding toggle, surface decoration type/density
+class ZENV_PG_SwordDecoration(PropertyGroup):
+    """Property group for decorative elements and surface treatments"""
+    pattern_welding: BoolProperty(
+        name="Pattern Welding",
+        description="Add Damascus-style patterns (if enabled)",
+        default=False
+    )
+
+    surface_decoration: EnumProperty(
+        name="Surface Decoration",
+        items=[
+            ('NONE', "None", "No decoration"),
+            ('ETCHED', "Etched", "Acid-etched patterns"),
+            ('INLAID', "Inlaid", "Metal inlay work"),
+            ('ENGRAVED', "Engraved", "Engraved designs")
+        ],
+        default='NONE'
+    )
+
+    decoration_density: FloatProperty(
+        name="Decoration Density",
+        description="Density of decorative patterns",
+        default=0.5, min=0.1, max=1.0
+    )
+#endregion
+#endregion
+
+#region panel
+# View3D panel UI - component toggles, blade/hilt/decoration settings, generate button
 class ZENV_PT_SwordPanel(Panel):
     """UI panel for the sword generator, providing controls for all sword customization options"""
 
@@ -1173,10 +1191,10 @@ class ZENV_PT_SwordPanel(Panel):
         box.prop(context.scene.sword_decoration, "decoration_density")
 
         layout.operator("zenv.generate_sword", text="Generate Sword")
+#endregion
 
-# ------------------------------------------------------------------------
-# Registration
-# ------------------------------------------------------------------------
+#region register
+# Class registration and module load / unload
 classes = (
     ZENV_PG_SwordOptions,
     ZENV_PG_SwordBlade,
@@ -1217,3 +1235,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+#endregion
