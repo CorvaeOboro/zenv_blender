@@ -52,7 +52,7 @@ footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0
 </header>
 <div class="container">
 
-
+<img class="node-shot" src="../zenv_blender_TEX_transition_texture_worldspace_bake.png" alt="TEX Bake Transition Worldspace">
 
 <h2>Metadata</h2>
 <dl class="meta-grid">
@@ -60,14 +60,14 @@ footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0
 <dt>Tags</dt><dd><span class="badge">texture</span> <span class="badge">bake</span> <span class="badge">transition</span> <span class="badge">worldspace</span> <span class="badge">projection</span> <span class="badge">uv</span></dd>
 </dl>
 
-<p class="note">bake worldspace transition texture between two meshes</p><p>Bake a seamless transitional texture in world space</p><p>Projects the source mesh&#x27;s material textures onto the target mesh&#x27;s UV layout by finding the nearest point on the source for each target texel, sampling the source texture, and applying a smooth distance-based falloff. Supports bidirectional baking, mirror/unfold sampling, UV margin dilation, bilinear/nearest filtering, and automatic filename generation.</p>
+<p class="note">bake worldspace transition texture between two meshes</p><p>Bake a continuous transitional texture in world space</p><p>Projects the source mesh&#x27;s material textures onto the target mesh&#x27;s UV layout by finding the nearest point on the source for each target texel, sampling the source texture, and applying a smooth distance-based falloff. Supports bidirectional baking, mirror/unfold sampling, UV margin dilation, bilinear/nearest filtering, and automatic filename generation.</p>
 
 <pre>TEX Bake Transition Worldspace
-Bakes a seamless transition texture in world space between two mesh objects.
+Bakes a continuous transition texture in world space between two mesh objects.
 For each texel in the target mesh&#x27;s UV layout, finds the nearest point on the
 source mesh, samples the source material&#x27;s texture at that point, and writes
 the color with a smooth falloff based on the 3D distance between the two
-surfaces. Useful for creating blend masks where two surfaces meet.
+meshes. Useful for creating blend masks where two meshes meet.
 Supports:
 - Bidirectional baking (forward + reverse in one operation)
 - Mirror / unfold sampling to reduce seam artifacts

@@ -60,7 +60,7 @@ footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0
 <dt>Tags</dt><dd><span class="badge">generate</span> <span class="badge">ultima</span> <span class="badge">landtiles</span> <span class="badge">csv</span> <span class="badge">map</span> <span class="badge">texture</span></dd>
 </dl>
 
-<p class="note">generate ultima land tile planes from a CSV map file</p><p>Generate a map from Ultima land textures for texture painting and debugging with improved performance and UV mapping.</p><p>Reads a CSV file describing an Ultima Online land tile map (x, y, z coordinates plus either a texture name or a Land ID), creates a Blender material for each unique texture, then generates a UV-mapped plane per CSV entry. Supports two CSV formats, configurable UV mirroring and rotation, and per-row error handling.</p>
+<p class="note">generate ultima land tile planes from a CSV map file</p><p>Generate a map from Ultima land textures for texture painting and debugging with UV mapping.</p><p>Reads a CSV file describing an Ultima Online land tile map (x, y, z coordinates plus either a texture name or a Land ID), creates a Blender material for each unique texture, then generates a UV-mapped plane per CSV entry. Supports two CSV formats, configurable UV mirroring and rotation, and per-row error handling.</p>
 
 <pre>GEN Ultima Landtiles from CSV
 Reads a CSV file with columns x, y, z, and either texture_name or Land_ID.

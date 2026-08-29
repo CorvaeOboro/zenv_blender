@@ -19,6 +19,15 @@ from typing import List, Dict, Set, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
 import datetime
+
+# Import the known Blender icon set. This lives in a sibling module so the
+# large icon table is kept out of the checker source. The import is guarded
+# so the checker still works (with icon checking disabled) if the data file
+# is missing - e.g. when copied standalone.
+try:
+    from DEV_blender_icons import VALID_BL_ICONS
+except ImportError:
+    VALID_BL_ICONS = None  # type: ignore[assignment]
 #endregion
 
 #region CONFIG
@@ -55,7 +64,7 @@ MENU_FUNC_PREFIXES = {'menu_func'}
 ALLOWED_GLOBAL_FUNCTIONS = {'register', 'unregister'} | MENU_FUNC_PREFIXES
 #endregion
 
-#region DATAMODEL
+#region DATAMODL
 class IssueLevel(Enum):
     ERROR = "ERROR"
     WARNING = "WARNING"
@@ -69,7 +78,7 @@ class ComplianceIssue:
     file: str
 #endregion
 
-#region ASTHELPERS
+#region AST_HELP
 def get_full_name(node: ast.AST) -> str:
     """Recursively extract the full dotted name from an AST node."""
     if isinstance(node, ast.Name):
@@ -589,6 +598,37 @@ class BlenderAddonChecker:
                             self.file_path
                         ))
                         break
+
+    def check_icons(self):
+        """Check that all ``icon='...'`` keyword arguments reference valid
+        Blender UI icon identifiers. Catches typos / removed icons before
+        they crash the panel at draw time. Silently skipped if the icon
+        table (``DEV_blender_icons.VALID_BL_ICONS``) is unavailable."""
+        if VALID_BL_ICONS is None:
+            return
+        for node in ast.walk(self.tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg != 'icon':
+                    continue
+                # Only check string-literal icons; dynamic expressions
+                # (variables, function calls) are out of static-analysis
+                # scope and are silently skipped.
+                if not isinstance(keyword.value, ast.Constant):
+                    continue
+                if not isinstance(keyword.value.value, str):
+                    continue
+                icon_name = keyword.value.value
+                if icon_name == 'NONE':
+                    continue  # 'NONE' is the default and always valid
+                if icon_name not in VALID_BL_ICONS:
+                    self.add_issue(
+                        IssueLevel.ERROR,
+                        keyword.value.lineno,
+                        f"Invalid icon '{icon_name}' - not a recognized Blender UI icon. "
+                        f"See DEV_blender_icons.py for the full list of valid names"
+                    )
     #endregion
 
     #region RUN
@@ -605,6 +645,7 @@ class BlenderAddonChecker:
         self.check_panel_requirements()
         self.check_property_definitions()
         self.check_import_style()
+        self.check_icons()
         return True
     #endregion
 #endregion

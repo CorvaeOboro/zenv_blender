@@ -22,7 +22,7 @@ bl_info = {
                         'and either visualised as debug line objects or written '
                         'to a timestamped PNG file.',
     "image_overview": '',
-    "addon_image": '',
+    "addon_image": 'zenv_blender_RENDER_plane_projection.png',
     "warning": 'Debug mode creates one mesh with all rays - keep resolution low.',
     "doc_url": '',
 }

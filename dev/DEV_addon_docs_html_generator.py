@@ -142,7 +142,6 @@ pre { padding:0.8rem; overflow-x:auto; white-space:pre-wrap; }
 .badge.status-wip { color:#d6b55a; border-color:#a79a5a; }
 .badge.status-deprecated { color:#ff6b6b; border-color:#a75a5a; }
 img.node-shot { width:100%; border:1px solid var(--border); border-radius:4px; margin:1rem 0; }
-.img-missing { border:1px dashed var(--border); background:var(--surface); color:var(--muted); padding:2rem; text-align:center; border-radius:4px; margin:1rem 0; }
 footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0.9rem; border-top:1px solid var(--border); margin-top:3rem; }"""
 
 MENU_CSS = """body { background-color:#1a1a1a; font-family:Verdana,Arial,Helvetica,sans-serif; color:#b0b0b0; margin:0; padding:0; }
@@ -694,26 +693,12 @@ def render_addon_page(addon: AddonDoc) -> str:
 
     meta_rows: List[str] = []
     meta_rows.append(f"<dt>Addon File</dt><dd><code>{_esc(addon.file_name)}</code></dd>")
-    if addon.category:
-        meta_rows.append(f"<dt>Category</dt><dd><code>{_esc(addon.category)}</code></dd>")
-    if addon.group:
-        meta_rows.append(f"<dt>Group</dt><dd>{_esc(addon.group)} (<code>{_esc(addon.group_prefix)}</code>)</dd>")
-    if addon.version:
-        meta_rows.append(f"<dt>Version</dt><dd><code>{_esc(addon.version)}</code></dd>")
-    if addon.blender:
-        meta_rows.append(f"<dt>Blender</dt><dd><code>{_esc(addon.blender)}</code></dd>")
-    if addon.status:
-        meta_rows.append(f"<dt>Status</dt><dd>{_status_badge(addon.status)}</dd>")
-    meta_rows.append(f"<dt>Approved</dt><dd>{'yes' if addon.approved else 'no'}</dd>")
-    meta_rows.append(f"<dt>Group Order</dt><dd><code>{addon.group_order}</code></dd>")
-    meta_rows.append(f"<dt>Addon Order</dt><dd><code>{addon.addon_order}</code></dd>")
-    if addon.location:
-        meta_rows.append(f"<dt>Location</dt><dd><code>{_esc(addon.location)}</code></dd>")
     if addon.tags:
         tag_badges = " ".join(f'<span class="badge">{_esc(t)}</span>' for t in addon.tags)
         meta_rows.append(f"<dt>Tags</dt><dd>{tag_badges}</dd>")
 
     # Image block: prefer image_overview, fall back to addon_image.
+    # If no usable image is available the element is omitted entirely.
     if addon.image_filename and addon.image_exists:
         img_block = (
             f'<img class="node-shot" src="../{_esc(addon.image_filename)}" '
@@ -724,13 +709,8 @@ def render_addon_page(addon: AddonDoc) -> str:
             f'<img class="node-shot" src="../{_esc(addon.addon_image_filename)}" '
             f'alt="{_esc(title)}">'
         )
-    elif addon.image_filename:
-        img_block = (
-            f'<div class="img-missing">Screenshot declared as '
-            f"<code>{_esc(addon.image_filename)}</code> but not found under docs/.</div>"
-        )
     else:
-        img_block = '<div class="img-missing">No screenshot declared (image_overview field missing).</div>'
+        img_block = ""
 
     # Description block: short (one-liner) + base description + medium + long.
     desc_block = ""
@@ -914,9 +894,28 @@ def render_menu(addons: List[AddonDoc]) -> str:
 """
 
 
+def _render_details_table(addons: List[AddonDoc]) -> str:
+    """Render a compact details table for addons that have no screenshot.
+
+    Columns: Name (link), Description.
+    """
+    rows: List[str] = []
+    for a in addons:
+        desc = a.description_short or a.description or ""
+        rows.append(
+            "<tr>"
+            f'<td><a href="addons/{_esc(a.page_filename)}">{_esc(a.name)}</a></td>'
+            f"<td>{_esc(desc)}</td>"
+            "</tr>"
+        )
+    return (
+        '<table class="details-table">\n'
+        + "\n".join(rows)
+        + "\n</table>"
+    )
+
+
 def render_index(addons: List[AddonDoc]) -> str:
-    total = len(addons)
-    with_image = sum(1 for a in addons if a.image_exists)
     groups = sorted({a.group for a in addons}, key=lambda g: (
         min((a.group_order for a in addons if a.group == g), default=999), g.lower()
     ))
@@ -930,23 +929,25 @@ def render_index(addons: List[AddonDoc]) -> str:
         group_rows.append(f"<tr><td><strong>{_esc(g)}</strong></td><td>{links}</td></tr>")
 
     # Card sections grouped by group.
+    # Addons with images render as image cards; addons without images
+    # render as a compact details table (no "no screenshot" placeholder).
     card_sections: List[str] = []
     for g in groups:
         members = sorted([a for a in addons if a.group == g], key=lambda a: (a.addon_order, a.name.lower()))
+        with_img = [a for a in members if (a.image_filename and a.image_exists) or (a.addon_image_filename and a.addon_image_exists)]
+        without_img = [a for a in members if not ((a.image_filename and a.image_exists) or (a.addon_image_filename and a.addon_image_exists))]
         cards: List[str] = []
-        for a in members:
+        for a in with_img:
             if a.image_filename and a.image_exists:
                 img_html = (
                     f'<img class="card-img" src="{_esc(a.image_filename)}" '
                     f'alt="{_esc(a.name)}">'
                 )
-            elif a.addon_image_filename and a.addon_image_exists:
+            else:
                 img_html = (
                     f'<img class="card-img" src="{_esc(a.addon_image_filename)}" '
                     f'alt="{_esc(a.name)}">'
                 )
-            else:
-                img_html = '<div class="card-img-missing">no screenshot</div>'
             desc = a.description_short or ""
             cards.append(
                 f'<a class="node-card" href="addons/{_esc(a.page_filename)}">'
@@ -957,33 +958,44 @@ def render_index(addons: List[AddonDoc]) -> str:
                 f'</div>'
                 f'</a>'
             )
+        parts: List[str] = []
+        if cards:
+            parts.append(
+                f'<div class="card-grid">\n'
+                f'{chr(10).join(cards)}\n'
+                f'</div>'
+            )
+        if without_img:
+            parts.append(_render_details_table(without_img))
+        if not parts:
+            continue
         card_sections.append(
             f'<div class="card-group">\n'
             f'<h3>{_esc(g)}</h3>\n'
-            f'<div class="card-grid">\n'
-            f'{chr(10).join(cards)}\n'
-            f'</div>\n'
+            f'{chr(10).join(parts)}\n'
             f'</div>'
         )
 
     # Per-row table: title on the left, image + description on the right.
+    # Addons without images go into a details table instead of showing a
+    # "no screenshot" placeholder row.
     row_sections: List[str] = []
     for g in groups:
         members = sorted([a for a in addons if a.group == g], key=lambda a: (a.addon_order, a.name.lower()))
+        with_img = [a for a in members if (a.image_filename and a.image_exists) or (a.addon_image_filename and a.addon_image_exists)]
+        without_img = [a for a in members if not ((a.image_filename and a.image_exists) or (a.addon_image_filename and a.addon_image_exists))]
         rows_html: List[str] = []
-        for a in members:
+        for a in with_img:
             if a.image_filename and a.image_exists:
                 media_html = (
                     f'<img class="row-img" src="{_esc(a.image_filename)}" '
                     f'alt="{_esc(a.name)}">'
                 )
-            elif a.addon_image_filename and a.addon_image_exists:
+            else:
                 media_html = (
                     f'<img class="row-img" src="{_esc(a.addon_image_filename)}" '
                     f'alt="{_esc(a.name)}">'
                 )
-            else:
-                media_html = '<div class="row-img-missing">no screenshot</div>'
             desc = a.description_short or ""
             rows_html.append(
                 "<tr>"
@@ -991,12 +1003,21 @@ def render_index(addons: List[AddonDoc]) -> str:
                 f'<td class="row-media">{media_html}<div class="row-desc">{_esc(desc)}</div></td>'
                 "</tr>"
             )
+        parts: List[str] = []
+        if rows_html:
+            parts.append(
+                f'<table class="row-table">\n'
+                f'{chr(10).join(rows_html)}\n'
+                f'</table>'
+            )
+        if without_img:
+            parts.append(_render_details_table(without_img))
+        if not parts:
+            continue
         row_sections.append(
             f'<div class="row-group">\n'
             f'<h3>{_esc(g)}</h3>\n'
-            f'<table class="row-table">\n'
-            f'{chr(10).join(rows_html)}\n'
-            f'</table>\n'
+            f'{chr(10).join(parts)}\n'
             f'</div>'
         )
 
@@ -1004,15 +1025,14 @@ def render_index(addons: List[AddonDoc]) -> str:
 .node-card { display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--border); border-radius:6px; overflow:hidden; text-decoration:none; color:inherit; transition:border-color 0.15s, transform 0.15s; }
 .node-card:hover { border-color:#4a7ba7; transform:translateY(-2px); }
 .card-img { width:100%; height:140px; object-fit:cover; display:block; background:#1a1a1a; }
-.card-img-missing { width:100%; height:140px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:0.8rem; background:#1a1a1a; border-bottom:1px solid var(--border); }
 .card-body { padding:0.6rem 0.8rem; }
 .card-title { color:#4a7ba7; font-size:0.9rem; font-weight:600; margin-bottom:0.2rem; }
 .card-desc { color:var(--muted); font-size:0.78rem; line-height:1.3; }
-.card-group { margin-top:2rem; }
-.card-group h3 { color:#ffffff; font-size:0.95rem; text-transform:uppercase; margin:0 0 0.8rem 0; padding-bottom:0.3rem; border-bottom:1px solid var(--border); }
+.card-group { margin-top:1rem; }
+.card-group h3 { color:#ffffff; font-size:0.95rem; text-transform:uppercase; margin:0 0 0.5rem 0; padding-bottom:0.3rem; border-bottom:1px solid var(--border); }
 .card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:0.8rem; }
-.row-group { margin-top:2.5rem; }
-.row-group h3 { color:#ffffff; font-size:0.95rem; text-transform:uppercase; margin:0 0 0.8rem 0; padding-bottom:0.3rem; border-bottom:1px solid var(--border); }
+.row-group { margin-top:1.2rem; }
+.row-group h3 { color:#ffffff; font-size:0.95rem; text-transform:uppercase; margin:0 0 0.5rem 0; padding-bottom:0.3rem; border-bottom:1px solid var(--border); }
 .row-table { width:100%; border-collapse:collapse; table-layout:fixed; }
 .row-table td { border:1px solid var(--border); padding:0.8rem; vertical-align:middle; background:#222; }
 .row-title { width:180px; text-align:center; vertical-align:middle; font-weight:600; }
@@ -1020,12 +1040,19 @@ def render_index(addons: List[AddonDoc]) -> str:
 .row-title a:hover { text-decoration:underline; }
 .row-media { text-align:center; }
 .row-img { display:block; margin:0 auto; max-width:1000px; width:100%; height:auto; border:1px solid var(--border); border-radius:4px; }
-.row-img-missing { max-width:1000px; width:100%; margin:0 auto; border:1px dashed var(--border); background:var(--surface); color:var(--muted); padding:2rem; text-align:center; border-radius:4px; }
 .row-desc { color:var(--muted); font-size:0.85rem; margin-top:0.5rem; text-align:center; }
-.banner-img { max-width:100%; height:auto; max-height:200px; display:block; margin:0 auto; }
-.header-links { margin-top:0.8rem; font-size:1rem; }
+.banner-img { max-width:100%; height:auto; max-height:120px; display:block; margin:0 auto; }
+.header-links { margin-top:0.2rem; font-size:0.9rem; }
 .header-links a { color:var(--link); text-decoration:none; font-weight:600; }
 .header-links a:hover { text-decoration:underline; }
+/* Compact the top of the overview page: tighten header + container padding. */
+header { padding:0.3rem 0.5rem; }
+.container { padding:0.5rem 1rem; }
+.details-table { width:100%; border-collapse:collapse; margin:0.4rem 0; font-size:0.88rem; }
+.details-table th { background:var(--surface); color:#fff; padding:0.3rem 0.6rem; text-align:left; border:1px solid var(--border); font-size:0.8rem; text-transform:uppercase; }
+.details-table td { border:1px solid var(--border); padding:0.3rem 0.6rem; vertical-align:top; background:#222; }
+.details-table td a { color:#4a7ba7; text-decoration:none; font-weight:600; }
+.details-table td a:hover { text-decoration:underline; }
 """
 
     return f"""<!DOCTYPE html>
@@ -1044,14 +1071,12 @@ def render_index(addons: List[AddonDoc]) -> str:
     <div class="sidebar"><iframe src="zenv_menu.html"></iframe></div>
     <div class="content">
 <header>
-    <img class="banner-img" src="zenv_blender_header.jpg" alt="ZENV Blender Addons">
+    <img class="banner-img" src="zenv_blender_header_wide.png" alt="ZENV Blender Addons">
     <div class="header-links">
         <a href="https://github.com/CorvaeOboro/zenv">GITHUB</a>
     </div>
 </header>
 <div class="container">
-
-<p>{total} addons documented, {with_image} with screenshots.</p>
 
 <table>
 {chr(10).join(group_rows)}

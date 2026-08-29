@@ -60,9 +60,9 @@ footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0
 <dt>Tags</dt><dd><span class="badge">mesh</span> <span class="badge">noise</span> <span class="badge">displace</span> <span class="badge">surface</span> <span class="badge">texture</span> <span class="badge">procedural</span></dd>
 </dl>
 
-<p class="note">3D noise-based surface displacement with presets</p><p>Apply world-space 3D noise patterns to mesh surfaces</p><p>Applies world-space 3D noise patterns to mesh surfaces using Blender mathutils.noise. First cuts the mesh along a world-space grid to increase geometry density, then displaces vertices using one of four preset noise types: Wood Grain, Cracks, Chipped Paint, or Rock Surface. Supports normal-based and Z-axis displacement.</p>
+<p class="note">3D noise-based surface displacement with presets</p><p>Apply world-space 3D noise patterns to mesh geometry</p><p>Applies world-space 3D noise patterns to mesh geometry using Blender mathutils.noise. First cuts the mesh along a world-space grid to increase geometry density, then displaces vertices using one of four preset noise types: Wood Grain, Cracks, Chipped Paint, or Rock Surface. Supports normal-based and Z-axis displacement.</p>
 
-<pre>MESH Noise Surface Displacement - A Blender addon for realistic surface effects.
+<pre>MESH Noise Surface Displacement - A Blender addon for procedural surface effects.
 Applies world-space 3D noise patterns using bricker-style resolution.</pre>
 
 <h2>Properties</h2>
@@ -78,7 +78,7 @@ Applies world-space 3D noise patterns using bricker-style resolution.</pre>
 <h2>Operators</h2>
 <table>
 <tr><th>Class</th><th>bl_idname</th><th>Label</th><th>Options</th><th>Description</th></tr>
-<tr><td><code>ZENV_OT_NoiseDisplace</code></td><td><code>zenv.noise_displace</code></td><td>Apply Effect</td><td></td><td>Apply realistic surface effects using world-space 3D noise</td></tr>
+<tr><td><code>ZENV_OT_NoiseDisplace</code></td><td><code>zenv.noise_displace</code></td><td>Apply Effect</td><td></td><td>Apply procedural surface effects using world-space 3D noise</td></tr>
 </table>
 
 </div>

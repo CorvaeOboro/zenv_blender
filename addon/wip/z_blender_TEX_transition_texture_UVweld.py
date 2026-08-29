@@ -1139,6 +1139,13 @@ class ZENV_OT_TEXTransitionBakeByUVWeld_Bake(Operator):
                 context.scene.render.bake.use_selected_to_active = True
                 context.scene.render.bake.use_clear = True
                 context.scene.render.bake.target = 'IMAGE_TEXTURES'
+                # Explicitly disable cage baking. A leftover cage_object from
+                # a previous bake (or user scene settings) triggers Blender's
+                # "Invalid cage object, the cage mesh must have the same
+                # number of faces as the active object" error, since the
+                # merged source mesh rarely matches the target's face count.
+                context.scene.render.bake.use_cage = False
+                context.scene.render.bake.cage_object = None
 
             # 7) Bake
             logger.info("Starting bake...")

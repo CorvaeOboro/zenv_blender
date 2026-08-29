@@ -60,7 +60,7 @@ footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0
 <dt>Tags</dt><dd><span class="badge">export</span> <span class="badge">batch</span> <span class="badge">fbx</span> <span class="badge">ue4</span> <span class="badge">unreal</span> <span class="badge">asset</span></dd>
 </dl>
 
-<p class="note">batch export selected objects to separate FBX files</p><p>Save each object in the scene to its own FBX file with UE4-optimized settings</p><p>Batch-export each object in the current scene (or current selection) to its own standalone .fbx file with Unreal Engine 4-optimized settings via bpy.ops.export_scene.fbx. Handles filename sanitization, collision disambiguation, overwrite control, suffix customization, animation baking, and path remapping options.</p>
+<p class="note">batch export selected objects to separate FBX files</p><p>Save each object in the scene to its own FBX file with UE4-tuned settings</p><p>Batch-export each object in the current scene (or current selection) to its own standalone .fbx file with Unreal Engine 4-tuned settings via bpy.ops.export_scene.fbx. Handles filename sanitization, collision disambiguation, overwrite control, suffix customization, animation baking, and path remapping options.</p>
 
 <pre>EXPORT Objects to FBX Files
 batch export each object in the current scene to its own separate .fbx file.
@@ -77,11 +77,10 @@ This is useful for:
 <tr><td><code>ZENV_OT_SaveToSeparateFbxUE4</code></td><td><code>zenv.save_to_separate_fbx_ue4</code></td><td>Save Objects to FBX Files for UE4 (.fbx)</td><td></td><td>Export each object in the scene to a separate FBX file with UE4-compatible settings.
 
     This operator creates individual .fbx files for each object in the current
-    scene, with export settings optimized for Unreal Engine 4. Each file will
+    scene, with export settings tuned for Unreal Engine 4. Each file will
     contain only the exported object with proper scale and orientation.
 
-    Note:
-        If no export directory is chosen, files are saved in the same
+    If no export directory is chosen, files are saved in the same
         directory as the current blend file (which must be saved first).
 
     Warning:

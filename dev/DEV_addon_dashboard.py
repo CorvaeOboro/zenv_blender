@@ -22,6 +22,8 @@ from tkinter import ttk, scrolledtext, filedialog, messagebox
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
+from tksheet import Sheet
+
 # Import the validator
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from DEV_blender_addon_metadata_validator import AddonMetadataValidator, AddonMetadata
@@ -48,6 +50,52 @@ COLORS = {
 }
 #endregion
 
+#region TABLE_COLUMNS
+# Column order for the addon spreadsheet (tksheet). Index here == column
+# index in the sheet. Keep in sync with HEADERS below.
+COLUMNS = [
+    'category', 'name', 'status', 'approved', 'group',
+    'group_order', 'addon_order', 'version', 'modified', 'issues',
+]
+COL_INDEX = {name: i for i, name in enumerate(COLUMNS)}
+HEADERS = {
+    'category': 'Category', 'name': 'Name', 'status': 'Status',
+    'approved': 'Approved', 'group': 'Group', 'group_order': 'GrpOrd',
+    'addon_order': 'AddOrd', 'version': 'Version', 'modified': 'DateModified',
+    'issues': 'Issues',
+}
+COLUMN_WIDTHS = {
+    'category': 80, 'name': 280, 'status': 80, 'approved': 80, 'group': 100,
+    'group_order': 70, 'addon_order': 70, 'version': 100, 'modified': 140,
+    'issues': 60,
+}
+
+# Per-cell colors for the Status and Approved columns. These are applied as
+# tksheet cell highlights, which take precedence over the row-wide
+# error/warning/ok highlight, so the status/approved cells keep their own
+# color regardless of how the row is colorized.
+STATUS_CELL_COLORS = {
+    'wip':        COLORS['accent_yellow'],
+    'working':    COLORS['accent_green'],
+    'stable':     COLORS['accent_blue'],
+    'deprecated': COLORS['accent_red'],
+    'N/A':        COLORS['bg_light'],
+    'Missing':    COLORS['bg_light'],
+}
+APPROVED_CELL_COLORS = {
+    'True':    COLORS['accent_green'],
+    'False':   COLORS['accent_red'],
+    'N/A':     COLORS['bg_light'],
+    'Missing': COLORS['bg_light'],
+}
+# Row-wide colors by validation outcome (applied via highlight_rows).
+ROW_COLORS = {
+    'error':   COLORS['accent_red'],
+    'warning': COLORS['accent_yellow'],
+    'ok':      COLORS['accent_green'],
+}
+#endregion
+
 
 class AddonDashboard:
     """Main dashboard application."""
@@ -66,7 +114,10 @@ class AddonDashboard:
         self.selected_addon: Optional[AddonMetadata] = None
 
         self.selected_file_path_var = tk.StringVar(value="")
-        self.tree_item_to_addon: Dict[str, AddonMetadata] = {}
+        # Row index -> AddonMetadata for the currently displayed sheet rows.
+        # Rebuilt on every populate_sheet() so it stays in sync with the
+        # sorted/filtered order (replacing the old tree-item-id mapping).
+        self.row_to_addon: List[AddonMetadata] = []
 
         self.file_modified_time: Dict[str, float] = {}
         # Cache for git timestamps: maps (file_path, mtime) -> formatted
@@ -193,19 +244,24 @@ class AddonDashboard:
             
             self.filtered_addons.append(addon)
         
-        self.populate_tree()
+        self.populate_sheet()
 
-    def populate_tree(self):
-        """Populate tree view with filtered addons."""
+    def populate_sheet(self):
+        """Populate the tksheet table with filtered addons and apply coloring.
+
+        Two independent layers of color are applied:
+          1. Row-wide highlight by validation outcome (error/warning/ok).
+          2. Per-cell highlight on the Status and Approved columns based on
+             the cell's value. Cell highlights are drawn on top of row
+             highlights, so those two cells keep their own color regardless
+             of the row colorization.
+        """
         selected_file_path = self.selected_addon.file_path if self.selected_addon else None
 
-        # Clear tree
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+        data = []
+        row_tags = []  # parallel list: validation outcome per row
+        self.row_to_addon = []
 
-        self.tree_item_to_addon = {}
-        
-        # Add addons
         for addon in self.filtered_addons:
             category = addon.folder_category.upper()
             name = addon.bl_info.get('name', addon.file_name)
@@ -218,29 +274,65 @@ class AddonDashboard:
             modified_ts = self.file_modified_time.get(addon.file_path, 0.0)
             modified_str = datetime.fromtimestamp(modified_ts).strftime('%Y-%m-%d %H:%M') if modified_ts else 'N/A'
             issue_count = len(addon.issues)
-            
-            # Determine tag
+
             if addon.has_errors:
                 tag = 'error'
             elif addon.has_warnings:
                 tag = 'warning'
             else:
                 tag = 'ok'
-            
-            item_id = addon.file_path
-            self.tree_item_to_addon[item_id] = addon
-            self.tree.insert('', 'end', iid=item_id,
-                           values=(category, name, status, approved, group, group_order, addon_order, version, modified_str, issue_count),
-                           tags=(tag,))
-        
+
+            data.append([category, name, status, approved, group,
+                         group_order, addon_order, version, modified_str, issue_count])
+            row_tags.append(tag)
+            self.row_to_addon.append(addon)
+
+        # Reset highlights when setting data so stale colors from a previous
+        # population don't bleed through.
+        self.sheet.set_sheet_data(data, reset_col_positions=False,
+                                  reset_row_positions=True, redraw=False,
+                                  reset_highlights=True)
+        self.sheet.headers([HEADERS[c] for c in COLUMNS], redraw=False)
+
+        # Row-wide coloring by validation outcome. Group rows by tag and
+        # issue one highlight_rows call per group for efficiency.
+        rows_by_tag: Dict[str, List[int]] = {'error': [], 'warning': [], 'ok': []}
+        for r, tag in enumerate(row_tags):
+            rows_by_tag[tag].append(r)
+        for tag, rows in rows_by_tag.items():
+            if rows:
+                self.sheet.highlight_rows(rows, bg=ROW_COLORS[tag],
+                                          fg=COLORS['fg_text'],
+                                          highlight_index=False, redraw=False,
+                                          overwrite=True)
+
+        # Per-cell coloring for Status and Approved. These override the row
+        # color for just those two cells.
+        status_col = COL_INDEX['status']
+        approved_col = COL_INDEX['approved']
+        for r, addon in enumerate(self.filtered_addons):
+            status_val = addon.bl_info.get('status', 'N/A')
+            approved_val = str(addon.bl_info.get('approved', 'N/A'))
+            sbg = STATUS_CELL_COLORS.get(status_val, STATUS_CELL_COLORS['N/A'])
+            abg = APPROVED_CELL_COLORS.get(approved_val, APPROVED_CELL_COLORS['N/A'])
+            self.sheet.highlight_cells(row=r, column=status_col, bg=sbg,
+                                       fg=COLORS['fg_text'], redraw=False,
+                                       overwrite=True)
+            self.sheet.highlight_cells(row=r, column=approved_col, bg=abg,
+                                       fg=COLORS['fg_text'], redraw=False,
+                                       overwrite=True)
+
+        self.sheet.redraw()
         self.addon_count_label.config(text=f"({len(self.filtered_addons)})")
 
-        if selected_file_path and self.tree.exists(selected_file_path):
-            self.tree.selection_set(selected_file_path)
-            self.tree.see(selected_file_path)
+        # Restore selection by file path
+        if selected_file_path:
+            for r, addon in enumerate(self.row_to_addon):
+                if addon.file_path == selected_file_path:
+                    self.sheet.select_cell(r, 0, redraw=False, run_binding_func=False)
+                    self.sheet.see(row=r, column=0, redraw=True)
+                    break
     
-    @staticmethod
-
     def sort_by(self, column):
         """Sort tree by column."""
         if self.sort_column == column:
@@ -274,7 +366,27 @@ class AddonDashboard:
             return (addon.bl_info.get(column, '') or '').casefold()
 
         self.filtered_addons.sort(key=sort_key, reverse=self.sort_reverse)
-        self.populate_tree()
+        self._update_sort_indicators()
+        self.populate_sheet()
+
+    def _update_sort_indicators(self):
+        """Refresh column header text to show the active sort column and
+        direction (▲ asc / ▼ desc). Uses the module-level HEADERS map for the
+        base labels and updates the tksheet headers per-column via
+        set_header_data (so only the active column's label changes, leaving
+        column widths/positions untouched).
+        """
+        arrow = ' ▼' if self.sort_reverse else ' ▲'
+        for col, label in HEADERS.items():
+            text = label + (arrow if col == self.sort_column else '')
+            try:
+                self.sheet.set_header_data(text, c=COL_INDEX[col], redraw=False)
+            except (tk.TclError, KeyError):
+                pass
+        try:
+            self.sheet.redraw()
+        except tk.TclError:
+            pass
 #endregion
 
 #region FILEIO
@@ -445,49 +557,59 @@ class AddonDashboard:
 
 #region HANDLE
     def on_addon_select(self, event):
-        """Handle addon selection."""
-        selection = self.tree.selection()
-        if not selection:
+        """Handle addon selection from the tksheet.
+
+        tksheet fires cell_select / row_select events; the authoritative
+        selected cell is read via get_currently_selected() (returns a Selected
+        namedtuple with .row, or () when nothing is selected). The row index
+        maps to an AddonMetadata via self.row_to_addon.
+        """
+        sel = self.sheet.get_currently_selected()
+        if not sel:
             return
-
-        item_id = selection[0]
-        addon = self.tree_item_to_addon.get(item_id)
-        if addon is None:
-            item = self.tree.item(item_id)
-            name = item['values'][1]  # Name is now second column (after category)
-
-            for candidate in self.filtered_addons:
-                if candidate.bl_info.get('name', candidate.file_name) == name:
-                    addon = candidate
-                    break
-
+        row = sel.row
+        if row is None or row < 0 or row >= len(self.row_to_addon):
+            return
+        addon = self.row_to_addon[row]
         if addon is None:
             return
-
         self.selected_addon = addon
         self.display_addon_details(addon)
 
+    def _on_header_click(self, event):
+        """Handle a column-header click in the tksheet to trigger sorting.
+
+        column_select fires when a header is clicked; the column index is read
+        from get_currently_selected() (Selected namedtuple, .column). The
+        displayed column index maps directly to our COLUMNS list because
+        column drag-and-drop is disabled, so displayed == data index.
+        """
+        sel = self.sheet.get_currently_selected()
+        if not sel:
+            return
+        col = sel.column
+        if col is None or col < 0 or col >= len(COLUMNS):
+            return
+        self.sort_by(COLUMNS[col])
+
     def reselect_addon(self, file_path: str, name: str):
-        """Reselect an addon in the tree after reload."""
-        if self.tree.exists(file_path):
-            self.tree.selection_set(file_path)
-            self.tree.see(file_path)
-            addon = self.tree_item_to_addon.get(file_path)
-            if addon is not None:
+        """Reselect an addon in the sheet after reload."""
+        # First try an exact file-path match against the current rows.
+        for r, addon in enumerate(self.row_to_addon):
+            if addon.file_path == file_path:
+                self.sheet.select_cell(r, 0, redraw=False, run_binding_func=False)
+                self.sheet.see(row=r, column=0, redraw=True)
                 self.selected_addon = addon
                 self.display_addon_details(addon)
                 return
 
-        for item in self.tree.get_children():
-            values = self.tree.item(item)['values']
-            item_name = values[1]
-            if item_name == name:
-                self.tree.selection_set(item)
-                self.tree.see(item)
-                addon = self.tree_item_to_addon.get(item)
-                if addon is not None:
-                    self.selected_addon = addon
-                    self.display_addon_details(addon)
+        # Fall back to matching by name (file may have been renamed).
+        for r, addon in enumerate(self.row_to_addon):
+            if addon.bl_info.get('name', addon.file_name) == name:
+                self.sheet.select_cell(r, 0, redraw=False, run_binding_func=False)
+                self.sheet.see(row=r, column=0, redraw=True)
+                self.selected_addon = addon
+                self.display_addon_details(addon)
                 return
 
         self.selected_addon = None
@@ -505,9 +627,11 @@ class AddonDashboard:
         for field, widget in self.metadata_widgets.items():
             value = addon.bl_info.get(field, '')
 
-            # Render tuple/list version fields (blender, version) as dotted
-            # strings so they display readably and round-trip back to a tuple
-            # on save (see save_metadata).
+            # Render tuple/list blender version fields as dotted strings so
+            # they display readably and round-trip back to a tuple on save
+            # (see save_metadata). 'version' is a YYYYMMDD string and is not
+            # converted, but the isinstance guard keeps this safe if an older
+            # file happens to store a tuple version.
             if field in ('blender', 'version') and isinstance(value, (tuple, list)):
                 value = '.'.join(map(str, value))
             
@@ -577,11 +701,16 @@ class AddonDashboard:
                 else:
                     value = widget.get().strip()
 
-                # Convert dotted/comma-separated version strings (blender,
-                # version) back to tuples so they round-trip correctly. Without
-                # this, a tuple version like (1, 2, 0) would be saved as the
-                # string "(1, 2, 0)" and corrupt bl_info.
-                if field in ('blender', 'version') and value:
+                # Convert dotted/comma-separated blender version strings back
+                # to tuples so they round-trip correctly. Without this, a tuple
+                # version like (1, 2, 0) would be saved as the string
+                # "(1, 2, 0)" and corrupt bl_info.
+                #
+                # NOTE: only 'blender' is a tuple. 'version' is a YYYYMMDD
+                # string per the metadata validator (e.g. '20260825'), so it
+                # must NOT be converted to a tuple here -- doing so would write
+                # (20260825,) into bl_info instead of '20260825'.
+                if field == 'blender' and value:
                     try:
                         # Parse "4.0.0" or "4, 0, 0" to (4, 0, 0)
                         parts = [int(p.strip()) for p in value.replace('.', ',').split(',') if p.strip()]
@@ -976,7 +1105,14 @@ STATUS BREAKDOWN
         ttk.Button(toolbar, text="Export Report", command=self.export_report).pack(side=tk.LEFT, padx=5)
 
     def create_addon_list(self, parent):
-        """Create addon list with tree view."""
+        """Create addon list as a tksheet spreadsheet.
+
+        tksheet is used instead of ttk.Treeview so we can color individual
+        cells (Status / Approved) independently of the row-wide
+        error/warning/ok coloring. Header clicks trigger sort_by via the
+        column_select extra binding; the selected column is read from
+        get_currently_selected().
+        """
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(1, weight=1)
         
@@ -987,62 +1123,83 @@ STATUS BREAKDOWN
         self.addon_count_label = ttk.Label(header, text="(0)")
         self.addon_count_label.pack(side=tk.LEFT, padx=5)
         
-        # Tree view
-        tree_frame = ttk.Frame(parent)
-        tree_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        tree_frame.columnconfigure(0, weight=1)
-        tree_frame.rowconfigure(0, weight=1)
+        # Sheet frame
+        sheet_frame = ttk.Frame(parent)
+        sheet_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        sheet_frame.columnconfigure(0, weight=1)
+        sheet_frame.rowconfigure(0, weight=1)
         
-        # Scrollbars
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical")
-        hsb = ttk.Scrollbar(tree_frame, orient="horizontal")
+        # Build the sheet with a dark theme matching the dashboard palette.
+        # Editing, column/row drag-and-drop and built-in sorting are disabled
+        # so the row<->addon mapping stays stable and our own sort_by drives
+        # ordering.
+        self.sheet = Sheet(
+            sheet_frame,
+            show_top_left=False,
+            show_row_index=False,
+            headers=[HEADERS[c] for c in COLUMNS],
+            data=[],
+            font=('Calibri', 10, 'normal'),
+            header_font=('Calibri', 10, 'bold'),
+            # Dark theme overrides (match COLORS)
+            theme='dark blue',
+            frame_bg=COLORS['bg_dark'],
+            table_bg=COLORS['bg_medium'],
+            table_fg=COLORS['fg_text'],
+            table_grid_fg=COLORS['border'],
+            table_selected_cells_bg=COLORS['bg_light'],
+            table_selected_cells_fg=COLORS['fg_text'],
+            table_selected_cells_border_fg=COLORS['accent_blue'],
+            header_bg=COLORS['bg_dark'],
+            header_fg=COLORS['fg_text'],
+            header_grid_fg=COLORS['border'],
+            header_border_fg=COLORS['border'],
+            header_selected_columns_bg=COLORS['bg_light'],
+            header_selected_columns_fg=COLORS['fg_text'],
+            vertical_scroll_background=COLORS['bg_black'],
+            horizontal_scroll_background=COLORS['bg_black'],
+            vertical_scroll_troughcolor=COLORS['bg_black'],
+            horizontal_scroll_troughcolor=COLORS['bg_black'],
+            vertical_scroll_active_bg=COLORS['accent_blue'],
+            horizontal_scroll_active_bg=COLORS['accent_blue'],
+            vertical_scroll_not_active_bg=COLORS['accent_blue_muted'],
+            horizontal_scroll_not_active_bg=COLORS['accent_blue_muted'],
+            show_x_scrollbar=True,
+            show_y_scrollbar=True,
+            show_vertical_grid=True,
+            show_horizontal_grid=True,
+            align='w',
+            header_align='w',
+        )
+        self.sheet.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Tree
-        self.tree = ttk.Treeview(tree_frame, 
-                                 columns=('category', 'name', 'status', 'approved', 'group', 'group_order', 'addon_order', 'version', 'modified', 'issues'),
-                                 show='tree headings',
-                                 yscrollcommand=vsb.set,
-                                 xscrollcommand=hsb.set)
+        # tksheet enables NO bindings by default — we must explicitly enable
+        # them first, then disable only the ones we don't want. enable_bindings()
+        # with no args enables "all" (cell selection, column selection, copy,
+        # scroll, etc.).
+        self.sheet.enable_bindings()
         
-        vsb.config(command=self.tree.yview)
-        hsb.config(command=self.tree.xview)
+        # Now disable editing / drag-and-drop / built-in sort so our row
+        # mapping and sort_by logic stay authoritative. Binding names must
+        # match tksheet's internal strings exactly.
+        self.sheet.disable_bindings(
+            "edit", "cut", "paste", "delete",
+            "row_drag_and_drop", "column_drag_and_drop",
+            "rc_insert_column", "rc_insert_row",
+            "rc_delete_column", "rc_delete_row",
+            "sort_rows", "sort_columns", "sort_cells",
+        )
         
-        # Configure columns with minwidth and stretch
-        self.tree.column('#0', width=30, minwidth=30, stretch=False)
-        self.tree.column('category', width=80, minwidth=60, stretch=False)
-        self.tree.column('name', width=280, minwidth=200, stretch=True)
-        self.tree.column('status', width=80, minwidth=60, stretch=False)
-        self.tree.column('approved', width=80, minwidth=60, stretch=False)
-        self.tree.column('group', width=100, minwidth=80, stretch=False)
-        self.tree.column('group_order', width=70, minwidth=60, stretch=False)
-        self.tree.column('addon_order', width=70, minwidth=60, stretch=False)
-        self.tree.column('version', width=100, minwidth=80, stretch=False)
-        self.tree.column('modified', width=140, minwidth=120, stretch=False)
-        self.tree.column('issues', width=60, minwidth=50, stretch=False)
+        # Column widths
+        for col_name, width in COLUMN_WIDTHS.items():
+            self.sheet.column_width(column=COL_INDEX[col_name], width=width, redraw=False)
         
-        self.tree.heading('category', text='Category', command=lambda: self.sort_by('category'))
-        self.tree.heading('name', text='Name', command=lambda: self.sort_by('name'))
-        self.tree.heading('status', text='Status', command=lambda: self.sort_by('status'))
-        self.tree.heading('approved', text='Approved', command=lambda: self.sort_by('approved'))
-        self.tree.heading('group', text='Group', command=lambda: self.sort_by('group'))
-        self.tree.heading('group_order', text='GrpOrd', command=lambda: self.sort_by('group_order'))
-        self.tree.heading('addon_order', text='AddOrd', command=lambda: self.sort_by('addon_order'))
-        self.tree.heading('version', text='Version', command=lambda: self.sort_by('version'))
-        self.tree.heading('modified', text='DateModified', command=lambda: self.sort_by('modified'))
-        self.tree.heading('issues', text='Issues', command=lambda: self.sort_by('issues'))
-        
-        # Grid layout
-        self.tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        vsb.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        hsb.grid(row=1, column=0, sticky=(tk.W, tk.E))
-        
-        # Bind selection
-        self.tree.bind('<<TreeviewSelect>>', self.on_addon_select)
-        
-        # Tags for coloring 
-        self.tree.tag_configure('error', background=COLORS['accent_red'], foreground=COLORS['fg_text'])
-        self.tree.tag_configure('warning', background=COLORS['accent_yellow'], foreground=COLORS['fg_text'])
-        self.tree.tag_configure('ok', background=COLORS['accent_green'], foreground=COLORS['fg_text'])
+        # Selection -> detail panel
+        self.sheet.extra_bindings("cell_select", self.on_addon_select)
+        # Header click -> sort by that column. column_select fires when a
+        # column header is clicked; we read the column from the event's
+        # currently-selected column.
+        self.sheet.extra_bindings("column_select", self._on_header_click)
 
     def create_details_panel(self, parent):
         """Create details/editor panel."""

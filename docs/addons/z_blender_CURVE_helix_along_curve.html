@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZENV - MAT Rename Material Suffix</title>
+<title>ZENV - CURVE Helix Along Curve</title>
 <style>
 :root { --bg:#1a1a1a; --surface:#2d2d2d; --border:#404040; --text:#e0e0e0; --muted:#b0b0b0; --accent:#4a7ba7; --link:#64b5f6; --code:#1e1e1e; }
 * { box-sizing:border-box; }
@@ -47,37 +47,41 @@ footer { text-align:center; padding:1.2rem 1rem; color:var(--muted); font-size:0
     <div class="sidebar"><iframe src="../zenv_menu.html"></iframe></div>
     <div class="content">
 <header>
-    <h1>MAT Rename Material Suffix</h1>
-    <p>add or remove prefix or suffix on materials</p>
+    <h1>CURVE Helix Along Curve</h1>
+    <p>Generate helical curves that follow a base curve</p>
 </header>
 <div class="container">
 
-
+<img class="node-shot" src="../zenv_blender_MESH_helix.png" alt="CURVE Helix Along Curve">
 
 <h2>Metadata</h2>
 <dl class="meta-grid">
-<dt>Addon File</dt><dd><code>z_blender_MAT_rename_material_suffix.py</code></dd>
-<dt>Tags</dt><dd><span class="badge">material</span> <span class="badge">rename</span> <span class="badge">prefix</span> <span class="badge">suffix</span> <span class="badge">affix</span> <span class="badge">name</span></dd>
+<dt>Addon File</dt><dd><code>z_blender_CURVE_helix_along_curve.py</code></dd>
+<dt>Tags</dt><dd><span class="badge">curve</span> <span class="badge">helix</span> <span class="badge">generative</span> <span class="badge">spiral</span></dd>
 </dl>
 
-<p class="note">add or remove prefix or suffix on materials</p><p>Add or remove customizable prefix and suffix to material names</p><p>Provides two operators (Add Affix and Remove Affix) that add or remove a configurable prefix or suffix to/from material names. Supports both prefix and suffix modes, and can apply to all materials in the file or the active object materials. Shared logic via a mixin class.</p>
+<p class="note">Generate helical curves that follow a base curve</p><p>Creates evenly distributed helical curves that follow a selected base curve, with configurable radius, rotation length, resolution, and bevel depth.</p>
 
-<pre>MATERIAL RENAME AFFIX
- prefix and suffix addition or removal for material names</pre>
+<pre>Helix Along Curve Generator
+Creates evenly distributed helical curves that follow a base curve.
+Useful for generating coils, vines, or decorative patterns.</pre>
 
 <h2>Properties</h2>
 <table>
 <tr><th>Attr</th><th>Label</th><th>Type</th><th>Default</th><th>Range</th><th>Subtype / Options</th><th>Description</th></tr>
-<tr><td><code>prefix</code></td><td>Prefix</td><td>string</td><td>d_</td><td></td><td> </td><td>Prefix to add to material names</td></tr>
-<tr><td><code>suffix</code></td><td>Suffix</td><td>string</td><td>_MI</td><td></td><td> </td><td>Suffix to add to material names</td></tr>
-<tr><td><code>apply_to_all</code></td><td>Apply to All Materials</td><td>bool</td><td>false</td><td></td><td> </td><td>Apply changes to all materials in the scene instead of the selected object</td></tr>
+<tr><td><code>num_curves</code></td><td>Number of Curves</td><td>int</td><td>1</td><td>1 .. 12</td><td> </td><td>Number of helical curves to generate</td></tr>
+<tr><td><code>rotation_length</code></td><td>Length per Rotation</td><td>float</td><td>1</td><td>0.01 .. </td><td> <span class="badge">soft_max=10</span> <span class="badge">unit=LENGTH</span></td><td>Length of curve for one complete rotation (in meters)</td></tr>
+<tr><td><code>radius</code></td><td>Helix Radius</td><td>float</td><td>0.1</td><td>0.001 .. </td><td> <span class="badge">soft_max=1</span> <span class="badge">unit=LENGTH</span></td><td>Radius of the helical curves</td></tr>
+<tr><td><code>resolution</code></td><td>Resolution</td><td>int</td><td>12</td><td>4 .. 64</td><td> </td><td>Number of points per rotation</td></tr>
+<tr><td><code>smooth_curve</code></td><td>Smooth Curve</td><td>bool</td><td>true</td><td></td><td> </td><td>Convert to NURBS and smooth the output curves</td></tr>
+<tr><td><code>convert_to_mesh</code></td><td>Convert to Mesh</td><td>bool</td><td>false</td><td></td><td> </td><td>Convert the output to mesh instead of keeping it as a curve</td></tr>
+<tr><td><code>bevel_depth</code></td><td>Curve Thickness</td><td>float</td><td>0.01</td><td>0.0001 .. </td><td> <span class="badge">soft_max=0.1</span> <span class="badge">unit=LENGTH</span></td><td>Thickness of the generated curves</td></tr>
 </table>
 
 <h2>Operators</h2>
 <table>
 <tr><th>Class</th><th>bl_idname</th><th>Label</th><th>Options</th><th>Description</th></tr>
-<tr><td><code>ZENV_OT_AddAffix</code></td><td><code>zenv.add_material_affix</code></td><td>Add</td><td></td><td>Add prefix or suffix to material names</td></tr>
-<tr><td><code>ZENV_OT_RemoveAffix</code></td><td><code>zenv.remove_material_affix</code></td><td>Remove</td><td></td><td>Remove prefix or suffix from material names</td></tr>
+<tr><td><code>ZENV_OT_HelixAlongCurve</code></td><td><code>zenv.helix_along_curve_generate</code></td><td>Generate Helix</td><td></td><td>Generate helical curves along the selected curve</td></tr>
 </table>
 
 </div>

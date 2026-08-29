@@ -86,11 +86,11 @@ SKIP_DIR_NAMES = {
     ".pytest_cache", ".mypy_cache", ".ruff_cache",
     # Backup / removed / staging dirs under addon/ and notes/ that hold
     # duplicated or superseded content, not primary project source.
-    "backup", "removed", "wip",
+    "backup", "removed",  # "wip" temporarily removed for this run
     # Generated output dirs under notes/ (logs, reports, snapshots, staging).
     "logs", "reports", "snapshots", "one_staging",
     # Linter / validation output produced by dev/DEV_run_linters.py and
-    # related tools; gitignored generated content, not prose.
+    # related tools; gitignored generated content, 
     "linter_reports",
 }
 
@@ -109,7 +109,7 @@ SKIP_PATH_PATTERNS = {
     "dev/ascii_clean_reports/iterations/*",
     # Linter / validation output produced by dev/DEV_run_linters.py and
     # dev/DEV_blender_addon_compliance.py. These are gitignored generated
-    # snapshots, not prose, and may contain serialized source diffs.
+    # snapshots, and may contain serialized source diffs.
     "dev/linter_reports/*",
     # Generated addon compliance reports (text snapshots, not source).
     "addon/addon_compliance_report.txt",

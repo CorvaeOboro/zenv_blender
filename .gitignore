@@ -174,3 +174,5 @@ dev/DEV_blender_addon_compliance.bat
 dev/addon_metadata_validation_report.txt
 *.txt
 addon/notes/
+addon/wip/notes/
+addon/wip/DEBUG_worldspace_samples.json
